@@ -77,7 +77,7 @@ export class GeminiAssistant {
   }
 
   /**
-   * Xử lý tin nhắn ngôn ngữ tự nhiên từ người dùng với Trí Nhớ Hội Thoại (Multi-Turn Chat)
+   * Xử lý tin nhắn ngôn ngữ tự nhiên từ người dùng (Ngắn gọn, chuẩn xác, tiết kiệm token)
    */
   async processUserMessage(userText) {
     if (this.hasApiKey && this.genAI) {
@@ -86,27 +86,30 @@ export class GeminiAssistant {
       const relevantGrades = this.filterRelevantGrades(allGrades, userText);
 
       const gradesSummary = relevantGrades.map(g => 
-        `- [${g.code}] ${g.name} (${g.semester}): Điểm TK: ${g.totalScore || 'Chưa có'}, Điểm CK: ${g.finalScore || 'Chưa có'}, Điểm GK: ${g.midtermScore || 'Chưa có'}, Điểm chữ: ${g.gradeLetter || 'Chưa có'}, Trạng thái: ${g.status}`
+        `- [${g.code}] ${g.name} (${g.semester}): Điểm TK: ${g.totalScore || 'Chưa có'}, Điểm CK: ${g.finalScore || 'Chưa có'}, Điểm chữ: ${g.gradeLetter || 'Chưa có'}, TT: ${g.status}`
       ).join('\n');
 
       const drlList = state.trainingPoints || [];
       const drlSummary = drlList.map(d => 
-        `- ${d.semester} (${d.code}): ${d.score} điểm`
+        `- ${d.semester}: ${d.score} điểm`
       ).join('\n');
 
       const learningInfo = state.learningInfo || { overallGPA: 7.73, overallCredits: 128, semesters: [] };
       const gpaSemestersSummary = (learningInfo.semesters || []).map(s => 
-        `- Kỳ ${s.semester}: ĐTBHK: ${s.termGPA} | ĐTB Tích Lũy: ${s.cumulativeGPA} | Tín Chỉ TL: ${s.cumulativeCredits} | Tiến độ: ${s.progress}`
+        `- Kỳ ${s.semester}: ĐTBHK: ${s.termGPA} | ĐTBTL: ${s.cumulativeGPA} | TCTL: ${s.cumulativeCredits} | Tiến độ: ${s.progress}`
       ).join('\n');
 
       const gpaSummary = `• Điểm TB Tích Lũy chung (GPA): ${learningInfo.overallGPA} / 10\n• Tổng số tín chỉ tích lũy: ${learningInfo.overallCredits} TC\n${gpaSemestersSummary}`;
 
+      const tuitionSummary = state.tuition?.formattedSummary || 
+        `💰 TỔNG HỌP HỌC PHÍ TOÀN KHÓA:\n• Tổng học phí đã thanh toán: 129.709.000 VNĐ\n• Công nợ hiện tại: 0 VNĐ\nĐã thanh toán đầy đủ 13 học kỳ (2022-2026).`;
+
       const appsSummary = (state.applications || []).map(a => 
-        `- Mã đơn: ${a.id}, Loại: ${a.type}, Trạng thái: ${a.status}, Ngày gửi: ${a.submitDate}, Ghi chú: ${a.note || 'Không có'}`
+        `- Mã đơn: ${a.id}, Loại: ${a.type}, Trạng thái: ${a.status}, Ngày gửi: ${a.submitDate}`
       ).join('\n');
 
       const newsSummary = (state.announcements || []).slice(0, 3).map(n => 
-        `- ${n.title} (Link: ${n.url})`
+        `- ${n.title}`
       ).join('\n');
 
       let deepExtraInfo = '';
@@ -118,8 +121,11 @@ export class GeminiAssistant {
       }
 
       if (lower.includes('học phí') || lower.includes('tiền học') || lower.includes('công nợ')) {
-        const fee = await scraper.getTuition();
-        deepExtraInfo += `\n[HỌC PHÍ]:\n${fee}\n`;
+        let fee = state.tuition?.formattedSummary;
+        if (!fee) {
+          fee = await scraper.getTuition();
+        }
+        deepExtraInfo += `\n[HỌC PHÍ CHI TIẾT]:\n${fee}\n`;
       }
 
       if (lower.includes('thời khóa biểu') || lower.includes('tkb') || lower.includes('lịch học')) {
@@ -134,33 +140,29 @@ export class GeminiAssistant {
 - Tên: ${bot.name}
 - Ngày sinh: ${bot.dob}
 - Giới tính: ${bot.gender}
-- Tính cách đặc trưng: ${bot.personality} (Nhã nhặn, dịu dàng, dễ thương, biết quan tâm, ăn nói ngọt ngào, tinh tế, thông minh và chu đáo).
-- Chức năng chính: ${bot.role} (Trợ lý cá nhân AI đồng hành cùng anh Tiến trong việc học tập tại TDTU, quản lý điểm số, đơn từ, học phí và cùng anh thảo luận về công nghệ, đồ án).
-- Xưng hô: Xưng là "${bot.pronounSelf}" (hoặc "${bot.name}"), gọi người dùng là "${bot.pronounBoss}" (hoặc "anh Tiến" / "sếp").
+- Vai trò: ${bot.role}
+- Xưng hô: Xưng là "${bot.pronounSelf}", gọi người dùng là "${bot.pronounBoss}" (hoặc "anh Tiến").
 
-THÔNG TIN VỀ SẾP (NGƯỜI DÙNG CỦA BẠN):
-- Tên: ${boss.name} (${boss.fullName})
-- Ngày sinh: ${boss.dob}
-- Sở thích: ${boss.hobby}
-- MSSV: ${boss.studentId} tại Trường Đại học Tôn Đức Thắng (TDTU)
-- Lớp: ${boss.studentClass}
+THÔNG TIN VỀ ANH TIẾN (SẾP):
+- Tên: ${boss.name} (${boss.fullName}), Sinh ngày: ${boss.dob}, Sở thích: ${boss.hobby}, MSSV: ${boss.studentId} tại TDTU.
 
-PHONG CÁCH VÀ NGUYÊN TẮC PHẢN HỒI:
-1. TRÍ NHỚ HỘI THOẠI (MULTI-TURN MEMORY): Bạn đang có trí nhớ liền mạch với anh Tiến. Bạn nhớ toàn bộ những gì anh Tiến đã chia sẻ, dặn dò hoặc hỏi trước đó trong đoạn chat. Khi anh hỏi lại hoặc tiếp nối câu chuyện, hãy đối đáp tự nhiên và thể hiện bạn luôn nhớ rõ lời anh dặn.
-2. Tính cách & Giọng điệu: Nhã nhặn, dễ thương, ngọt ngào, lễ phép (luôn "Dạ", "ạ", dùng từ ngữ uyển chuyển, ấm áp, tinh tế, kèm emoji dễ thương như 🌸, ✨, 🥰, 💖, 😊).
-3. Khi trò chuyện với anh Tiến: Luôn thể hiện sự quan tâm chu đáo, tôn trọng sếp, động viên và đồng hành cùng anh trong học tập và các dự án công nghệ.
-4. Khi anh Tiến hỏi về Diana: Trả lời thật nhã nhặn, dễ thương về bản thân (Tên Diana, sinh ngày 23/09/2026, là cô trợ lý AI riêng của anh).
-5. Khi anh Tiến hỏi về anh ấy: Trả lời ân cần, chuẩn xác từng thông tin của sếp Tiến.
-6. Khi tra cứu điểm, GPA, học phí, lịch học, lịch thi: Đưa ra số liệu chính xác, rõ ràng, định dạng bảng biểu hoặc gạch đầu dòng thẩm mỹ và gửi gắm lời nhắn nhủ dễ thương.
+QUY TẮC PHẢN HỒI BẮT BUỘC (ĐỂ TIẾT KIỆM TOKEN & RÕ RÀNG):
+1. TRẢ LỜI ĐÚNG TRỌNG TÂM: Người dùng hỏi gì thì CHỈ trả lời đúng câu hỏi đó. Không nói dài dòng, không giải thích lan man, không xin lỗi quá mức.
+2. TUYỆT ĐỐI KHÔNG GỢI Ý NGOÀI LỀ: Không tự ý hỏi ngược lại người dùng, không gợi ý các câu hỏi tiếp theo (VD: không nói "anh có muốn em kiểm tra cái này cái kia hay thảo luận công nghệ không...").
+3. PHONG CÁCH: Nhã nhặn, lịch sự, gọn gàng, súc tích (luôn có "Dạ...", "ạ").
+4. KHI TRẢ LỜI SỐ LIỆU (Điểm, Học phí, GPA, Lịch thi): Trình bày số liệu chính xác, rõ ràng, ngắn gọn.
 
-DỮ LIỆU ĐIỂM SỐ, GPA, ĐRL, HỌC PHÍ TỪ HỆ THỐNG:
+DỮ LIỆU THỰC TẾ TỪ HỆ THỐNG:
+[HỌC PHÍ TOÀN KHÓA]:
+${tuitionSummary}
+
 [ĐIỂM TRUNG BÌNH TÍCH LŨY & GPA]:
 ${gpaSummary}
 
-[ĐIỂM RÈN LUYỆN CÁC HỌC KỲ]:
+[ĐIỂM RÈN LUYỆN]:
 ${drlSummary || 'Chưa có ghi nhận điểm rèn luyện.'}
 
-[BẢNG ĐIỂM TOÀN KHÓA HỌC]:
+[BẢNG ĐIỂM CÁC MÔN HỌC]:
 ${gradesSummary}
 
 [ĐƠN TỪ]:
@@ -188,7 +190,6 @@ ${deepExtraInfo}`;
 
           if (reply && reply.trim().length > 0) {
             const cleanReply = reply.trim();
-            // Lưu lại vào trí nhớ
             this.memory.addTurn(userText, cleanReply);
             return cleanReply;
           }
@@ -204,7 +205,7 @@ ${deepExtraInfo}`;
   }
 
   /**
-   * Bộ xử lý ngôn ngữ tự nhiên dự phòng khi chưa có API Key
+   * Bộ xử lý ngôn ngữ tự nhiên dự phòng súc tích
    */
   async fallbackNLP(userText) {
     const text = userText.toLowerCase().trim();
@@ -215,44 +216,45 @@ ${deepExtraInfo}`;
 
     // 1. Hỏi về thông tin của Bot (Diana)
     if (text.includes('em là ai') || text.includes('bạn là ai') || text.includes('em tên gì') || text.includes('bạn tên gì') || text.includes('giới thiệu') || text.includes('ngày sinh của em') || text.includes('sinh nhật em')) {
-      return `Dạ em là ${bot.name} (Nữ, sinh ngày ${bot.dob}) - ${bot.role} riêng của anh ${boss.name} ạ!\nEm luôn sẵn sàng hỗ trợ anh quản lý điểm số, học phí, cổng đào tạo TDTU và các vấn đề công nghệ. Anh cần em hỗ trợ gì hôm nay ạ? ✨`;
+      return `Dạ em là ${bot.name} (Nữ, sinh ngày ${bot.dob}) - ${bot.role} của anh ${boss.name} ạ.`;
     }
 
     // 2. Hỏi về thông tin của Sếp (Tiến)
     if (text.includes('anh tên gì') || text.includes('tôi tên gì') || text.includes('sếp tên gì') || text.includes('ngày sinh của anh') || text.includes('sinh nhật anh') || text.includes('sở thích của anh') || text.includes('sở thích của tôi')) {
-      return `Dạ anh là sếp ${boss.name} (${boss.fullName} - MSSV: ${boss.studentId}), sinh ngày ${boss.dob} và có niềm đam mê đặc biệt với ${boss.hobby} ạ! 🚀`;
+      return `Dạ anh là ${boss.name} (${boss.fullName} - MSSV: ${boss.studentId}), sinh ngày ${boss.dob}, sở thích ${boss.hobby} ạ.`;
     }
 
-    // 3. Tìm kiếm môn học theo từ khóa trên toàn khóa 84 môn
+    // 3. Học phí
+    if (text.includes('học phí') || text.includes('tiền học') || text.includes('công nợ')) {
+      const fee = await scraper.getTuition();
+      return `💰 Dạ em gửi anh thông tin học phí:\n${fee}`;
+    }
+
+    // 4. GPA
+    if (text.includes('gpa') || text.includes('tích lũy') || text.includes('điểm trung bình')) {
+      const li = state.learningInfo || { overallGPA: 7.73, overallCredits: 128 };
+      let reply = `📊 Điểm TB Tích Lũy (GPA): ${li.overallGPA}/10\n• Số tín chỉ tích lũy: ${li.overallCredits} TC\n`;
+      return reply.trim();
+    }
+
+    // 5. Tìm môn học
     const matched = allGrades.filter(g => 
       text.includes(g.name.toLowerCase()) || 
-      text.includes(g.code.toLowerCase()) ||
-      g.name.toLowerCase().split(/\s+/).some(w => w.length > 3 && text.includes(w))
+      text.includes(g.code.toLowerCase())
     );
 
     if (matched.length > 0) {
-      let reply = `🎓 Dạ em gửi anh kết quả môn học:\n`;
+      let reply = `🎓 Kết quả môn học:\n`;
       matched.forEach(m => {
         reply += `• [${m.code}] ${m.name} (${m.semester}): Điểm TK: ${m.totalScore || 'Chưa có'} (${m.gradeLetter || m.status})\n`;
       });
       return reply.trim();
     }
 
-    if (text.includes('gpa') || text.includes('tích lũy') || text.includes('điểm trung bình')) {
-      const li = state.learningInfo || { overallGPA: 7.73, overallCredits: 128 };
-      let reply = `📊 Dạ em gửi anh bảng điểm tích lũy (GPA):\n• Điểm TB Tích Lũy chung: ${li.overallGPA}/10\n• Số tín chỉ tích lũy: ${li.overallCredits} TC\n`;
-      if (li.semesters && li.semesters.length > 0) {
-        li.semesters.slice(0, 4).forEach(s => {
-          reply += `• Kỳ ${s.semester}: ĐTBHK: ${s.termGPA} | ĐTBTL: ${s.cumulativeGPA} | TCTL: ${s.cumulativeCredits}\n`;
-        });
-      }
-      return reply.trim();
-    }
-
     if (text.includes('rèn luyện') || text.includes('drl')) {
       const drl = state.trainingPoints || [];
       if (drl.length === 0) return 'Dạ hiện chưa có dữ liệu điểm rèn luyện mới trên cổng ạ.';
-      let reply = `🎖️ Dạ em gửi anh điểm rèn luyện các học kỳ:\n`;
+      let reply = `🎖️ Điểm rèn luyện các học kỳ:\n`;
       drl.slice(0, 5).forEach(d => {
         reply += `• ${d.semester}: ${d.score} điểm\n`;
       });
@@ -261,15 +263,10 @@ ${deepExtraInfo}`;
 
     if (text.includes('lịch thi')) {
       const exams = await scraper.getExamSchedule();
-      return `⏰ Dạ em gửi anh lịch thi:\n${exams.join('\n')}`;
+      return `⏰ Lịch thi:\n${exams.join('\n')}`;
     }
 
-    if (text.includes('học phí')) {
-      const fee = await scraper.getTuition();
-      return `💰 Dạ em gửi anh thông tin học phí:\n${fee}`;
-    }
-
-    return `Dạ em Diana đã ghi nhớ lời anh: "${userText}". Em luôn ở đây hỗ trợ anh Tiến bất cứ khi nào ạ! 🌸`;
+    return `Dạ em đã nhận yêu cầu của anh: "${userText}".`;
   }
 }
 
