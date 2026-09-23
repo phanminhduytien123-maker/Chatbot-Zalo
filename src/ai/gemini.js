@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import config from '../config/config.js';
 import scraper from '../portal/scraper.js';
 import storage from '../services/storage.js';
+import memory from '../services/memory.js';
 
 // Danh sách các model AI để tự động luân chuyển
 const BACKUP_MODELS = [
@@ -18,6 +19,7 @@ export class GeminiAssistant {
     this.modelName = config.ai.model || 'gemini-3.6-flash';
     this.hasApiKey = config.ai.hasApiKey;
     this.genAI = this.hasApiKey ? new GoogleGenerativeAI(this.apiKey) : null;
+    this.memory = memory;
   }
 
   updateApiKey(key) {
@@ -75,7 +77,7 @@ export class GeminiAssistant {
   }
 
   /**
-   * Xử lý tin nhắn ngôn ngữ tự nhiên từ người dùng bằng Gemini AI với Persona Diana
+   * Xử lý tin nhắn ngôn ngữ tự nhiên từ người dùng với Trí Nhớ Hội Thoại (Multi-Turn Chat)
    */
   async processUserMessage(userText) {
     if (this.hasApiKey && this.genAI) {
@@ -144,11 +146,12 @@ THÔNG TIN VỀ SẾP (NGƯỜI DÙNG CỦA BẠN):
 - Lớp: ${boss.studentClass}
 
 PHONG CÁCH VÀ NGUYÊN TẮC PHẢN HỒI:
-1. Tính cách & Giọng điệu: Nhã nhặn, dễ thương, ngọt ngào, lễ phép (luôn "Dạ", "ạ", dùng từ ngữ uyển chuyển, ấm áp, tinh tế, kèm emoji dễ thương như 🌸, ✨, 🥰, 💖, 😊).
-2. Khi trò chuyện với anh Tiến: Luôn thể hiện sự quan tâm chu đáo, tôn trọng sếp, động viên và đồng hành cùng anh trong học tập và các dự án công nghệ.
-3. Khi anh Tiến hỏi về Diana: Trả lời thật nhã nhặn, dễ thương về bản thân (Tên Diana, sinh ngày 23/09/2026, là cô trợ lý AI riêng của anh).
-4. Khi anh Tiến hỏi về anh ấy: Trả lời ân cần, chuẩn xác từng thông tin của sếp Tiến.
-5. Khi tra cứu điểm, GPA, học phí, lịch học, lịch thi: Đưa ra số liệu chính xác, rõ ràng, định dạng bảng biểu hoặc gạch đầu dòng thẩm mỹ và gửi gắm lời nhắn nhủ dễ thương.
+1. TRÍ NHỚ HỘI THOẠI (MULTI-TURN MEMORY): Bạn đang có trí nhớ liền mạch với anh Tiến. Bạn nhớ toàn bộ những gì anh Tiến đã chia sẻ, dặn dò hoặc hỏi trước đó trong đoạn chat. Khi anh hỏi lại hoặc tiếp nối câu chuyện, hãy đối đáp tự nhiên và thể hiện bạn luôn nhớ rõ lời anh dặn.
+2. Tính cách & Giọng điệu: Nhã nhặn, dễ thương, ngọt ngào, lễ phép (luôn "Dạ", "ạ", dùng từ ngữ uyển chuyển, ấm áp, tinh tế, kèm emoji dễ thương như 🌸, ✨, 🥰, 💖, 😊).
+3. Khi trò chuyện với anh Tiến: Luôn thể hiện sự quan tâm chu đáo, tôn trọng sếp, động viên và đồng hành cùng anh trong học tập và các dự án công nghệ.
+4. Khi anh Tiến hỏi về Diana: Trả lời thật nhã nhặn, dễ thương về bản thân (Tên Diana, sinh ngày 23/09/2026, là cô trợ lý AI riêng của anh).
+5. Khi anh Tiến hỏi về anh ấy: Trả lời ân cần, chuẩn xác từng thông tin của sếp Tiến.
+6. Khi tra cứu điểm, GPA, học phí, lịch học, lịch thi: Đưa ra số liệu chính xác, rõ ràng, định dạng bảng biểu hoặc gạch đầu dòng thẩm mỹ và gửi gắm lời nhắn nhủ dễ thương.
 
 DỮ LIỆU ĐIỂM SỐ, GPA, ĐRL, HỌC PHÍ TỪ HỆ THỐNG:
 [ĐIỂM TRUNG BÌNH TÍCH LŨY & GPA]:
@@ -167,6 +170,8 @@ ${appsSummary}
 ${newsSummary}
 ${deepExtraInfo}`;
 
+      const history = this.memory.getGeminiHistory();
+
       for (const currentModel of BACKUP_MODELS) {
         try {
           const model = this.genAI.getGenerativeModel({
@@ -174,11 +179,18 @@ ${deepExtraInfo}`;
             systemInstruction: systemPrompt
           });
 
-          const result = await model.generateContent(userText);
+          const chat = model.startChat({
+            history: history
+          });
+
+          const result = await chat.sendMessage(userText);
           const reply = result.response.text();
 
           if (reply && reply.trim().length > 0) {
-            return reply.trim();
+            const cleanReply = reply.trim();
+            // Lưu lại vào trí nhớ
+            this.memory.addTurn(userText, cleanReply);
+            return cleanReply;
           }
         } catch (_) {
           continue;
@@ -186,7 +198,9 @@ ${deepExtraInfo}`;
       }
     }
 
-    return await this.fallbackNLP(userText);
+    const fallbackReply = await this.fallbackNLP(userText);
+    this.memory.addTurn(userText, fallbackReply);
+    return fallbackReply;
   }
 
   /**
@@ -255,7 +269,7 @@ ${deepExtraInfo}`;
       return `💰 Dạ em gửi anh thông tin học phí:\n${fee}`;
     }
 
-    return `Dạ em Diana đã nhận tin nhắn của anh: "${userText}". Anh cần em tra cứu gì thêm không ạ?`;
+    return `Dạ em Diana đã ghi nhớ lời anh: "${userText}". Em luôn ở đây hỗ trợ anh Tiến bất cứ khi nào ạ! 🌸`;
   }
 }
 

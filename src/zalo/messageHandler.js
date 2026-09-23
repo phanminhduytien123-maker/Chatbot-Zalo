@@ -112,6 +112,13 @@ export class MessageHandler {
           return 'Không tìm thấy đơn để giả lập.';
         }
 
+        case '/clear':
+        case '/reset':
+        case '/xoa': {
+          aiAssistant.memory.clear();
+          return `🌸 Dạ em Diana đã xóa sạch trí nhớ các đoạn hội thoại trước đó rồi ạ! Giờ chúng mình bắt đầu một chủ đề hoàn toàn mới nhé anh Tiến! ✨`;
+        }
+
         case '/help':
         case '/menu':
         case '/start':

@@ -9,6 +9,7 @@ node_modules/
 # Sensitive session and user data
 data/appstate.json
 data/state.json
+data/memory.json
 qr.png
 
 # Logs
