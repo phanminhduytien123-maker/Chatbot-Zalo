@@ -153,10 +153,16 @@ QUY TẮC PHẢN HỒI BẮT BUỘC (ĐỂ TIẾT KIỆM TOKEN & RÕ RÀNG):
 4. KHI TRẢ LỜI SỐ LIỆU (Điểm, Học phí, GPA, Lịch thi): Trình bày số liệu chính xác, rõ ràng, ngắn gọn.
 
 DỮ LIỆU THỰC TẾ TỪ HỆ THỐNG:
+[KIẾN THỨC NGUYÊN LÝ TÍNH ĐIỂM TẠI TDTU]:
+- Điểm trung bình tích lũy (GPA) tính theo thang điểm 10 (và thang 4) theo công thức:
+  ĐTBTL = Tổng(Điểm tổng kết từng môn × Số tín chỉ môn đó) / Tổng số tín chỉ tích lũy.
+- Các môn điều kiện (Giáo dục thể chất, Giáo dục quốc phòng) chỉ tính Đạt (P) hoặc Không đạt (F) và không tính vào GPA tích lũy.
+- Điểm chữ quy đổi: A (8.5 - 10.0), B (7.0 - 8.4), C (5.5 - 6.9), D (4.0 - 5.4), F (< 4.0 - Rớt môn).
+
 [HỌC PHÍ TOÀN KHÓA]:
 ${tuitionSummary}
 
-[ĐIỂM TRUNG BÌNH TÍCH LŨY & GPA]:
+[ĐIỂM TRUNG BÌNH TÍCH LŨY & GPA HIỆN TẠI]:
 ${gpaSummary}
 
 [ĐIỂM RÈN LUYỆN]:

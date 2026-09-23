@@ -23,10 +23,9 @@ export class ZaloLiveConnector {
     this.ownerThreadId = '4150026493728653560'; // UID Zalo của Phan Minh Duy Tiến (0847839234)
     this.ownerThreadType = ThreadType.User;
     
-    // Bộ nhớ lưu các tin nhắn do chính Bot gửi đi để tuyệt đối không tự trả lời lại mình
+    // Bộ nhớ lưu các tin nhắn do chính Bot gửi đi để chống lặp
     this.botSentContents = new Set();
     this.botSentMsgIds = new Set();
-    this.isProcessing = false;
   }
 
   /**
@@ -111,7 +110,7 @@ export class ZaloLiveConnector {
   }
 
   /**
-   * Lắng nghe tin nhắn đến và gửi phản hồi
+   * Lắng nghe tin nhắn đến và gửi phản hồi (Không bao giờ bị đơ hay bỏ sót tin nhắn)
    */
   setupListeners() {
     if (!this.api) return;
@@ -147,17 +146,14 @@ export class ZaloLiveConnector {
           return;
         }
 
-        // Kiểm tra xem tin nhắn có chứa dấu hiệu phản hồi của Bot không
-        const botPrefixes = ['🎓', '📑', '📢', '🚨', '🤖', '👋', '📊', '【Trợ lý AI】', '[Trợ lý AI]', '[AI Assistant]', 'Kính gửi Thầy/Cô', 'Bot đã kiểm tra hệ thống'];
+        // Kiểm tra xem tin nhắn có phải do Bot vừa gửi đi không
+        const botPrefixes = ['🎓', '📑', '📢', '🚨', '🤖', '👋', '📊', '【Trợ lý AI】', '[Trợ lý AI]', '[AI Assistant]'];
         for (const p of botPrefixes) {
-          if (content.startsWith(p) || content.includes(p)) {
+          if (content.startsWith(p)) {
             this.botSentContents.add(content);
             return;
           }
         }
-
-        // Bỏ qua nếu đang trong quá trình gửi phản hồi
-        if (this.isProcessing) return;
 
         console.log(chalk.blue(`\n📩 [Zalo Nhận Tin]: "${content}"`));
 
@@ -181,36 +177,33 @@ export class ZaloLiveConnector {
           finalQuery = content.replace(/^(bot|@bot)\s*/i, '');
         }
 
-        this.isProcessing = true;
+        // Xử lý tin nhắn qua MessageHandler / Gemini AI (bất đồng bộ độc lập)
+        MessageHandler.handleIncomingMessage(finalQuery).then(async (reply) => {
+          if (reply && reply.trim().length > 0) {
+            const cleanReply = reply.trim();
 
-        // Xử lý tin nhắn qua MessageHandler / Gemini AI (trả lời trực tiếp đúng người gửi)
-        const reply = await MessageHandler.handleIncomingMessage(finalQuery);
+            this.botSentContents.add(cleanReply);
+            if (this.botSentContents.size > 100) {
+              const first = this.botSentContents.values().next().value;
+              this.botSentContents.delete(first);
+            }
 
-        if (reply && reply.trim().length > 0) {
-          const cleanReply = reply.trim();
-
-          // Lưu nội dung phản hồi vào danh sách đã gửi để không bị lặp lại
-          this.botSentContents.add(cleanReply);
-
-          // Giới hạn bộ nhớ cache 100 tin
-          if (this.botSentContents.size > 100) {
-            const first = this.botSentContents.values().next().value;
-            this.botSentContents.delete(first);
+            try {
+              const sendResult = await this.api.sendMessage(cleanReply, threadId, threadType);
+              if (sendResult?.message?.msgId) {
+                this.botSentMsgIds.add(String(sendResult.message.msgId));
+              }
+              console.log(chalk.green(`📤 [Zalo Đã Trả Lời Xong]`));
+            } catch (sendErr) {
+              console.error(chalk.red('❌ Lỗi khi gửi phản hồi Zalo:'), sendErr.message);
+            }
           }
+        }).catch((procErr) => {
+          console.error(chalk.red('❌ Lỗi khi xử lý tin nhắn:'), procErr.message);
+        });
 
-          const sendResult = await this.api.sendMessage(cleanReply, threadId, threadType);
-          
-          if (sendResult?.message?.msgId) {
-            this.botSentMsgIds.add(String(sendResult.message.msgId));
-          }
-
-          console.log(chalk.green(`📤 [Zalo Đã Trả Lời Xong]`));
-        }
-
-        this.isProcessing = false;
       } catch (err) {
-        this.isProcessing = false;
-        console.error(chalk.red('❌ Lỗi khi xử lý tin nhắn Zalo:'), err.message);
+        console.error(chalk.red('❌ Lỗi ngoài sự kiện tin nhắn:'), err.message);
       }
     });
 
