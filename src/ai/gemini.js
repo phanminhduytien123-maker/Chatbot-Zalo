@@ -152,6 +152,11 @@ QUY TẮC PHẢN HỒI BẮT BUỘC (ĐỂ TIẾT KIỆM TOKEN & RÕ RÀNG):
 3. PHONG CÁCH: Nhã nhặn, lịch sự, gọn gàng, súc tích (luôn có "Dạ...", "ạ").
 4. KHI TRẢ LỜI SỐ LIỆU (Điểm, Học phí, GPA, Lịch thi): Trình bày số liệu chính xác, rõ ràng, ngắn gọn.
 
+[TÍNH NĂNG HẸN GIỜ & NHẮC NHỞ]:
+- Bạn (Diana) ĐÃ ĐƯỢC TÍCH HỢP TÍNH NĂNG HẸN GIỜ TỰ ĐỘNG THÔNG MINH.
+- Khi anh Tiến yêu cầu nhắc nhở (VD: "6h tối hôm nay em nhắc anh làm đồ án nhé" hoặc "mỗi ngày nhớ nhắc anh chấm công lúc 8h sáng và 5h30 tối"), hệ thống sẽ tự động cài đặt lịch nhắc nhở native trên Zalo và gửi tin nhắn cảnh báo trực tiếp đúng giờ (hỗ trợ cả 1 lần và lặp lại hàng ngày nhiều mốc giờ).
+- Nếu anh Tiến hỏi bạn có thể hẹn giờ/nhắc việc được không: Hãy trả lời là "Dạ hoàn toàn được ạ!" và hướng dẫn ngắn gọn các mẫu câu như trên.
+
 DỮ LIỆU THỰC TẾ TỪ HỆ THỐNG:
 [KIẾN THỨC NGUYÊN LÝ TÍNH ĐIỂM TẠI TDTU]:
 - Điểm trung bình tích lũy (GPA) tính theo thang điểm 10 (và thang 4) theo công thức:
@@ -220,30 +225,38 @@ ${deepExtraInfo}`;
     const bot = config.bot;
     const boss = config.boss;
 
-    // 1. Hỏi về thông tin của Bot (Diana)
+    // 1. Hỏi về tính năng hẹn giờ / nhắc nhở
+    if (text.includes('hẹn giờ') || text.includes('nhắc nhở') || text.includes('báo thức') || text.includes('nhắc việc') || text.includes('cài lịch')) {
+      return `Dạ hoàn toàn được ạ! Em Diana có thể cài lịch hẹn giờ và nhắc nhở tự động cho anh Tiến:\n` +
+        `• Nhắc 1 lần: VD "6h tối hôm nay em nhắc anh làm đồ án nhé", "15 phút nữa nhắc anh uống nước"\n` +
+        `• Nhắc hàng ngày: VD "mỗi ngày nhớ nhắc anh chấm công lúc 8h sáng và 5h30 tối"\n` +
+        `Em sẽ tự động tạo lịch trên Zalo và gửi tin nhắn trực tiếp nhắc anh đúng giờ ạ! 🌸`;
+    }
+
+    // 2. Hỏi về thông tin của Bot (Diana)
     if (text.includes('em là ai') || text.includes('bạn là ai') || text.includes('em tên gì') || text.includes('bạn tên gì') || text.includes('giới thiệu') || text.includes('ngày sinh của em') || text.includes('sinh nhật em')) {
       return `Dạ em là ${bot.name} (Nữ, sinh ngày ${bot.dob}) - ${bot.role} của anh ${boss.name} ạ.`;
     }
 
-    // 2. Hỏi về thông tin của Sếp (Tiến)
+    // 3. Hỏi về thông tin của Sếp (Tiến)
     if (text.includes('anh tên gì') || text.includes('tôi tên gì') || text.includes('sếp tên gì') || text.includes('ngày sinh của anh') || text.includes('sinh nhật anh') || text.includes('sở thích của anh') || text.includes('sở thích của tôi')) {
       return `Dạ anh là ${boss.name} (${boss.fullName} - MSSV: ${boss.studentId}), sinh ngày ${boss.dob}, sở thích ${boss.hobby} ạ.`;
     }
 
-    // 3. Học phí
+    // 4. Học phí
     if (text.includes('học phí') || text.includes('tiền học') || text.includes('công nợ')) {
       const fee = await scraper.getTuition();
       return `💰 Dạ em gửi anh thông tin học phí:\n${fee}`;
     }
 
-    // 4. GPA
+    // 5. GPA
     if (text.includes('gpa') || text.includes('tích lũy') || text.includes('điểm trung bình')) {
       const li = state.learningInfo || { overallGPA: 7.73, overallCredits: 128 };
       let reply = `📊 Điểm TB Tích Lũy (GPA): ${li.overallGPA}/10\n• Số tín chỉ tích lũy: ${li.overallCredits} TC\n`;
       return reply.trim();
     }
 
-    // 5. Tìm môn học
+    // 6. Tìm môn học
     const matched = allGrades.filter(g => 
       text.includes(g.name.toLowerCase()) || 
       text.includes(g.code.toLowerCase())

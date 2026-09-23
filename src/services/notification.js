@@ -193,12 +193,18 @@ export class NotificationFormatter {
       `3. 📑 /don - Theo dõi tiến độ duyệt đơn từ trực tuyến\n` +
       `4. 📢 /tintuc - Xem các thông báo mới nhất từ trường\n` +
       `5. 🏃 /hoatdong - Xem hoạt động ngoại khóa & điểm rèn luyện\n` +
-      `6. 🔄 /change /MSSV/MậtKhẩu - Đổi tài khoản để check sinh viên khác\n` +
-      `7. 🔑 /cookie <chuỗi_cookie> - Cập nhật Cookie mới\n` +
-      `8. 🧪 /simscore - Thử nghiệm mô phỏng có điểm môn mới lên\n` +
-      `9. 🧪 /simapp - Thử nghiệm mô phỏng đơn được duyệt\n` +
+      `6. ⏰ /reminders - Xem danh sách các lịch hẹn giờ đang bật\n` +
+      `7. 🗑️ /xoalich <Mã> - Hủy lịch hẹn giờ (hoặc /xoalich all)\n` +
+      `8. 🔄 /change /MSSV/MậtKhẩu - Đổi tài khoản để check sinh viên khác\n` +
+      `9. 🔑 /cookie <chuỗi_cookie> - Cập nhật Cookie mới\n` +
+      `10. 🧪 /simscore - Thử nghiệm mô phỏng có điểm môn mới\n` +
+      `11. 🧪 /simapp - Thử nghiệm mô phỏng đơn được duyệt\n` +
       `━━━━━━━━━━━━━━━━━━━━━\n` +
-      `💡 BẬT MÍ: Anh có thể nhắn tin bằng TIẾNG VIỆT TỰ NHIÊN bất cứ lúc nào! Em sẽ tự động hiểu và hỗ trợ anh ngay lập tức.`;
+      `⏰ HẸN GIỜ TỰ NHIÊN: Anh có thể nhắn bất kỳ câu nào như:\n` +
+      `👉 "6h tối hôm nay em nhắc anh làm đồ án nhé"\n` +
+      `👉 "mỗi ngày nhớ nhắc anh chấm công lúc 8h sáng và 5h30 tối"\n` +
+      `👉 "15 phút nữa nhắc anh uống nước"\n` +
+      `Em sẽ tự động tạo lịch Zalo và gửi tin nhắn trực tiếp nhắc anh đúng giờ ạ! 🌸`;
   }
 }
 

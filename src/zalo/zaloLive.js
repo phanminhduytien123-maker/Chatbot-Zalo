@@ -7,6 +7,7 @@ import { exec } from 'child_process';
 import config from '../config/config.js';
 import MessageHandler from './messageHandler.js';
 import monitor from '../services/monitor.js';
+import scheduler from '../services/scheduler.js';
 
 const APPSTATE_FILE = path.resolve(config.paths.dataDir, 'appstate.json');
 const QR_FILE = path.resolve(config.paths.rootDir, 'qr.png');
@@ -115,6 +116,9 @@ export class ZaloLiveConnector {
   setupListeners() {
     if (!this.api) return;
 
+    // Khởi tạo hệ thống Hẹn giờ & Nhắc nhở
+    scheduler.init(this);
+
     // Đăng ký gửi thông báo chủ động từ Monitor tới Zalo
     monitor.setSender(async (alertMessage) => {
       await this.broadcastAlert(alertMessage);
@@ -147,7 +151,7 @@ export class ZaloLiveConnector {
         }
 
         // Kiểm tra xem tin nhắn có phải do Bot vừa gửi đi không
-        const botPrefixes = ['🎓', '📑', '📢', '🚨', '🤖', '👋', '📊', '【Trợ lý AI】', '[Trợ lý AI]', '[AI Assistant]'];
+        const botPrefixes = ['🎓', '📑', '📢', '🚨', '🤖', '👋', '📊', '⏰', '🌸', '🗑️', '【Trợ lý AI】', '[Trợ lý AI]', '[AI Assistant]'];
         for (const p of botPrefixes) {
           if (content.startsWith(p)) {
             this.botSentContents.add(content);
@@ -173,12 +177,13 @@ export class ZaloLiveConnector {
         else if (lower === 'tintuc' || lower === '/tintuc' || lower === 'tin tuc') finalQuery = '/tintuc';
         else if (lower === 'hoatdong' || lower === '/hoatdong') finalQuery = '/hoatdong';
         else if (lower === 'menu' || lower === 'help' || lower === '/help') finalQuery = '/menu';
+        else if (lower === 'reminders' || lower === '/reminders' || lower === 'lich' || lower === '/lich' || lower === 'lich nhac' || lower === '/lichnhac') finalQuery = '/reminders';
         else if (lower.startsWith('bot ') || lower.startsWith('@bot ')) {
           finalQuery = content.replace(/^(bot|@bot)\s*/i, '');
         }
 
         // Xử lý tin nhắn qua MessageHandler / Gemini AI (bất đồng bộ độc lập)
-        MessageHandler.handleIncomingMessage(finalQuery).then(async (reply) => {
+        MessageHandler.handleIncomingMessage(finalQuery, threadId).then(async (reply) => {
           if (reply && reply.trim().length > 0) {
             const cleanReply = reply.trim();
 

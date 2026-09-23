@@ -2,15 +2,17 @@ import scraper from '../portal/scraper.js';
 import NotificationFormatter from '../services/notification.js';
 import monitor from '../services/monitor.js';
 import aiAssistant from '../ai/gemini.js';
+import scheduler from '../services/scheduler.js';
 import config from '../config/config.js';
 
 export class MessageHandler {
   /**
    * Xử lý tin nhắn đến (từ người dùng gửi cho Bot)
    * @param {string} rawText 
+   * @param {string} [senderThreadId]
    * @returns {Promise<string>} Tin nhắn phản hồi
    */
-  static async handleIncomingMessage(rawText) {
+  static async handleIncomingMessage(rawText, senderThreadId = null) {
     if (!rawText || typeof rawText !== 'string') return '';
     const text = rawText.trim();
 
@@ -18,7 +20,7 @@ export class MessageHandler {
     if (text.startsWith('/')) {
       const parts = text.split(' ');
       const command = parts[0].toLowerCase();
-      const args = parts.slice(1).join(' ');
+      const args = parts.slice(1).join(' ').trim();
 
       switch (command) {
         case '/check': {
@@ -49,6 +51,29 @@ export class MessageHandler {
         case '/hoatdong': {
           const acts = await scraper.getActivities();
           return NotificationFormatter.formatActivities(acts);
+        }
+
+        case '/reminders':
+        case '/lichnhac':
+        case '/lich': {
+          return scheduler.formatRemindersList();
+        }
+
+        case '/xoalich':
+        case '/delrem': {
+          if (!args) {
+            return `⚠️ Vui lòng cung cấp mã lịch cần xóa (VD: /xoalich rem_123) hoặc /xoalich all\n(Gõ /reminders để xem danh sách mã lịch)`;
+          }
+          if (args.toLowerCase() === 'all' || args.toLowerCase() === 'tatca') {
+            scheduler.clearAll();
+            return `🗑️ Dạ em Diana đã xóa toàn bộ các lịch hẹn giờ rồi ạ!`;
+          }
+          const success = scheduler.removeReminder(args);
+          if (success) {
+            return `✅ Dạ em đã hủy lịch hẹn giờ [${args}] thành công rồi ạ!`;
+          } else {
+            return `⚠️ Không tìm thấy mã lịch [${args}]. Anh gõ /reminders để xem danh sách lịch hiện có nhé!`;
+          }
         }
 
         case '/change': {
@@ -96,7 +121,6 @@ export class MessageHandler {
         case '/simscore': {
           const updatedSubject = monitor.simulateNewGrade();
           if (updatedSubject) {
-            // Kích hoạt chu kỳ quét ngay để phát hiện biến động
             setTimeout(() => monitor.runCheckCycle(), 500);
             return `🧪 [Test Giả Lập] Đã cập nhật điểm cho môn [${updatedSubject.code}]. Bot chuẩn bị nổ thông báo tự động!`;
           }
@@ -129,7 +153,21 @@ export class MessageHandler {
       }
     }
 
-    // 2. Nếu không phải lệnh / thì chuyển cho AI Agent xử lý ngôn ngữ tự nhiên
+    // 2. Nhận diện ý định ĐẶT LỊCH HẸN GIỜ (NLP Reminder Extraction)
+    const reminderParsed = scheduler.parseNaturalLanguage(text);
+    if (reminderParsed && reminderParsed.times && reminderParsed.times.length > 0) {
+      if (senderThreadId) {
+        reminderParsed.threadId = senderThreadId;
+      }
+      const created = await scheduler.addReminders(reminderParsed);
+      if (created && created.length > 0) {
+        const confirmReply = scheduler.formatCreatedResponse(created);
+        aiAssistant.memory.addTurn(text, confirmReply);
+        return confirmReply;
+      }
+    }
+
+    // 3. Nếu không phải lệnh / và không phải cài lịch thì chuyển cho AI Agent Gemini xử lý
     return await aiAssistant.processUserMessage(text);
   }
 }
