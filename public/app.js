@@ -1,6 +1,6 @@
 /**
- * DIANA AI VOICE ASSISTANT - CLIENT APPLICATION 2.0
- * Mobile-First Ultra Responsive Experience, AssistiveTouch Physics & Live Voice UI
+ * DIANA AI VOICE ASSISTANT - CLIENT APPLICATION 3.0
+ * Mobile-First Ultra Responsive Experience, Auto Voice Activity Detection (VAD) & Natural TTS
  */
 
 class DianaVoiceApp {
@@ -9,13 +9,15 @@ class DianaVoiceApp {
     this.isSpeaking = false;
     this.ttsEnabled = localStorage.getItem('diana_tts') !== 'false';
     this.dotEnabled = localStorage.getItem('diana_dot_visible') !== 'false';
+    this.autoVadEnabled = localStorage.getItem('diana_auto_vad') === 'true';
+    this.vadState = 'IDLE'; // 'IDLE' | 'WAITING_VOICE' | 'LISTENING' | 'THINKING' | 'SPEAKING'
     this.deferredPrompt = null;
     
     // Speech Recognition Engines
     this.recognition = null;
     this.hasWebSpeech = false;
     this.finalTranscript = '';
-    this.useFallbackRecorder = false;
+    this.lastInterim = '';
 
     // MediaRecorder & Web Audio Context
     this.mediaRecorder = null;
@@ -26,6 +28,13 @@ class DianaVoiceApp {
     this.animFrameId = null;
     this.silenceTimer = null;
     this.synth = window.speechSynthesis || null;
+    this.currentAudio = null;
+
+    // VAD Tracking Parameters
+    this.vadConsecutiveSpeechFrames = 0;
+    this.vadSilenceStartTime = null;
+    this.vadMinRecordDuration = 700; // tối thiểu 700ms để tránh tiếng click
+    this.vadRecordStartTime = 0;
 
     // Drag & Touch Physics for AssistiveTouch Dot
     this.isDragging = false;
@@ -65,6 +74,9 @@ class DianaVoiceApp {
     this.pcStatusText = document.getElementById('pcStatusText');
     this.headerAvatarBtn = document.getElementById('headerAvatarBtn');
     this.liveVoiceModeBtn = document.getElementById('liveVoiceModeBtn');
+    this.autoVadToggleBtn = document.getElementById('autoVadToggleBtn');
+    this.autoVadBadgeDot = document.getElementById('autoVadBadgeDot');
+    this.autoVadChip = document.getElementById('autoVadChip');
     this.ttsToggleBtn = document.getElementById('ttsToggleBtn');
     this.dotToggleBtn = document.getElementById('dotToggleBtn');
     this.pipToggleBtn = document.getElementById('pipToggleBtn');
@@ -109,8 +121,13 @@ class DianaVoiceApp {
     this.setupPWA();
     this.updateTTSButtonState();
     this.updateDotVisibilityState();
+    this.updateAutoVadButtonState();
     this.checkPCStatus();
     setInterval(() => this.checkPCStatus(), 8000);
+
+    if (this.autoVadEnabled) {
+      setTimeout(() => this.startAutoVadLoop(), 1200);
+    }
   }
 
   /**
@@ -118,10 +135,8 @@ class DianaVoiceApp {
    */
   initDynamicViewport() {
     const updateAppHeight = () => {
-      const vh = window.innerHeight * 0.01;
       document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
       if (window.visualViewport) {
-        // Hỗ trợ khi bàn phím ảo hiển thị
         const vvHeight = window.visualViewport.height;
         if (this.appContainer && window.innerWidth <= 640) {
           this.appContainer.style.height = `${vvHeight}px`;
@@ -191,17 +206,11 @@ class DianaVoiceApp {
           }
         };
 
-        this.recognition.onerror = (event) => {
-          console.warn('[Web Speech API Notice]:', event.error);
-        };
-
-        this.recognition.onend = () => {
-          // Xử lý bởi mediaRecorder.onstop
-        };
+        this.recognition.onerror = () => {};
+        this.recognition.onend = () => {};
 
         this.hasWebSpeech = true;
       } catch (err) {
-        console.warn('Lỗi cấu hình Web Speech API:', err);
         this.hasWebSpeech = false;
       }
     } else {
@@ -309,7 +318,285 @@ class DianaVoiceApp {
   }
 
   /**
-   * Bật/Tắt thu âm
+   * Bật/Tắt chế độ Tự động nhận diện giọng nói (Auto Voice Activity Detection - VAD)
+   */
+  toggleAutoVad() {
+    this.haptic(40);
+    this.autoVadEnabled = !this.autoVadEnabled;
+    localStorage.setItem('diana_auto_vad', this.autoVadEnabled);
+    this.updateAutoVadButtonState();
+
+    if (this.autoVadEnabled) {
+      this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang tự động chờ nghe giọng nói của anh...');
+      this.startAutoVadLoop();
+    } else {
+      this.stopAutoVadLoop();
+      this.showCapsule('idle', 'Chế độ Rảnh tay', 'Đã tắt tự động nghe. Chạm nút Mic khi cần nói nhé!');
+      this.scheduleCapsuleClose(3000);
+    }
+  }
+
+  updateAutoVadButtonState() {
+    if (this.autoVadToggleBtn) {
+      if (this.autoVadEnabled) {
+        this.autoVadToggleBtn.classList.add('auto-vad-active');
+        this.autoVadToggleBtn.title = 'Tự động nghe (Rảnh tay): ĐANG BẬT';
+      } else {
+        this.autoVadToggleBtn.classList.remove('auto-vad-active');
+        this.autoVadToggleBtn.title = 'Tự động nghe (Rảnh tay): ĐÃ TẮT';
+      }
+    }
+    if (this.autoVadBadgeDot) {
+      this.autoVadBadgeDot.style.display = this.autoVadEnabled ? 'block' : 'none';
+    }
+    if (this.autoVadChip) {
+      if (this.autoVadEnabled) {
+        this.autoVadChip.classList.add('chip-highlight');
+        this.autoVadChip.innerHTML = '<span class="chip-icon">⚡</span> Rảnh tay: ĐANG BẬT';
+      } else {
+        this.autoVadChip.classList.remove('chip-highlight');
+        this.autoVadChip.innerHTML = '<span class="chip-icon">✨</span> Tự động nghe (Rảnh tay)';
+      }
+    }
+  }
+
+  /**
+   * Khởi chạy vòng lặp lắng nghe liên tục và phát hiện giọng nói
+   */
+  async startAutoVadLoop() {
+    try {
+      if (!this.audioStream) {
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true }
+          });
+        } catch (_) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
+        this.audioStream = stream;
+      }
+
+      this.vadState = 'WAITING_VOICE';
+      this.setupContinuousVAD(this.audioStream);
+    } catch (err) {
+      console.warn('Lỗi bật Auto VAD:', err);
+      this.autoVadEnabled = false;
+      this.updateAutoVadButtonState();
+    }
+  }
+
+  stopAutoVadLoop() {
+    this.vadState = 'IDLE';
+    if (this.isRecording) {
+      this.stopRecording();
+    }
+    if (this.animFrameId) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+    }
+  }
+
+  /**
+   * Vòng lặp phân tích cường độ âm thanh thời gian thực (VAD Engine)
+   */
+  setupContinuousVAD(stream) {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
+      }
+
+      const source = this.audioContext.createMediaStreamSource(stream);
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 256;
+      this.analyser.smoothingTimeConstant = 0.4;
+      source.connect(this.analyser);
+
+      const bufferLength = this.analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const vadLoop = () => {
+        if (!this.autoVadEnabled && !this.isRecording) return;
+
+        this.analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / bufferLength;
+
+        // Cập nhật sóng âm visualizer
+        const heightMultiplier = Math.min(1.0, Math.max(0.2, average / 35));
+        const updateBars = (nodeList) => {
+          if (!nodeList || nodeList.length === 0) return;
+          nodeList.forEach((bar, idx) => {
+            const factor = (idx % 2 === 0 ? 0.8 : 1.25) * heightMultiplier;
+            bar.style.transform = `scaleY(${Math.max(0.3, Math.min(1.9, factor * 1.6))})`;
+          });
+        };
+
+        if (this.isRecording || this.vadState === 'LISTENING') {
+          updateBars(this.dotWaveBars);
+          updateBars(this.capsuleWaveBars);
+          updateBars(this.bottomRecWaves);
+          updateBars(this.liveOrbWaveBars);
+        }
+
+        // Không xử lý VAD khi Diana đang phát giọng nói trả lời (tránh tự nghe chính mình)
+        if (this.isSpeaking || this.vadState === 'THINKING' || this.vadState === 'SPEAKING') {
+          this.animFrameId = requestAnimationFrame(vadLoop);
+          return;
+        }
+
+        // 1. TRẠNG THÁI: ĐANG CHỜ PHÁT HIỆN GIỌNG NÓI
+        if (this.autoVadEnabled && (this.vadState === 'WAITING_VOICE' || this.vadState === 'IDLE') && !this.isRecording) {
+          if (average > 14) { // Ngưỡng giọng nói người dùng
+            this.vadConsecutiveSpeechFrames++;
+            if (this.vadConsecutiveSpeechFrames >= 2) { // Giữ mức âm thanh > 100ms
+              this.vadConsecutiveSpeechFrames = 0;
+              this.haptic(35);
+              this.startListeningFromVAD();
+            }
+          } else {
+            this.vadConsecutiveSpeechFrames = 0;
+          }
+        }
+
+        // 2. TRẠNG THÁI: ĐANG THU ÂM GIỌNG NÓI
+        else if (this.isRecording && this.vadState === 'LISTENING') {
+          if (average > 11) {
+            this.vadSilenceStartTime = null; // Vẫn đang nói
+          } else {
+            if (!this.vadSilenceStartTime) {
+              this.vadSilenceStartTime = Date.now();
+            } else if (Date.now() - this.vadSilenceStartTime > 1350) { // Im lặng 1.35s sau khi nói
+              const recordDuration = Date.now() - this.vadRecordStartTime;
+              if (recordDuration >= this.vadMinRecordDuration) {
+                this.vadSilenceStartTime = null;
+                this.stopListeningFromVADAndSend();
+              }
+            }
+          }
+        }
+
+        this.animFrameId = requestAnimationFrame(vadLoop);
+      };
+
+      this.animFrameId = requestAnimationFrame(vadLoop);
+    } catch (_) {}
+  }
+
+  /**
+   * Bắt đầu ghi âm tự động khi VAD phát hiện tiếng nói
+   */
+  startListeningFromVAD() {
+    this.vadState = 'LISTENING';
+    this.vadRecordStartTime = Date.now();
+    this.audioChunks = [];
+
+    let mimeType = '';
+    const preferredMimes = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/aac',
+      'audio/ogg',
+      'audio/wav'
+    ];
+    for (const m of preferredMimes) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) {
+        mimeType = m;
+        break;
+      }
+    }
+
+    try {
+      const options = mimeType ? { mimeType } : {};
+      this.mediaRecorder = new MediaRecorder(this.audioStream, options);
+      const actualMime = this.mediaRecorder.mimeType || mimeType || 'audio/webm';
+
+      this.mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          this.audioChunks.push(event.data);
+        }
+      };
+
+      this.mediaRecorder.onstop = async () => {
+        this.isRecording = false;
+        this.updateRecordingUI(false);
+        this.setDotState('thinking');
+        this.showCapsule('thinking', 'Diana đang xử lý...', '⚡ Đang lắng nghe & suy nghĩ...');
+        this.updateLiveOverlayState('thinking', 'Đang xử lý...', 'Diana đang suy nghĩ và thực thi...');
+
+        if (this.recognition) {
+          try { this.recognition.stop(); } catch (_) {}
+        }
+
+        const audioBlob = new Blob(this.audioChunks, { type: actualMime });
+        const webSpeechText = (this.finalTranscript || '').trim();
+
+        if (webSpeechText.length > 5) {
+          this.handleTextQuery(webSpeechText);
+        } else if (audioBlob.size > 50) {
+          await this.sendAudioToServer(audioBlob, actualMime);
+        } else if (webSpeechText.length > 0) {
+          this.handleTextQuery(webSpeechText);
+        } else {
+          this.setDotState('idle');
+          if (this.autoVadEnabled) {
+            this.vadState = 'WAITING_VOICE';
+            this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
+          } else {
+            this.scheduleCapsuleClose(2000);
+          }
+        }
+      };
+
+      this.mediaRecorder.start(100);
+      this.isRecording = true;
+      this.updateRecordingUI(true);
+      this.showCapsule('listening', 'Diana đang nghe...', '🎙️ Đang nghe anh nói...');
+      this.updateLiveOverlayState('listening', 'Đang nghe...', 'Em đang lắng nghe anh nói...');
+
+      if (this.hasWebSpeech && this.recognition) {
+        try {
+          this.finalTranscript = '';
+          this.lastInterim = '';
+          this.recognition.start();
+        } catch (_) {}
+      }
+    } catch (e) {
+      console.warn('Lỗi startListeningFromVAD:', e);
+    }
+  }
+
+  /**
+   * Tự động dừng thu âm và gửi yêu cầu đi
+   */
+  stopListeningFromVADAndSend() {
+    this.haptic(30);
+    this.vadState = 'THINKING';
+
+    if (this.hasWebSpeech && this.recognition) {
+      try { this.recognition.stop(); } catch (_) {}
+    }
+
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      try {
+        if (this.mediaRecorder.state === 'recording') {
+          this.mediaRecorder.requestData();
+        }
+        this.mediaRecorder.stop();
+      } catch (_) {}
+    }
+  }
+
+  /**
+   * Bật/Tắt thu âm thủ công bằng nút bấm
    */
   async toggleRecording() {
     this.haptic(40);
@@ -321,17 +608,21 @@ class DianaVoiceApp {
   }
 
   /**
-   * Bắt đầu nhận diện giọng nói
+   * Bắt đầu nhận diện giọng nói thủ công
    */
   async startRecording() {
     if (this.synth && this.synth.speaking) {
       this.synth.cancel();
     }
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio = null;
+    }
 
-    // Luôn ghi âm trực tiếp qua MediaRecorder + Gemini 3.5 Transcribe
+    this.vadState = 'LISTENING';
+    this.vadRecordStartTime = Date.now();
     await this.startMediaRecorder();
 
-    // Chạy song song WebSpeech (nếu có) để hiển thị phụ đề thời gian thực
     if (this.hasWebSpeech && this.recognition) {
       try {
         this.finalTranscript = '';
@@ -342,20 +633,22 @@ class DianaVoiceApp {
   }
 
   /**
-   * Ghi âm bằng MediaRecorder + Gemini STT (Tương thích 100% Xiaomi HyperOS, iPhone iOS & Android)
+   * Ghi âm bằng MediaRecorder + Gemini STT
    */
   async startMediaRecorder() {
     try {
       this.audioChunks = [];
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true }
-        });
-      } catch (_) {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!this.audioStream) {
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true }
+          });
+        } catch (_) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
+        this.audioStream = stream;
       }
-      this.audioStream = stream;
 
       let mimeType = '';
       const preferredMimes = [
@@ -405,28 +698,24 @@ class DianaVoiceApp {
           this.handleTextQuery(webSpeechText);
         } else {
           this.setDotState('idle');
-          this.capsuleTranscript.textContent = 'Chạm vào Mic để nói lại nhé...';
-          this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói...');
-          this.scheduleCapsuleClose(2000);
-        }
-
-        if (this.audioStream) {
-          this.audioStream.getTracks().forEach(track => track.stop());
-          this.audioStream = null;
-        }
-        if (this.animFrameId) {
-          cancelAnimationFrame(this.animFrameId);
-          this.animFrameId = null;
+          if (this.autoVadEnabled) {
+            this.vadState = 'WAITING_VOICE';
+            this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
+          } else {
+            this.capsuleTranscript.textContent = 'Chạm vào Mic để nói lại nhé...';
+            this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói...');
+            this.scheduleCapsuleClose(2000);
+          }
         }
       };
 
-      this.setupAudioAnalyser(this.audioStream);
+      this.setupContinuousVAD(this.audioStream);
 
       this.mediaRecorder.start(100);
       this.isRecording = true;
       this.updateRecordingUI(true);
       this.showCapsule('listening', 'Diana đang nghe...', '🎙️ Đang nghe anh nói... (Chạm lại khi nói xong)');
-      this.updateLiveOverlayState('listening', 'Đang nghe...', 'Em đang lắng nghe...');
+      this.updateLiveOverlayState('listening', 'Đang nghe...', 'Em đang lắng nghe anh nói...');
 
     } catch (err) {
       console.error('Lỗi truy cập Micro:', err);
@@ -435,7 +724,7 @@ class DianaVoiceApp {
       this.setDotState('idle');
 
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        this.showCapsule('idle', 'Quyền Micro', '⚠️ Hãy cho phép quyền truy cập Micro trên trình duyệt của điện thoại nhé!');
+        this.showCapsule('idle', 'Quyền Micro', '⚠️ Hãy cho phép quyền truy cập Micro trên trình duyệt nhé!');
         this.scheduleCapsuleClose(4000);
       } else {
         this.showCapsule('idle', 'Lỗi Micro', `Lỗi: ${err.message}`);
@@ -445,10 +734,12 @@ class DianaVoiceApp {
   }
 
   /**
-   * Dừng thu âm
+   * Dừng thu âm thủ công
    */
   stopRecording() {
     this.haptic(30);
+    this.vadState = 'THINKING';
+
     if (this.hasWebSpeech && this.recognition) {
       try { this.recognition.stop(); } catch (_) {}
     }
@@ -465,11 +756,6 @@ class DianaVoiceApp {
     if (this.silenceTimer) {
       clearTimeout(this.silenceTimer);
       this.silenceTimer = null;
-    }
-
-    if (this.animFrameId) {
-      cancelAnimationFrame(this.animFrameId);
-      this.animFrameId = null;
     }
   }
 
@@ -493,75 +779,6 @@ class DianaVoiceApp {
       const liveOrbEmoji = document.querySelector('.orb-emoji');
       if (liveOrbEmoji) liveOrbEmoji.style.display = 'block';
     }
-  }
-
-  /**
-   * Phân tích âm lượng Micro & Dynamic Voice Activity Detection
-   */
-  setupAudioAnalyser(stream) {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!this.audioContext || this.audioContext.state === 'closed') {
-        this.audioContext = new AudioCtx();
-      }
-      if (this.audioContext && this.audioContext.state === 'suspended') {
-        this.audioContext.resume().catch(() => {});
-      }
-      const source = this.audioContext.createMediaStreamSource(stream);
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 256;
-      this.analyser.smoothingTimeConstant = 0.6;
-      source.connect(this.analyser);
-
-      const bufferLength = this.analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      let speakingDetected = false;
-      let silenceStartTime = null;
-
-      const checkAudioLevel = () => {
-        if (!this.isRecording) return;
-
-        this.analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i];
-        }
-        const average = sum / bufferLength;
-
-        // Cập nhật sóng âm visualizer cho tất cả wave bars
-        const heightMultiplier = Math.min(1.0, Math.max(0.2, average / 40));
-
-        const updateBars = (nodeList) => {
-          if (!nodeList || nodeList.length === 0) return;
-          nodeList.forEach((bar, idx) => {
-            const factor = (idx % 2 === 0 ? 0.8 : 1.25) * heightMultiplier;
-            bar.style.transform = `scaleY(${Math.max(0.3, Math.min(1.9, factor * 1.6))})`;
-          });
-        };
-
-        updateBars(this.dotWaveBars);
-        updateBars(this.capsuleWaveBars);
-        updateBars(this.bottomRecWaves);
-        updateBars(this.liveOrbWaveBars);
-
-        if (average > 12) {
-          speakingDetected = true;
-          silenceStartTime = null;
-        } else if (speakingDetected) {
-          if (!silenceStartTime) {
-            silenceStartTime = Date.now();
-          } else if (Date.now() - silenceStartTime > 2400) {
-            this.stopRecording();
-            return;
-          }
-        }
-
-        this.animFrameId = requestAnimationFrame(checkAudioLevel);
-      };
-
-      this.animFrameId = requestAnimationFrame(checkAudioLevel);
-    } catch (_) {}
   }
 
   /**
@@ -605,6 +822,12 @@ class DianaVoiceApp {
           } else {
             this.setDotState('idle');
             this.scheduleCapsuleClose(5000);
+            if (this.autoVadEnabled) {
+              setTimeout(() => {
+                this.vadState = 'WAITING_VOICE';
+                this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
+              }, 1000);
+            }
           }
         } else {
           const errText = data.error || 'Không nhận diện được âm thanh. Anh vui lòng thử lại nhé!';
@@ -613,6 +836,13 @@ class DianaVoiceApp {
           this.addMessage('bot', `⚠️ ${errText}`);
           this.updateLiveOverlayState('idle', 'Lỗi', errText);
           this.scheduleCapsuleClose(4000);
+
+          if (this.autoVadEnabled) {
+            setTimeout(() => {
+              this.vadState = 'WAITING_VOICE';
+              this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
+            }, 3000);
+          }
         }
       };
     } catch (err) {
@@ -620,6 +850,12 @@ class DianaVoiceApp {
       this.setDotState('idle');
       this.showCapsule('idle', 'Lỗi kết nối', '⚠️ Không thể kết nối máy chủ.');
       this.scheduleCapsuleClose(3000);
+
+      if (this.autoVadEnabled) {
+        setTimeout(() => {
+          this.vadState = 'WAITING_VOICE';
+        }, 3000);
+      }
     }
   }
 
@@ -661,6 +897,12 @@ class DianaVoiceApp {
         } else {
           this.setDotState('idle');
           this.scheduleCapsuleClose(5000);
+          if (this.autoVadEnabled) {
+            setTimeout(() => {
+              this.vadState = 'WAITING_VOICE';
+              this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
+            }, 1000);
+          }
         }
       } else {
         const defaultReply = 'Dạ em đã thực thi xong yêu cầu của anh rồi ạ! ✨';
@@ -681,7 +923,12 @@ class DianaVoiceApp {
    * Phát âm văn bản tiếng Việt tự nhiên cho Diana (Cloud Natural Voice + Fallback SpeechSynthesis)
    */
   speak(text) {
-    if (!this.ttsEnabled) return;
+    if (!this.ttsEnabled) {
+      if (this.autoVadEnabled) {
+        this.vadState = 'WAITING_VOICE';
+      }
+      return;
+    }
 
     const cleanText = text
       .replace(/[*_#`~]/g, '')
@@ -692,10 +939,12 @@ class DianaVoiceApp {
     if (!cleanText) {
       this.setDotState('idle');
       this.scheduleCapsuleClose(4000);
+      if (this.autoVadEnabled) {
+        this.vadState = 'WAITING_VOICE';
+      }
       return;
     }
 
-    // Dừng âm thanh cũ nếu đang phát
     if (this.currentAudio) {
       this.currentAudio.pause();
       this.currentAudio.currentTime = 0;
@@ -705,13 +954,13 @@ class DianaVoiceApp {
       this.synth.cancel();
     }
 
-    try {
-      this.isSpeaking = true;
-      this.setDotState('speaking');
-      this.capsuleStatus.textContent = 'Diana đang nói...';
-      this.updateLiveOverlayState('speaking', 'Diana đang nói', text);
+    this.vadState = 'SPEAKING';
+    this.isSpeaking = true;
+    this.setDotState('speaking');
+    this.capsuleStatus.textContent = 'Diana đang nói...';
+    this.updateLiveOverlayState('speaking', 'Diana đang nói', text);
 
-      // Thử phát âm thanh chất lượng cao từ /api/tts
+    try {
       const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}`;
       const audio = new Audio(ttsUrl);
       this.currentAudio = audio;
@@ -725,8 +974,16 @@ class DianaVoiceApp {
       audio.onended = () => {
         this.isSpeaking = false;
         this.setDotState('idle');
-        this.scheduleCapsuleClose(4000);
         this.currentAudio = null;
+
+        if (this.autoVadEnabled) {
+          setTimeout(() => {
+            this.vadState = 'WAITING_VOICE';
+            this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
+          }, 500);
+        } else {
+          this.scheduleCapsuleClose(4000);
+        }
       };
 
       audio.onerror = () => {
@@ -736,8 +993,7 @@ class DianaVoiceApp {
 
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-          console.warn('Audio play bị chặn hoặc lỗi:', err);
+        playPromise.catch(() => {
           this.fallbackSpeechSynthesis(cleanText);
         });
       }
@@ -751,6 +1007,7 @@ class DianaVoiceApp {
       this.isSpeaking = false;
       this.setDotState('idle');
       this.scheduleCapsuleClose(3000);
+      if (this.autoVadEnabled) this.vadState = 'WAITING_VOICE';
       return;
     }
 
@@ -774,12 +1031,20 @@ class DianaVoiceApp {
       utterance.onend = () => {
         this.isSpeaking = false;
         this.setDotState('idle');
-        this.scheduleCapsuleClose(4000);
+        if (this.autoVadEnabled) {
+          setTimeout(() => {
+            this.vadState = 'WAITING_VOICE';
+            this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
+          }, 500);
+        } else {
+          this.scheduleCapsuleClose(4000);
+        }
       };
 
       utterance.onerror = () => {
         this.isSpeaking = false;
         this.setDotState('idle');
+        if (this.autoVadEnabled) this.vadState = 'WAITING_VOICE';
         this.scheduleCapsuleClose(3000);
       };
 
@@ -787,6 +1052,7 @@ class DianaVoiceApp {
     } catch (_) {
       this.isSpeaking = false;
       this.setDotState('idle');
+      if (this.autoVadEnabled) this.vadState = 'WAITING_VOICE';
       this.scheduleCapsuleClose(3000);
     }
   }
@@ -927,8 +1193,12 @@ class DianaVoiceApp {
     this.ttsEnabled = !this.ttsEnabled;
     localStorage.setItem('diana_tts', this.ttsEnabled);
     this.updateTTSButtonState();
-    if (!this.ttsEnabled && this.synth) {
-      this.synth.cancel();
+    if (!this.ttsEnabled) {
+      if (this.synth) this.synth.cancel();
+      if (this.currentAudio) {
+        this.currentAudio.pause();
+        this.currentAudio = null;
+      }
     }
   }
 
@@ -974,7 +1244,11 @@ class DianaVoiceApp {
     this.haptic(40);
     if (this.liveVoiceOverlay) {
       this.liveVoiceOverlay.style.display = 'flex';
-      this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói chuyện cùng Diana nhé!');
+      if (this.autoVadEnabled) {
+        this.updateLiveOverlayState('listening', 'Rảnh tay đang bật', 'Hãy nói câu hỏi của anh nhé...');
+      } else {
+        this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói chuyện cùng Diana nhé!');
+      }
     }
   }
 
@@ -1016,6 +1290,13 @@ class DianaVoiceApp {
         }
       });
     });
+
+    if (this.autoVadChip) {
+      this.autoVadChip.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.toggleAutoVad();
+      });
+    }
   }
 
   setupPWA() {
@@ -1068,7 +1349,7 @@ class DianaVoiceApp {
 
       this.dynamicCapsule.addEventListener('touchend', (e) => {
         const deltaY = e.changedTouches[0].clientY - this.capsuleTouchStartY;
-        if (deltaY < -30) { // Vuốt lên
+        if (deltaY < -30) {
           this.hideCapsule();
         }
       }, { passive: true });
@@ -1109,6 +1390,11 @@ class DianaVoiceApp {
           }
         }
       });
+    }
+
+    // Auto VAD Toggle Button
+    if (this.autoVadToggleBtn) {
+      this.autoVadToggleBtn.addEventListener('click', () => this.toggleAutoVad());
     }
 
     // Live Voice Mode triggers

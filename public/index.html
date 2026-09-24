@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="/style.css?v=3.5">
+  <link rel="stylesheet" href="/style.css?v=4.0">
 </head>
 <body>
   <!-- Ambient background lighting effects -->
@@ -50,13 +50,22 @@
         </div>
       </div>
       
-      <div class="header-actions">
-        <!-- Live Voice Mode Button -->
-        <button class="icon-btn pulse-action" id="liveVoiceModeBtn" title="Chế độ giọng nói toàn màn hình (Siri / Live Voice)" aria-label="Chế độ giọng nói">
+        <!-- Auto VAD / Hands-free Continuous Voice Detection Toggle -->
+        <button class="icon-btn pulse-action" id="autoVadToggleBtn" title="Bật/Tắt Tự động phát hiện giọng nói (Chế độ thoại Rảnh tay)" aria-label="Tự động phát hiện giọng nói">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
             <line x1="12" y1="19" x2="12" y2="22"></line>
+            <path d="M2 12h2M20 12h2" stroke-linecap="round"></path>
+          </svg>
+          <span class="btn-badge-dot" id="autoVadBadgeDot" style="display: none;"></span>
+        </button>
+
+        <!-- Live Voice Mode Button -->
+        <button class="icon-btn" id="liveVoiceModeBtn" title="Chế độ giọng nói toàn màn hình (Siri / Live Voice)" aria-label="Chế độ giọng nói">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="4" fill="currentColor"></circle>
           </svg>
         </button>
 
@@ -112,6 +121,9 @@
 
           <!-- Quick Actions Scroll Carousel -->
           <div class="quick-chips-carousel" id="quickChipsCarousel">
+            <button class="chip chip-accent" id="autoVadChip">
+              <span class="chip-icon">✨</span> Tự động nghe (Rảnh tay)
+            </button>
             <button class="chip chip-highlight" data-query="chụp ảnh màn hình máy tính">
               <span class="chip-icon">📸</span> Chụp màn hình PC
             </button>
@@ -324,6 +336,6 @@
     <img class="lightbox-img" id="lightboxImg" src="" alt="Full Screen Screenshot" />
   </div>
 
-  <script src="/app.js?v=3.5"></script>
+  <script src="/app.js?v=4.0"></script>
 </body>
 </html>
