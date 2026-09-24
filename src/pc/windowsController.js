@@ -304,16 +304,11 @@ Write-Output "OK"
 
       exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
         if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: `🔇 Đã chuyển đổi trạng thái Bật/Tắt Mute âm thanh trên máy tính!` });
+        resolve({ success: true, message: '🔇/🔊 Đã chuyển đổi trạng thái tắt/bật tiếng (Mute toggle)!' });
       });
     });
   }
 
-  /**
-   * Tìm kiếm shortcut hoặc file thực thi của ứng dụng trong Start Menu & Desktop & AppData
-   * @param {string} targetName 
-   * @returns {string|null}
-   */
   /**
    * Chạy đoạn mã PowerShell an toàn 100% không bị CMD nuốt dấu nháy kép bằng Base64 EncodedCommand
    * @param {string} script 
@@ -329,58 +324,142 @@ Write-Output "OK"
   }
 
   /**
-   * Tìm kiếm shortcut hoặc file thực thi của ứng dụng trong Start Menu & Desktop & AppData
-   * @param {string} targetName 
-   * @returns {string|null}
+   * Loại bỏ dấu tiếng Việt để so khớp ứng dụng thông minh
+   * @param {string} str 
+   * @returns {string}
    */
-  static findInstalledApp(targetName) {
-    if (!targetName) return null;
-    const cleanTarget = targetName.toLowerCase().replace(/[^a-z0-9\s]/gi, '').trim();
-    if (!cleanTarget) return null;
+  static removeVietnameseTones(str) {
+    if (!str) return '';
+    str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, 'a');
+    str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, 'e');
+    str = str.replace(/ì|í|ị|ỉ|ĩ/g, 'i');
+    str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, 'o');
+    str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, 'u');
+    str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, 'y');
+    str = str.replace(/đ/g, 'd');
+    str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, 'A');
+    str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, 'E');
+    str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, 'I');
+    str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, 'O');
+    str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, 'U');
+    str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, 'Y');
+    str = str.replace(/Đ/g, 'D');
+    return str;
+  }
 
+  /**
+   * Quét toàn bộ phím tắt ứng dụng (.lnk, .url) trong Start Menu và Desktop
+   * @returns {Array<{ filePath: string, displayName: string, normName: string }>}
+   */
+  static getAllInstalledShortcuts() {
     const searchDirs = [
       path.join(process.env.APPDATA || '', 'Microsoft/Windows/Start Menu/Programs'),
       path.join(process.env.ProgramData || '', 'Microsoft/Windows/Start Menu/Programs'),
       path.join(process.env.USERPROFILE || '', 'Desktop'),
       'C:/Users/Public/Desktop',
       path.join(process.env.LOCALAPPDATA || '', 'Programs'),
-      'C:/Program Files',
-      'C:/Program Files (x86)',
-      'D:/Riot Games',
       'C:/Riot Games',
-      'D:/Garena',
-      'C:/Garena'
+      'D:/Riot Games'
     ];
 
-    const searchInDir = (dir, depth = 0) => {
-      if (depth > 3 || !fs.existsSync(dir)) return null;
+    const shortcuts = [];
+    const ignoredKeywords = ['uninstall', 'go cai dat', 'help', 'readme', 'huong dan', 'manual', 'license', 'documentation'];
+
+    const scanDir = (dir, depth = 0) => {
+      if (depth > 4 || !fs.existsSync(dir)) return;
       try {
-        const items = fs.readdirSync(dir, { withFileTypes: true });
-        // 1. Ưu tiên khớp chính xác tên file .lnk hoặc .exe trước
-        for (const item of items) {
-          if (!item.isDirectory()) {
-            const name = item.name.toLowerCase();
-            const baseName = name.replace(/\.(lnk|exe|url)$/i, '').replace(/[^a-z0-9\s]/gi, '').trim();
-            if ((name.endsWith('.lnk') || name.endsWith('.exe')) && (baseName === cleanTarget || baseName.includes(cleanTarget) || cleanTarget.includes(baseName))) {
-              return path.join(dir, item.name);
+        for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, item.name);
+          if (item.isDirectory()) {
+            if (!item.name.startsWith('$') && !item.name.startsWith('.')) {
+              scanDir(full, depth + 1);
             }
-          }
-        }
-        // 2. Duyệt các thư mục con
-        for (const item of items) {
-          if (item.isDirectory() && !item.name.startsWith('$') && !item.name.startsWith('.')) {
-            const found = searchInDir(path.join(dir, item.name), depth + 1);
-            if (found) return found;
+          } else if (item.name.endsWith('.lnk') || item.name.endsWith('.url') || (dir.includes('Riot') && item.name.endsWith('.exe'))) {
+            const rawName = item.name.replace(/\.(lnk|url|exe)$/i, '');
+            const normName = WindowsController.removeVietnameseTones(rawName).toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+            
+            if (!normName || normName.length < 2) continue;
+            if (ignoredKeywords.some(k => normName.includes(k))) continue;
+
+            shortcuts.push({
+              filePath: full,
+              displayName: rawName,
+              normName
+            });
           }
         }
       } catch (_) {}
-      return null;
     };
 
-    for (const dir of searchDirs) {
-      const found = searchInDir(dir);
-      if (found) return found;
+    for (const d of searchDirs) {
+      scanDir(d);
     }
+    return shortcuts;
+  }
+
+  /**
+   * Tìm kiếm shortcut hoặc file thực thi của ứng dụng trong Start Menu & Desktop
+   * @param {string} targetName 
+   * @returns {{ filePath: string, displayName: string }|null}
+   */
+  static findInstalledApp(targetName) {
+    if (!targetName) return null;
+    const normQuery = WindowsController.removeVietnameseTones(targetName).toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!normQuery || normQuery.length < 2) return null;
+
+    const allShortcuts = WindowsController.getAllInstalledShortcuts();
+
+    // Map các tên gọi thông thường sang tên chính xác
+    const aliasMap = {
+      lol: 'lien minh huyen thoai',
+      'lien minh': 'lien minh huyen thoai',
+      lmht: 'lien minh huyen thoai',
+      tft: 'dau truong chan ly',
+      dtcl: 'dau truong chan ly',
+      word: 'word 2016',
+      winword: 'word 2016',
+      excel: 'excel 2016',
+      powerpoint: 'powerpoint 2016',
+      ppt: 'powerpoint 2016',
+      chrome: 'google chrome',
+      edge: 'microsoft edge',
+      vscode: 'code',
+      cad: 'autocad'
+    };
+
+    const finalQuery = aliasMap[normQuery] || normQuery;
+
+    // 1. Khớp chính xác hoàn toàn
+    for (const s of allShortcuts) {
+      if (s.normName === finalQuery) return s;
+    }
+
+    // 2. Khớp theo từng từ riêng biệt (Ví dụ: "Word 2016" có từ "word")
+    for (const s of allShortcuts) {
+      const words = s.normName.split(/\s+/);
+      if (words.includes(finalQuery)) return s;
+    }
+
+    // 3. Khớp bắt đầu bằng
+    for (const s of allShortcuts) {
+      if (s.normName.startsWith(finalQuery)) return s;
+    }
+
+    // 4. Khớp chứa chuỗi con (nếu query dài >= 3 ký tự)
+    if (finalQuery.length >= 3) {
+      for (const s of allShortcuts) {
+        if (s.normName.includes(finalQuery)) return s;
+      }
+    }
+
+    // 5. Khớp tất cả các từ trong query
+    const queryWords = finalQuery.split(/\s+/).filter(w => w.length >= 2);
+    if (queryWords.length > 1) {
+      for (const s of allShortcuts) {
+        if (queryWords.every(w => s.normName.includes(w))) return s;
+      }
+    }
+
     return null;
   }
 
@@ -425,7 +504,6 @@ Write-Output "OK"
       tdtu: 'https://tdtu.edu.vn',
       gmail: 'https://mail.google.com',
       mail: 'https://mail.google.com',
-      zalo: 'https://chat.zalo.me',
       zaloweb: 'https://chat.zalo.me',
       messenger: 'https://www.messenger.com',
       mess: 'https://www.messenger.com',
@@ -462,7 +540,7 @@ Write-Output "OK"
       lower.endsWith('.edu.vn') || 
       lower.endsWith('.org') || 
       lower.endsWith('.net') || 
-      lower.endsWith('.io') ||
+      lower.endsWith('.io') || 
       lower.endsWith('.ai')
     ) {
       urlToOpen = (lower.startsWith('http://') || lower.startsWith('https://')) ? clean : `https://${clean}`;
@@ -471,24 +549,13 @@ Write-Output "OK"
     }
 
     if (urlToOpen) {
+      // Mở URL bằng Explorer & WScript.Shell để chắc chắn hiện cửa sổ trình duyệt trên màn hình
       const ps = `
-        $url = '${urlToOpen.replace(/'/g, "''")}'
-        try {
-          $psi = New-Object System.Diagnostics.ProcessStartInfo
-          $psi.FileName = $url
-          $psi.UseShellExecute = $true
-          $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
-          [System.Diagnostics.Process]::Start($psi) | Out-Null
-        } catch {
-          try {
-            $shell = New-Object -ComObject Shell.Application
-            $shell.Open($url)
-          } catch {
-            Start-Process $url -WindowStyle Normal
-          }
-        }
+        Start-Process "explorer.exe" -ArgumentList "${urlToOpen}"
+        $wsh = New-Object -ComObject WScript.Shell
+        $wsh.Run('${urlToOpen.replace(/'/g, "''")}', 1, $false)
+        Write-Output "OK"
       `;
-      exec(`rundll32.exe url.dll,FileProtocolHandler "${urlToOpen}"`);
       await WindowsController.runPowerShell(ps);
       return { success: true, message: `🌐 Đã mở trang web "${urlToOpen}" trên trình duyệt máy tính của anh!` };
     }
@@ -496,140 +563,87 @@ Write-Output "OK"
     // 2. Nếu là đường dẫn file / folder cụ thể có tồn tại
     if (fs.existsSync(clean)) {
       const ps = `
-        $target = '${clean.replace(/'/g, "''")}'
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $target
-        $psi.UseShellExecute = $true
-        $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
-        [System.Diagnostics.Process]::Start($psi) | Out-Null
+        $wsh = New-Object -ComObject WScript.Shell
+        $wsh.Run('"${clean.replace(/"/g, '`"')}"', 1, $false)
+        Write-Output "OK"
       `;
       await WindowsController.runPowerShell(ps);
       return { success: true, message: `📁 Đã mở "${path.basename(clean)}" trên máy tính!` };
     }
 
-    // 3. Tra cứu nhanh các ứng dụng văn phòng Microsoft Office
-    const officeRoots = [
-      'C:\\Program Files\\Microsoft Office\\root\\Office16',
-      'C:\\Program Files\\Microsoft Office\\Office16',
-      'C:\\Program Files (x86)\\Microsoft Office\\root\\Office16',
-      'C:\\Program Files (x86)\\Microsoft Office\\Office16',
-      'C:\\Program Files\\Microsoft Office\\Office15',
-      'C:\\Program Files (x86)\\Microsoft Office\\Office15'
-    ];
-
-    const launchExe = async (exePath, displayName) => {
-      const ps = `
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = '${exePath.replace(/'/g, "''")}'
-        $psi.UseShellExecute = $true
-        $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
-        [System.Diagnostics.Process]::Start($psi) | Out-Null
-      `;
-      await WindowsController.runPowerShell(ps);
-      return { success: true, message: `🚀 Đã mở ứng dụng "${displayName}" trên máy tính của anh!` };
-    };
-
-    if (lower === 'word' || lower === 'winword' || lower.includes('word')) {
-      for (const r of officeRoots) {
-        const p = path.join(r, 'WINWORD.EXE');
-        if (fs.existsSync(p)) return await launchExe(p, 'Microsoft Word');
-      }
-    }
-
-    if (lower === 'excel' || lower.includes('excel')) {
-      for (const r of officeRoots) {
-        const p = path.join(r, 'EXCEL.EXE');
-        if (fs.existsSync(p)) return await launchExe(p, 'Microsoft Excel');
-      }
-    }
-
-    if (lower === 'powerpoint' || lower === 'ppt' || lower.includes('powerpoint')) {
-      for (const r of officeRoots) {
-        const p = path.join(r, 'POWERPNT.EXE');
-        if (fs.existsSync(p)) return await launchExe(p, 'Microsoft PowerPoint');
-      }
-    }
-
-    // 4. Tra cứu nhanh các alias ứng dụng hệ thống & tiện ích
-    const aliasMap = {
-      calc: 'calc',
-      calculator: 'calc',
-      maytinh: 'calc',
-      notepad: 'notepad',
-      ghichu: 'notepad',
-      paint: 'mspaint',
-      mspaint: 'mspaint',
-      cmd: 'cmd',
-      terminal: 'wt',
-      wt: 'wt',
-      powershell: 'powershell',
-      ps: 'powershell',
-      explorer: 'explorer',
-      control: 'control',
-      taskmgr: 'taskmgr',
-      taskmanager: 'taskmgr',
+    // 3. Các alias ứng dụng hệ thống & lệnh dòng lệnh (calc, notepad, paint, cmd, wt, powershell...)
+    const systemAliasMap = {
+      calc: 'calc.exe',
+      calculator: 'calc.exe',
+      maytinh: 'calc.exe',
+      'may tinh': 'calc.exe',
+      notepad: 'notepad.exe',
+      ghichu: 'notepad.exe',
+      'ghi chu': 'notepad.exe',
+      paint: 'mspaint.exe',
+      mspaint: 'mspaint.exe',
+      cmd: 'cmd.exe',
+      terminal: 'wt.exe',
+      wt: 'wt.exe',
+      powershell: 'powershell.exe',
+      ps: 'powershell.exe',
+      explorer: 'explorer.exe',
+      control: 'control.exe',
+      taskmgr: 'taskmgr.exe',
+      taskmanager: 'taskmgr.exe',
       settings: 'ms-settings:',
       caidat: 'ms-settings:',
-      chrome: 'chrome',
-      edge: 'msedge',
-      msedge: 'msedge',
-      coccoc: 'browser',
-      brave: 'brave',
-      firefox: 'firefox',
-      vscode: 'code',
-      code: 'code',
-      antigravity: 'antigravity',
-      zalo: 'zalo'
+      snippingtool: 'snippingtool.exe',
+      snip: 'snippingtool.exe'
     };
 
-    if (aliasMap[lower]) {
-      const cmd = aliasMap[lower];
+    const normLower = WindowsController.removeVietnameseTones(lower).replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+    const sysCmd = systemAliasMap[lower] || systemAliasMap[normLower];
+    if (sysCmd) {
       const ps = `
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = '${cmd}'
-        $psi.UseShellExecute = $true
-        $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
-        try {
-          [System.Diagnostics.Process]::Start($psi) | Out-Null
-          Write-Output "OK"
-        } catch {
-          Write-Output "ERR"
-        }
+        $wsh = New-Object -ComObject WScript.Shell
+        $wsh.Run('${sysCmd}', 1, $false)
+        Write-Output "OK"
       `;
       const res = await WindowsController.runPowerShell(ps);
-      if (res.stdout === 'OK') {
+      if (res.stdout.includes('OK')) {
         return { success: true, message: `🚀 Đã mở ứng dụng "${clean}" trên máy tính của anh!` };
       }
     }
 
-    // 5. Tìm kiếm thông minh trong Start Menu & Desktop & Program Files (.lnk / .exe)
-    const shortcut = WindowsController.findInstalledApp(lower);
-    if (shortcut) {
-      const appDisplayName = path.basename(shortcut, path.extname(shortcut));
-      return await launchExe(shortcut, appDisplayName);
+    // 4. Tìm shortcut trong Start Menu / Desktop
+    const appFound = WindowsController.findInstalledApp(lower);
+    if (appFound && appFound.filePath) {
+      const ps = `
+        $wsh = New-Object -ComObject WScript.Shell
+        $wsh.Run('"${appFound.filePath.replace(/"/g, '`"')}"', 1, $false)
+        Write-Output "OK"
+      `;
+      await WindowsController.runPowerShell(ps);
+      return {
+        success: true,
+        message: `🚀 Đã tìm thấy và mở ứng dụng "${appFound.displayName}" trên máy tính của anh thành công! ✨`
+      };
     }
 
-    // 6. Thử khởi chạy trực tiếp bằng PowerShell Start-Process
+    // 5. Thử khởi chạy trực tiếp bằng WScript.Shell
     const directPs = `
       try {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = '${clean.replace(/'/g, "''")}'
-        $psi.UseShellExecute = $true
-        $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
-        [System.Diagnostics.Process]::Start($psi) | Out-Null
+        $wsh = New-Object -ComObject WScript.Shell
+        $wsh.Run('${clean.replace(/'/g, "''")}', 1, $false)
         Write-Output "OK"
       } catch {
         Write-Output "ERR:$($_.Exception.Message)"
       }
     `;
     const directRes = await WindowsController.runPowerShell(directPs);
-    if (directRes.stdout === 'OK') {
+    if (directRes.stdout.includes('OK')) {
       return { success: true, message: `🚀 Đã khởi chạy "${clean}" trên máy tính của anh!` };
     }
 
     return {
       success: false,
-      error: `⚠️ Không tìm thấy ứng dụng "${clean}" trong danh sách cài đặt trên máy tính của anh.\n💡 Gợi ý: Anh hãy thử gõ tên viết tắt (VD: chrome, vscode, antigravity, word, excel, notepad, zalo) hoặc cung cấp đường dẫn file .exe nhé! 🌸`
+      error: `⚠️ Không tìm thấy ứng dụng "${clean}" trong danh sách cài đặt trên máy tính của anh.\n💡 Gợi ý: Anh hãy thử gõ tên viết tắt (VD: chrome, vscode, antigravity, word, excel, notepad, zalo, lol) hoặc cung cấp đường dẫn file .exe nhé! 🌸`
     };
   }
 
