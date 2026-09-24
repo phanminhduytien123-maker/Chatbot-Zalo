@@ -449,12 +449,17 @@ class DianaVoiceApp {
    */
   stopRecording() {
     this.haptic(30);
-    if (this.hasWebSpeech && this.recognition && this.isRecording) {
+    if (this.hasWebSpeech && this.recognition) {
       try { this.recognition.stop(); } catch (_) {}
     }
 
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      try { this.mediaRecorder.stop(); } catch (_) {}
+      try {
+        if (this.mediaRecorder.state === 'recording') {
+          this.mediaRecorder.requestData();
+        }
+        this.mediaRecorder.stop();
+      } catch (_) {}
     }
 
     if (this.silenceTimer) {
@@ -498,6 +503,9 @@ class DianaVoiceApp {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!this.audioContext || this.audioContext.state === 'closed') {
         this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
       }
       const source = this.audioContext.createMediaStreamSource(stream);
       this.analyser = this.audioContext.createAnalyser();

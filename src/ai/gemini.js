@@ -363,32 +363,24 @@ ${deepExtraInfo}`;
 
     const cleanMime = mimeType.split(';')[0];
     const modelsToTry = [
-      'gemini-3.5-transcribe',
       'gemini-3.6-flash',
       'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
       'gemini-flash-latest'
     ];
 
-    const sttPrompt = `Nhiệm vụ: Nghe kỹ đoạn âm thanh và ghi lại chính xác 100% từng từ tiếng Việt mà người dùng đã phát âm.
-
-Ngữ cảnh từ khóa nhận diện của trợ lý Diana:
-- Điều khiển máy tính: khóa màn hình, mở khóa máy tính, chụp màn hình máy tính, tắt máy tính, cho máy ngủ, bật màn hình, tắt màn hình, chỉnh âm lượng loa, kiểm tra pin laptop, mở youtube, mở facebook, mở chrome, mở vscode, mở spotify, mở antigravity.
-- Học tập & Tra cứu TDTU: xem bảng điểm, điểm học kỳ, học phí, thời khóa biểu, điểm GPA tích lũy, điểm rèn luyện, lịch thi, đơn từ.
-- Trợ lý cá nhân: thời tiết hôm nay, bây giờ là mấy giờ, đặt lịch nhắc nhở, hẹn giờ, tìm kiếm tin tức.
-
-QUY TẮC BẮT BUỘC:
-1. Chỉ xuất ra nội dung người dùng nói bằng tiếng Việt chính xác.
-2. TUYỆT ĐỐI KHÔNG thêm dấu ngoặc kép, KHÔNG trả lời thay bot, KHÔNG thêm lời dẫn (như "Người dùng nói:").
-3. Nếu âm thanh chỉ là tiếng ồn, thở dài hoặc không có tiếng nói rõ ràng, hãy trả về rỗng.`;
+    const sttPrompt = `Hãy nghe đoạn âm thanh này và ghi lại chính xác từng từ tiếng Việt được nói trong file audio.
+- Chỉ xuất ra văn bản tiếng Việt người dùng đã nói.
+- Không thêm giải thích, không thêm dấu ngoặc kép, không trả lời thay người dùng.
+- Nếu không có tiếng nói rõ ràng, trả về rỗng.`;
 
     for (const modelName of modelsToTry) {
       try {
         const model = this.genAI.getGenerativeModel({
           model: modelName,
           generationConfig: {
-            temperature: 0.0,
-            maxOutputTokens: 250
+            temperature: 0.1,
+            maxOutputTokens: 300
           }
         });
 
@@ -405,16 +397,18 @@ QUY TẮC BẮT BUỘC:
         ]);
 
         const rawText = result.response.text();
-        if (!rawText || !rawText.trim()) return '';
-
-        const cleanText = VoiceNormalizer.normalize(rawText);
-        return cleanText;
+        if (rawText && rawText.trim().length > 0) {
+          const cleanText = VoiceNormalizer.normalize(rawText);
+          if (cleanText && cleanText.length > 0) {
+            return cleanText;
+          }
+        }
       } catch (err) {
         console.warn(`[Gemini Audio] Model ${modelName} lỗi: ${err.message}, đang thử model tiếp theo...`);
       }
     }
 
-    throw new Error('Không thể nhận diện âm thanh.');
+    return '';
   }
 }
 
