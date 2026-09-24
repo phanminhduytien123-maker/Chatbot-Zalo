@@ -320,16 +320,26 @@ class DianaVoiceApp {
   /**
    * Bật/Tắt chế độ Tự động nhận diện giọng nói (Auto Voice Activity Detection - VAD)
    */
-  toggleAutoVad() {
+  async toggleAutoVad() {
     this.haptic(40);
     this.autoVadEnabled = !this.autoVadEnabled;
     localStorage.setItem('diana_auto_vad', this.autoVadEnabled);
     this.updateAutoVadButtonState();
 
     if (this.autoVadEnabled) {
-      this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang tự động chờ nghe giọng nói của anh...');
+      // Giữ màn hình luôn sáng khi ở chế độ đàm thoại liên tục
+      if ('wakeLock' in navigator) {
+        try {
+          this.wakeLock = await navigator.wakeLock.request('screen');
+        } catch (_) {}
+      }
+      this.showCapsule('listening', 'Chế độ Trò chuyện Rảnh tay', '👂 Diana đang lắng nghe... Cứ nói tự nhiên không cần bấm nút nhé!');
       this.startAutoVadLoop();
     } else {
+      if (this.wakeLock) {
+        try { this.wakeLock.release(); } catch (_) {}
+        this.wakeLock = null;
+      }
       this.stopAutoVadLoop();
       this.showCapsule('idle', 'Chế độ Rảnh tay', 'Đã tắt tự động nghe. Chạm nút Mic khi cần nói nhé!');
       this.scheduleCapsuleClose(3000);
@@ -340,10 +350,10 @@ class DianaVoiceApp {
     if (this.autoVadToggleBtn) {
       if (this.autoVadEnabled) {
         this.autoVadToggleBtn.classList.add('auto-vad-active');
-        this.autoVadToggleBtn.title = 'Tự động nghe (Rảnh tay): ĐANG BẬT';
+        this.autoVadToggleBtn.title = 'Chế độ Rảnh tay (Nói liên tục): ĐANG BẬT';
       } else {
         this.autoVadToggleBtn.classList.remove('auto-vad-active');
-        this.autoVadToggleBtn.title = 'Tự động nghe (Rảnh tay): ĐÃ TẮT';
+        this.autoVadToggleBtn.title = 'Chế độ Rảnh tay (Nói liên tục): ĐÃ TẮT';
       }
     }
     if (this.autoVadBadgeDot) {
@@ -369,7 +379,11 @@ class DianaVoiceApp {
         let stream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true }
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
           });
         } catch (_) {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -413,7 +427,7 @@ class DianaVoiceApp {
       const source = this.audioContext.createMediaStreamSource(stream);
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 256;
-      this.analyser.smoothingTimeConstant = 0.4;
+      this.analyser.smoothingTimeConstant = 0.35;
       source.connect(this.analyser);
 
       const bufferLength = this.analyser.frequencyBinCount;
@@ -446,17 +460,17 @@ class DianaVoiceApp {
           updateBars(this.liveOrbWaveBars);
         }
 
-        // Không xử lý VAD khi Diana đang phát giọng nói trả lời (tránh tự nghe chính mình)
+        // Không xử lý VAD khi Diana đang phát giọng nói trả lời hoặc đang gửi mạng (tránh tự nghe chính mình)
         if (this.isSpeaking || this.vadState === 'THINKING' || this.vadState === 'SPEAKING') {
           this.animFrameId = requestAnimationFrame(vadLoop);
           return;
         }
 
-        // 1. TRẠNG THÁI: ĐANG CHỜ PHÁT HIỆN GIỌNG NÓI
+        // 1. TRẠNG THÁI: ĐANG CHỜ PHÁT HIỆN GIỌNG NÓI (Không nghe gì thì im lặng chờ, không làm phiền)
         if (this.autoVadEnabled && (this.vadState === 'WAITING_VOICE' || this.vadState === 'IDLE') && !this.isRecording) {
-          if (average > 14) { // Ngưỡng giọng nói người dùng
-            this.vadConsecutiveSpeechFrames++;
-            if (this.vadConsecutiveSpeechFrames >= 2) { // Giữ mức âm thanh > 100ms
+          if (average > 13) { // Ngưỡng bắt đầu nói
+            this.vadConsecutiveSpeechFrames = (this.vadConsecutiveSpeechFrames || 0) + 1;
+            if (this.vadConsecutiveSpeechFrames >= 2) { // Ổn định > 70ms
               this.vadConsecutiveSpeechFrames = 0;
               this.haptic(35);
               this.startListeningFromVAD();
@@ -466,16 +480,16 @@ class DianaVoiceApp {
           }
         }
 
-        // 2. TRẠNG THÁI: ĐANG THU ÂM GIỌNG NÓI
+        // 2. TRẠNG THÁI: ĐANG THU ÂM GIỌNG NÓI (Khi dừng nói thì tự động gửi)
         else if (this.isRecording && this.vadState === 'LISTENING') {
-          if (average > 11) {
-            this.vadSilenceStartTime = null; // Vẫn đang nói
+          if (average > 10.5) {
+            this.vadSilenceStartTime = null; // Vẫn đang nói, reset bộ đếm im lặng
           } else {
             if (!this.vadSilenceStartTime) {
               this.vadSilenceStartTime = Date.now();
-            } else if (Date.now() - this.vadSilenceStartTime > 1350) { // Im lặng 1.35s sau khi nói
+            } else if (Date.now() - this.vadSilenceStartTime > 1150) { // Dừng nói 1.15 giây
               const recordDuration = Date.now() - this.vadRecordStartTime;
-              if (recordDuration >= this.vadMinRecordDuration) {
+              if (recordDuration >= 450) { // Đã nói ít nhất 0.45s
                 this.vadSilenceStartTime = null;
                 this.stopListeningFromVADAndSend();
               }
@@ -980,9 +994,11 @@ class DianaVoiceApp {
           setTimeout(() => {
             this.vadState = 'WAITING_VOICE';
             this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
-          }, 500);
+            this.updateLiveOverlayState('listening', 'Rảnh tay đang bật', 'Hãy nói câu hỏi của anh nhé...');
+          }, 400);
         } else {
           this.scheduleCapsuleClose(4000);
+          this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói...');
         }
       };
 
@@ -1007,7 +1023,10 @@ class DianaVoiceApp {
       this.isSpeaking = false;
       this.setDotState('idle');
       this.scheduleCapsuleClose(3000);
-      if (this.autoVadEnabled) this.vadState = 'WAITING_VOICE';
+      if (this.autoVadEnabled) {
+        this.vadState = 'WAITING_VOICE';
+        this.updateLiveOverlayState('listening', 'Rảnh tay đang bật', 'Hãy nói câu hỏi của anh nhé...');
+      }
       return;
     }
 
@@ -1035,9 +1054,11 @@ class DianaVoiceApp {
           setTimeout(() => {
             this.vadState = 'WAITING_VOICE';
             this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
-          }, 500);
+            this.updateLiveOverlayState('listening', 'Rảnh tay đang bật', 'Hãy nói câu hỏi của anh nhé...');
+          }, 400);
         } else {
           this.scheduleCapsuleClose(4000);
+          this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói...');
         }
       };
 

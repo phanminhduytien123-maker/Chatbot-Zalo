@@ -139,6 +139,22 @@ export class MessageHandler {
               return res.message || res.error;
             }
 
+            case 'turnoff_display':
+            case 'tatmanhinh':
+            case 'tatman': {
+              const res = await pcBridge.executeCommand('turnoff_display');
+              return res.message || res.error;
+            }
+
+            case 'wake_display':
+            case 'batmanhinh':
+            case 'batman':
+            case 'momanhinh':
+            case 'moman': {
+              const res = await pcBridge.executeCommand('wake_display');
+              return res.message || res.error;
+            }
+
             case 'mute': {
               const res = await pcBridge.executeCommand('mute');
               return res.message || res.error;
@@ -561,6 +577,37 @@ export class MessageHandler {
     ) {
       const res = await pcBridge.executeCommand('turnoff_display');
       const reply = res.message || res.error || '🖥️ Đã tắt màn hình máy tính của anh!';
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    // 8.0a. WAKE DISPLAY (Bật màn hình / Mở màn hình / Đánh thức màn hình)
+    if (
+      lower.includes('bật màn hình') || lower.includes('bat man hinh') || 
+      lower.includes('mở màn hình') || lower.includes('mo man hinh') || 
+      lower.includes('sáng màn hình') || lower.includes('sang man hinh') || 
+      lower.includes('bật lại màn hình') || lower.includes('bat lai man hinh') || 
+      lower.includes('mở lại màn hình') || lower.includes('mo lai man hinh') || 
+      lower.includes('đánh thức màn hình') || lower.includes('danh thuc man hinh') || 
+      lower.includes('wake display') || lower.includes('bật màn') || lower.includes('mở màn')
+    ) {
+      const res = await pcBridge.executeCommand('wake_display');
+      const reply = res.message || (res.success ? '💡 Dạ em đã đánh thức và bật sáng màn hình máy tính cho anh rồi ạ! ✨' : res.error);
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    // 8.0b. TURNOFF DISPLAY (Tắt màn hình / Làm tối màn hình - Tiết kiệm điện)
+    if (
+      (lower.includes('tắt màn hình') || lower.includes('tat man hinh') || 
+       lower.includes('làm tối màn hình') || lower.includes('lam toi man hinh') || 
+       lower.includes('tối màn hình') || lower.includes('toi man hinh') || 
+       lower.includes('tắt màn') || lower.includes('tat man') || 
+       lower.includes('turnoff display')) &&
+      !lower.includes('khóa') && !lower.includes('khoa')
+    ) {
+      const res = await pcBridge.executeCommand('turnoff_display');
+      const reply = res.message || (res.success ? '🖥️ Dạ em đã tắt màn hình máy tính cho anh rồi ạ! Khi nào cần mở lại, anh chỉ cần nói "bật màn hình" hoặc "mở màn hình" là được nhé! 🌸' : res.error);
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
