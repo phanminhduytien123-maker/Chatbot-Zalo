@@ -814,13 +814,15 @@ class DianaVoiceApp {
       }
     });
 
-    // Quick Action Chips
-    document.querySelectorAll('.chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const query = chip.getAttribute('data-query');
-        if (query) this.handleTextQuery(query);
-      });
-    });
+    // PiP Floating Dot Toggle
+    this.pipToggleBtn = document.getElementById('pipToggleBtn');
+    this.pipChip = document.getElementById('pipChip');
+    if (this.pipToggleBtn) {
+      this.pipToggleBtn.addEventListener('click', () => this.togglePiPMode());
+    }
+    if (this.pipChip) {
+      this.pipChip.addEventListener('click', () => this.togglePiPMode());
+    }
 
     // Header actions
     this.ttsToggleBtn.addEventListener('click', () => this.toggleTTS());
@@ -828,6 +830,79 @@ class DianaVoiceApp {
       this.chatMessages.innerHTML = '';
       if (this.welcomeCard) this.welcomeCard.style.display = 'block';
     });
+  }
+
+  /**
+   * Bật Chấm Nổi ra ngoài màn hình qua Document Picture-in-Picture API
+   */
+  async togglePiPMode() {
+    if ('documentPictureInPicture' in window) {
+      try {
+        const pipWindow = await window.documentPictureInPicture.requestWindow({
+          width: 240,
+          height: 240,
+        });
+
+        // Copy toàn bộ CSS sang cửa sổ PiP
+        [...document.styleSheets].forEach((styleSheet) => {
+          try {
+            const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
+            const style = document.createElement('style');
+            style.textContent = cssRules;
+            pipWindow.document.head.appendChild(style);
+          } catch (e) {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.type = styleSheet.type;
+            link.media = styleSheet.media;
+            link.href = styleSheet.href;
+            pipWindow.document.head.appendChild(link);
+          }
+        });
+
+        // Gắn nút AssistiveTouch nổi bên trong PiP
+        const pipContainer = document.createElement('div');
+        pipContainer.innerHTML = `
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #060911; user-select: none;">
+            <div id="pipAssistiveDot" class="assistive-dot" style="position: static; opacity: 1; transform: scale(1.15); cursor: pointer; display: block;">
+              <div class="dot-aura" style="opacity: 0.8;"></div>
+              <div class="dot-glass-shell">
+                <div class="dot-inner-core">
+                  <span class="dot-icon" id="pipDotIcon">🌸</span>
+                  <div class="dot-wave-bars" id="pipDotWaveBars">
+                    <span></span><span></span><span></span><span></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="pipStatusText" style="margin-top: 16px; font-size: 0.78rem; font-weight: 600; color: #00f2fe; text-align: center; font-family: 'Be Vietnam Pro', sans-serif;">
+              Chạm chấm để nói
+            </div>
+          </div>
+        `;
+        pipWindow.document.body.appendChild(pipContainer);
+
+        const pipDot = pipWindow.document.getElementById('pipAssistiveDot');
+        const pipStatus = pipWindow.document.getElementById('pipStatusText');
+
+        pipDot.addEventListener('click', async () => {
+          await this.toggleRecording();
+          if (this.isRecording) {
+            pipDot.classList.add('listening');
+            pipStatus.textContent = '🎙️ Đang nghe anh nói...';
+          } else {
+            pipDot.classList.remove('listening');
+            pipStatus.textContent = '⚡ Diana đang xử lý...';
+          }
+        });
+
+      } catch (err) {
+        console.warn('Lỗi mở Picture-in-Picture:', err);
+        alert('Để mở chấm tròn nổi trên màn hình máy tính, anh hãy mở file "Chay_Diana_AssistiveTouch_Desktop.bat" nhé!');
+      }
+    } else {
+      alert('💡 Để mở chấm tròn nổi trực tiếp trên màn hình máy tính Windows, anh hãy mở file "Chay_Diana_AssistiveTouch_Desktop.bat" trong thư mục Zalo Bot nhé! 🌸');
+    }
   }
 }
 

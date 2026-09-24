@@ -287,6 +287,19 @@ body {
   transform: translateY(-2px);
 }
 
+.chip-accent {
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.18) 0%, rgba(147, 51, 234, 0.18) 100%);
+  border-color: var(--accent-cyan);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.2);
+}
+
+.chip-accent:hover {
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.3) 0%, rgba(147, 51, 234, 0.3) 100%);
+  box-shadow: 0 0 18px rgba(0, 242, 254, 0.4);
+}
+
 .chip:active {
   transform: scale(0.96);
 }
