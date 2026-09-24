@@ -5,13 +5,51 @@ import { monitor } from './services/monitor.js';
 import { storage } from './services/storage.js';
 import { scheduler } from './services/scheduler.js';
 import { MessageHandler } from './zalo/messageHandler.js';
-import config from './config/config.js';
+import { pcBridge } from './pc/pcBridge.js';
 
 // Khởi tạo HTTP Health Check Server cho Render.com
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   
+  // 1. Endpoint thăm dò lệnh cho PC Agent
+  if (url.pathname === '/pc/poll') {
+    const cmd = pcBridge.pollCommand();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({
+      online: true,
+      hasCommand: Boolean(cmd),
+      command: cmd
+    }));
+  }
+
+  // 2. Endpoint nhận kết quả xử lý từ PC Agent
+  if (url.pathname === '/pc/result' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const handled = pcBridge.handleResult(data);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ success: handled }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // 3. Endpoint kiểm tra tình trạng kết nối PC
+  if (url.pathname === '/pc/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({
+      pcOnline: pcBridge.isPCOnline(),
+      info: pcBridge.pcInfo
+    }));
+  }
+
   if (url.pathname === '/test') {
     const q = url.searchParams.get('q') || 'Xin chào';
     try {
@@ -41,7 +79,8 @@ const server = http.createServer(async (req, res) => {
     hasApiKey: config.ai.hasApiKey,
     keyLength: config.ai.apiKey?.length || 0,
     model: config.ai.model,
-    zaloConnected: zaloLive.isConnected
+    zaloConnected: zaloLive.isConnected,
+    pcOnline: pcBridge.isPCOnline()
   }));
 });
 

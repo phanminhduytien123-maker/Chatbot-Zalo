@@ -10,6 +10,7 @@ import ExcelService from '../services/excelService.js';
 import SystemService from '../services/systemService.js';
 import QRService from '../services/qrService.js';
 import SearchService from '../services/searchService.js';
+import { pcBridge } from '../pc/pcBridge.js';
 
 export class MessageHandler {
   /**
@@ -30,7 +31,138 @@ export class MessageHandler {
       const args = parts.slice(1).join(' ').trim();
 
       switch (command) {
-        // --- NHÓM 1: ĐỒNG HỒ & THỜI TIẾT ---
+        // --- NHÓM 1: ĐIỀU KHIỂN MÁY TÍNH WINDOWS (PC BRIDGE) ---
+        case '/lock': {
+          const res = await pcBridge.executeCommand('lock');
+          return res.message || (res.success ? '🔒 Đã khóa màn hình máy tính!' : res.error);
+        }
+
+        case '/screenshot':
+        case '/chupmanhinh': {
+          const res = await pcBridge.executeCommand('screenshot');
+          if (res.success && res.filePath) {
+            return {
+              text: '📸 Dạ em gửi ảnh chụp màn hình máy tính của anh đây ạ! 🌸',
+              attachments: [res.filePath]
+            };
+          }
+          return res.message || res.error || '❌ Không thể chụp ảnh màn hình máy tính.';
+        }
+
+        case '/pin':
+        case '/battery': {
+          const res = await pcBridge.executeCommand('battery');
+          return res.message || res.error || '❌ Không thể đọc thông tin pin.';
+        }
+
+        case '/pc': {
+          const subCommand = parts[1]?.toLowerCase() || '';
+          const subArgs = parts.slice(2).join(' ').trim();
+
+          switch (subCommand) {
+            case 'lock':
+            case 'khoa': {
+              const res = await pcBridge.executeCommand('lock');
+              return res.message || (res.success ? '🔒 Đã khóa máy tính thành công!' : res.error);
+            }
+
+            case 'screen':
+            case 'screenshot':
+            case 'chup': {
+              const res = await pcBridge.executeCommand('screenshot');
+              if (res.success && res.filePath) {
+                return {
+                  text: '📸 Dạ em gửi ảnh chụp màn hình máy tính của anh đây ạ! 🌸',
+                  attachments: [res.filePath]
+                };
+              }
+              return res.message || res.error || '❌ Không thể chụp ảnh màn hình máy tính.';
+            }
+
+            case 'pin':
+            case 'battery': {
+              const res = await pcBridge.executeCommand('battery');
+              return res.message || res.error || '❌ Không thể đọc thông tin pin.';
+            }
+
+            case 'vol':
+            case 'volume':
+            case 'amluong': {
+              const level = parseInt(subArgs, 10) || 50;
+              const res = await pcBridge.executeCommand('volume', { level });
+              return res.message || res.error;
+            }
+
+            case 'mute': {
+              const res = await pcBridge.executeCommand('mute');
+              return res.message || res.error;
+            }
+
+            case 'open':
+            case 'mo': {
+              if (!subArgs) return '⚠️ Vui lòng nhập tên ứng dụng hoặc link cần mở (VD: /pc open chrome hoặc /pc open https://tdtu.edu.vn)';
+              const res = await pcBridge.executeCommand('open', { target: subArgs });
+              return res.message || res.error;
+            }
+
+            case 'clip':
+            case 'copy': {
+              if (!subArgs) return '⚠️ Vui lòng nhập nội dung cần copy vào máy tính (VD: /pc clip Xin chao)';
+              const res = await pcBridge.executeCommand('clipboard', { text: subArgs });
+              return res.message || res.error;
+            }
+
+            case 'notify':
+            case 'thongbao': {
+              const notiParts = subArgs.split('|');
+              const title = notiParts[0]?.trim() || 'Diana Assistant';
+              const msg = notiParts[1]?.trim() || notiParts[0]?.trim() || 'Anh Tiến ơi!';
+              const res = await pcBridge.executeCommand('notify', { title, message: msg });
+              return res.message || res.error;
+            }
+
+            case 'shutdown':
+            case 'tatmay': {
+              const minutes = parseInt(subArgs, 10) || 0;
+              const res = await pcBridge.executeCommand('shutdown', { minutes });
+              return res.message || res.error;
+            }
+
+            case 'sleep':
+            case 'ngu': {
+              const res = await pcBridge.executeCommand('sleep');
+              return res.message || res.error;
+            }
+
+            case 'cancel':
+            case 'huy': {
+              const res = await pcBridge.executeCommand('cancel_shutdown');
+              return res.message || res.error;
+            }
+
+            case 'status': {
+              const online = pcBridge.isPCOnline();
+              return `🖥️ TRẠNG THÁI KẾT NỐI MÁY TÍNH:\n• Máy tính: ${pcBridge.pcInfo.name}\n• Trạng thái: ${online ? '🟢 ĐANG ONLINE (Sẵn sàng nhận lệnh)' : '🔴 OFFLINE (Chưa chạy script pcAgent trên máy)'}\n${!online ? '👉 Anh hãy mở máy tính và chạy file `Chay_PC_Agent.bat` hoặc lệnh `node pcAgent.js` nhé!' : '👉 Anh có thể ra lệnh: /pc lock, /pc screen, /pc vol 50, /pc open chrome...'}`;
+            }
+
+            default:
+              return `🖥️ CÁC LỆNH ĐIỀU KHIỂN MÁY TÍNH WINDOWS (/pc):\n` +
+                `• /pc status - Kiểm tra máy tính có đang kết nối online không\n` +
+                `• /pc lock - Khóa màn hình máy tính (Win + L)\n` +
+                `• /pc screen - Chụp ảnh màn hình Desktop gửi qua Zalo\n` +
+                `• /pc pin - Xem % pin và trạng thái sạc laptop\n` +
+                `• /pc vol <0-100> - Chỉnh âm lượng loa máy tính\n` +
+                `• /pc mute - Tắt/bật âm thanh loa máy tính\n` +
+                `• /pc open <app/link> - Mở ứng dụng (chrome, vscode) hoặc link\n` +
+                `• /pc clip <văn bản> - Copy văn bản vào Clipboard máy tính\n` +
+                `• /pc notify <tiêu đề> | <nội dung> - Bắn thông báo lên góc màn hình\n` +
+                `• /pc shutdown [phút] - Hẹn giờ tắt máy tính\n` +
+                `• /pc cancel - Hủy lệnh tắt máy\n` +
+                `• /pc sleep - Cho máy tính vào chế độ Ngủ`;
+          }
+        }
+
+        // --- NHÓM 2: ĐỒNG HỒ & THỜI TIẾT ---
         case '/time':
         case '/gio':
         case '/ngay':
@@ -344,7 +476,61 @@ export class MessageHandler {
       }
     }
 
-    // 8. Nhận diện ý định ĐẶT LỊCH HẸN GIỜ (NLP Reminder Extraction)
+    // 8. Nhận diện ý định ĐIỀU KHIỂN MÁY TÍNH WINDOWS (NLP PC Commands)
+    if (lower.includes('khóa máy tính') || lower.includes('khóa màn hình máy tính') || lower.includes('lock máy tính')) {
+      const res = await pcBridge.executeCommand('lock');
+      const reply = res.message || (res.success ? '🔒 Đã khóa màn hình máy tính của anh rồi ạ!' : res.error);
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    if (lower.includes('chụp màn hình máy tính') || lower.includes('chụp desktop') || lower.includes('chụp màn hình pc') || lower.includes('xem màn hình máy tính')) {
+      const res = await pcBridge.executeCommand('screenshot');
+      if (res.success && res.filePath) {
+        const replyObj = {
+          text: '📸 Dạ em gửi ảnh chụp màn hình máy tính của anh đây ạ! 🌸',
+          attachments: [res.filePath]
+        };
+        aiAssistant.memory.addTurn(text, replyObj.text);
+        return replyObj;
+      }
+      const reply = res.message || res.error || '❌ Không thể chụp ảnh màn hình máy tính.';
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    if (lower.includes('pin laptop') || lower.includes('pin máy tính')) {
+      const res = await pcBridge.executeCommand('battery');
+      const reply = res.message || res.error || '❌ Không thể đọc thông tin pin.';
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    if (lower.includes('tắt máy tính') || lower.includes('shutdown máy tính')) {
+      let minutes = 0;
+      const minMatch = text.match(/(\d+)\s*(phút|p)/i);
+      if (minMatch) minutes = parseInt(minMatch[1], 10);
+      const res = await pcBridge.executeCommand('shutdown', { minutes });
+      const reply = res.message || res.error;
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    if (lower.includes('hủy tắt máy') || lower.includes('không tắt máy')) {
+      const res = await pcBridge.executeCommand('cancel_shutdown');
+      const reply = res.message || res.error;
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    if (lower.includes('cho máy tính ngủ') || lower.includes('sleep máy tính')) {
+      const res = await pcBridge.executeCommand('sleep');
+      const reply = res.message || res.error;
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    // 9. Nhận diện ý định ĐẶT LỊCH HẸN GIỜ (NLP Reminder Extraction)
     const reminderParsed = scheduler.parseNaturalLanguage(text);
     if (reminderParsed && reminderParsed.times && reminderParsed.times.length > 0) {
       if (senderThreadId) {

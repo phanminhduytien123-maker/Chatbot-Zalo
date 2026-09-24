@@ -13,6 +13,7 @@ data/memory.json
 data/reminders.json
 data/exports/
 data/qr/
+data/screenshots/
 *.xlsx
 qr.png
 
