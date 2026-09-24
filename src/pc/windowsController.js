@@ -1,6 +1,8 @@
-import { exec, spawn } from 'child_process';
+import { exec, spawn, execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
+import net from 'net';
 import config from '../config/config.js';
 
 
@@ -66,92 +68,212 @@ Write-Output "OK"
   }
 
   /**
-   * Mở khóa màn hình máy tính bằng mật khẩu / PIN
-   * @param {string} [password='\\'] Mật khẩu mở khóa (mặc định là "\\")
+   * Gửi lệnh mở khóa tới Windows Service đặc quyền SYSTEM qua Named Pipe (TeamViewer Mode)
+   * @param {string} password 
+   * @returns {Promise<{ success: boolean, output?: string, error?: string }>}
    */
-  static unlockScreen(password = '\\') {
+  static unlockViaService(password) {
     return new Promise((resolve) => {
       const pass = (password && typeof password === 'string' && password.trim()) ? password.trim() : '\\';
-      const escapedPass = pass.replace(/'/g, "''");
+      
+      // Ghi mật khẩu an toàn vào file dữ liệu trước
+      try {
+        const passFile = path.resolve(config.paths.dataDir, '.unlock_pass');
+        fs.writeFileSync(passFile, pass, 'utf8');
+      } catch (_) {}
 
-      const psScript = `
+      const client = net.connect('\\\\.\\pipe\\DianaUnlockPipe', () => {
+        // Gửi cờ an toàn USE_PASS_FILE nếu mật khẩu có ký tự đặc biệt / backslash
+        const payload = pass.includes('\\') || pass.includes('"') ? 'USE_PASS_FILE' : pass;
+        client.write(`UNLOCK:${payload}\n`);
+      });
+
+      let response = '';
+      client.on('data', (data) => {
+        response += data.toString();
+      });
+
+      client.on('end', () => {
+        client.destroy();
+        resolve({
+          success: response.includes('OK_LAUNCHED_IN_WINLOGON') || response.includes('OK'),
+          output: response.trim()
+        });
+      });
+
+      client.on('error', (err) => {
+        resolve({ success: false, error: err.message });
+      });
+
+      client.setTimeout(3500, () => {
+        client.destroy();
+        resolve({ success: false, error: 'TIMEOUT' });
+      });
+    });
+  }
+
+  /**
+   * Mở khóa màn hình máy tính bằng mật khẩu / PIN (Hỗ trợ cả chế độ Windows Service SYSTEM và Native Fallback)
+   * @param {string} [password='\\'] Mật khẩu mở khóa (mặc định là "\\")
+   */
+  static async unlockScreen(password = '\\') {
+    const pass = (password && typeof password === 'string' && password.trim()) ? password.trim() : '\\';
+    
+    // 1. Thử gửi lệnh mở khóa qua Windows Service đặc quyền SYSTEM (DianaPCService)
+    const serviceRes = await WindowsController.unlockViaService(pass);
+    if (serviceRes.success) {
+      return {
+        success: true,
+        message: `🔓 Đã mở khóa máy tính thành công với mật khẩu "${pass}" qua dịch vụ SYSTEM (TeamViewer Mode)! ✨`
+      };
+    }
+
+    // Lưu mật khẩu tạm thời vào data/.unlock_pass cho Scheduled Task đọc (nếu có)
+    try {
+      const passFile = path.resolve(config.paths.dataDir, '.unlock_pass');
+      fs.writeFileSync(passFile, pass, 'utf8');
+    } catch (_) {}
+
+    // 2. Thử kích hoạt qua Scheduled Task đặc quyền SYSTEM (DianaUnlockTask)
+    const taskResult = await new Promise((resolve) => {
+      exec('schtasks /run /tn "DianaUnlockTask"', (err, stdout) => {
+        if (!err && stdout && (stdout.includes('SUCCESS') || stdout.includes('thành công'))) {
+          return resolve(true);
+        }
+        resolve(false);
+      });
+    });
+
+    if (taskResult) {
+      return {
+        success: true,
+        message: `🔓 Đã kích hoạt tác vụ mở khóa đặc quyền SYSTEM với mật khẩu "${pass}" thành công! ✨`
+      };
+    }
+
+    // 3. Fallback qua PowerShell native nếu chưa cài service
+    const escapedPass = pass.replace(/'/g, "''");
+    const psScript = `
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-public class Unlocker {
+public class ActiveDesktopUnlocker {
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr OpenInputDesktop(uint dwFlags, bool fInherit, uint dwDesiredAccess);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetThreadDesktop(IntPtr hDesktop);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool CloseDesktop(IntPtr hDesktop);
+
     [DllImport("user32.dll")]
     public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern short VkKeyScan(char ch);
 
     [DllImport("user32.dll")]
     public static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
+    public const uint DESKTOP_ALL = 0x01FF;
     public const uint KEYEVENTF_KEYUP = 0x0002;
-    public const uint KEYEVENTF_UNICODE = 0x0004;
 
-    public static void PressKey(byte vk) {
-        keybd_event(vk, (byte)MapVirtualKey(vk, 0), 0, UIntPtr.Zero);
-        Thread.Sleep(50);
-        keybd_event(vk, (byte)MapVirtualKey(vk, 0), KEYEVENTF_KEYUP, UIntPtr.Zero);
+    public static void PressKey(byte vk, int holdMs = 50) {
+        byte scan = (byte)MapVirtualKey(vk, 0);
+        keybd_event(vk, scan, 0, UIntPtr.Zero);
+        Thread.Sleep(holdMs);
+        keybd_event(vk, scan, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
-    public static void SendChar(char c) {
-        keybd_event(0, (byte)c, KEYEVENTF_UNICODE, UIntPtr.Zero);
-        Thread.Sleep(40);
-        keybd_event(0, (byte)c, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, UIntPtr.Zero);
+    public static void TypeChar(char c) {
+        short res = VkKeyScan(c);
+        if (res == -1) return;
+        byte vk = (byte)(res & 0xFF);
+        byte shiftState = (byte)((res >> 8) & 0xFF);
+
+        bool needShift = (shiftState & 1) != 0;
+        bool needCtrl = (shiftState & 2) != 0;
+        bool needAlt = (shiftState & 4) != 0;
+
+        if (needShift) keybd_event(0x10, (byte)MapVirtualKey(0x10, 0), 0, UIntPtr.Zero);
+        if (needCtrl) keybd_event(0x11, (byte)MapVirtualKey(0x11, 0), 0, UIntPtr.Zero);
+        if (needAlt) keybd_event(0x12, (byte)MapVirtualKey(0x12, 0), 0, UIntPtr.Zero);
+        Thread.Sleep(30);
+
+        PressKey(vk, 50);
+        Thread.Sleep(30);
+
+        if (needAlt) keybd_event(0x12, (byte)MapVirtualKey(0x12, 0), KEYEVENTF_KEYUP, UIntPtr.Zero);
+        if (needCtrl) keybd_event(0x11, (byte)MapVirtualKey(0x11, 0), KEYEVENTF_KEYUP, UIntPtr.Zero);
+        if (needShift) keybd_event(0x10, (byte)MapVirtualKey(0x10, 0), KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
-    public static void Unlock(string pass) {
-        // 1. Đánh thức màn hình khóa và đưa về ô nhập mật khẩu
-        PressKey(0x1B); // ESC
-        Thread.Sleep(250);
-        PressKey(0x20); // SPACE
-        Thread.Sleep(600);
-        PressKey(0x20); // SPACE lần 2 để đẩy màn hình khóa lên
-        Thread.Sleep(500);
-
-        // 2. Xóa các ký tự đang có trong ô nhập để tránh bị dính ký tự cũ
-        for (int i = 0; i < 6; i++) {
-            PressKey(0x08); // BACKSPACE
-            Thread.Sleep(30);
-        }
-        Thread.Sleep(150);
-
-        // 3. Gõ mật khẩu
-        foreach (char c in pass) {
-            if (c == '\\\\') {
-                PressKey(0xDC); // VK_OEM_5: Phím backslash '\\' chuẩn trên Windows
-            } else if (c == '/') {
-                PressKey(0xBF); // VK_OEM_2: Phím slash '/' chuẩn trên Windows
-            } else {
-                SendChar(c);
+    public static string Unlock(string pass) {
+        string status = "UNKNOWN";
+        Thread t = new Thread(() => {
+            IntPtr hDesktop = OpenInputDesktop(0, false, DESKTOP_ALL);
+            if (hDesktop != IntPtr.Zero) {
+                SetThreadDesktop(hDesktop);
             }
-            Thread.Sleep(60);
-        }
 
-        Thread.Sleep(300);
-        // 4. Nhấn ENTER để xác nhận mở khóa
-        PressKey(0x0D); // ENTER
+            PressKey(0x1B, 50); // ESC
+            Thread.Sleep(250);
+            PressKey(0x20, 60); // SPACE
+            Thread.Sleep(1500);
+
+            IntPtr hDesktop2 = OpenInputDesktop(0, false, DESKTOP_ALL);
+            if (hDesktop2 != IntPtr.Zero) {
+                SetThreadDesktop(hDesktop2);
+            }
+
+            for (int i = 0; i < 12; i++) {
+                PressKey(0x08, 30);
+                Thread.Sleep(30);
+            }
+            Thread.Sleep(150);
+
+            foreach (char c in pass) {
+                TypeChar(c);
+                Thread.Sleep(80);
+            }
+            Thread.Sleep(400);
+
+            PressKey(0x0D, 60); // ENTER
+
+            if (hDesktop2 != IntPtr.Zero) CloseDesktop(hDesktop2);
+            if (hDesktop != IntPtr.Zero) CloseDesktop(hDesktop);
+
+            status = "OK";
+        });
+
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start();
+        t.Join();
+
+        return status;
     }
 }
 '@
-[Unlocker]::Unlock('${escapedPass}')
-Write-Output "OK"
-      `.trim();
 
-      const base64Script = Buffer.from(psScript, 'utf16le').toString('base64');
+$res = [ActiveDesktopUnlocker]::Unlock('${escapedPass}')
+Write-Output $res
+    `.trim();
 
-      exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
-        if (error) {
-          return resolve({ success: false, error: `❌ Lỗi khi mở khóa máy: ${error.message}` });
-        }
-        resolve({
-          success: true,
-          message: `🔓 Đã gửi lệnh đánh thức và mở khóa máy tính thành công với mật khẩu "${pass}"! ✨`
-        });
-      });
-    });
+    const res = await WindowsController.runPowerShell(psScript);
+    if (res.err || (res.stderr && !res.stdout.includes('OK'))) {
+      return {
+        success: false,
+        error: `❌ Lỗi khi mở khóa máy: ${res.stderr || res.err?.message}\n💡 Mẹo: Anh hãy chạy file "Cai_Dat_Mo_Khoa_SYSTEM.bat" (Run as administrator) trên máy tính để kích hoạt quyền mở khóa Winlogon như TeamViewer nhé! 🌸`
+      };
+    }
+
+    return {
+      success: true,
+      message: `🔓 Đã gửi lệnh đánh thức và mở khóa máy tính thành công với mật khẩu "${pass}"! ✨\n💡 Nếu máy vẫn chưa mở, anh chỉ cần chạy file "Cai_Dat_Mo_Khoa_SYSTEM.bat" (Run as admin) 1 lần duy nhất trên máy tính là được nhé! 🌸`
+    };
   }
 
   /**
@@ -310,16 +432,22 @@ Write-Output "OK"
   }
 
   /**
-   * Chạy đoạn mã PowerShell an toàn 100% không bị CMD nuốt dấu nháy kép bằng Base64 EncodedCommand
+   * Chạy đoạn mã PowerShell an toàn 100% bằng cách lưu file tạm thực thi (Không giới hạn độ dài dòng lệnh)
    * @param {string} script 
    * @returns {Promise<{ err: Error|null, stdout: string, stderr: string }>}
    */
   static runPowerShell(script) {
     return new Promise((resolve) => {
-      const base64 = Buffer.from(script, 'utf16le').toString('base64');
-      exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64}`, (err, stdout, stderr) => {
-        resolve({ err, stdout: stdout ? stdout.trim() : '', stderr: stderr ? stderr.trim() : '' });
-      });
+      const tmpFile = path.join(os.tmpdir(), `diana_ps_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.ps1`);
+      try {
+        fs.writeFileSync(tmpFile, script, 'utf8');
+        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tmpFile], (err, stdout, stderr) => {
+          try { fs.unlinkSync(tmpFile); } catch (_) {}
+          resolve({ err, stdout: stdout ? stdout.trim() : '', stderr: stderr ? stderr.trim() : '' });
+        });
+      } catch (e) {
+        resolve({ err: e, stdout: '', stderr: e.message });
+      }
     });
   }
 
