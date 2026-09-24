@@ -118,6 +118,10 @@ async function pollServer() {
       result = { id, success: false, error: execErr.message };
     }
 
+    if (!result.message && result.error) {
+      result.message = result.error;
+    }
+
     // Gửi kết quả ngược lại cho Server Render
     await axios.post(`${SERVER_URL}/pc/result`, result, {
       timeout: 10000,

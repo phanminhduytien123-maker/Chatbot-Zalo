@@ -152,24 +152,150 @@ Write-Output "OK"
   }
 
   /**
-   * Mở ứng dụng hoặc trang Web trên máy tính
-   * @param {string} target Tên app (chrome, code, notepad) hoặc URL (https://...)
+   * Tìm kiếm shortcut hoặc file thực thi của ứng dụng trong Start Menu & Desktop & AppData
+   * @param {string} targetName 
+   * @returns {string|null}
+   */
+  static findInstalledApp(targetName) {
+    const cleanTarget = targetName.toLowerCase().trim();
+    const searchDirs = [
+      path.join(process.env.APPDATA || '', 'Microsoft/Windows/Start Menu/Programs'),
+      path.join(process.env.ProgramData || '', 'Microsoft/Windows/Start Menu/Programs'),
+      path.join(process.env.USERPROFILE || '', 'Desktop'),
+      'C:/Users/Public/Desktop',
+      path.join(process.env.LOCALAPPDATA || '', 'Programs'),
+      'C:/Program Files',
+      'C:/Program Files (x86)'
+    ];
+
+    const searchInDir = (dir, depth = 0) => {
+      if (depth > 3 || !fs.existsSync(dir)) return null;
+      try {
+        const items = fs.readdirSync(dir, { withFileTypes: true });
+        // Ưu tiên khớp file .lnk hoặc .exe trước
+        for (const item of items) {
+          if (!item.isDirectory()) {
+            const name = item.name.toLowerCase();
+            if ((name.endsWith('.lnk') || name.endsWith('.exe')) && name.includes(cleanTarget)) {
+              return path.join(dir, item.name);
+            }
+          }
+        }
+        // Duyệt các thư mục con
+        for (const item of items) {
+          if (item.isDirectory() && !item.name.startsWith('$') && !item.name.startsWith('.')) {
+            const found = searchInDir(path.join(dir, item.name), depth + 1);
+            if (found) return found;
+          }
+        }
+      } catch (_) {}
+      return null;
+    };
+
+    for (const d of searchDirs) {
+      const match = searchInDir(d, 0);
+      if (match) return match;
+    }
+    return null;
+  }
+
+  /**
+   * Mở bất kỳ ứng dụng hoặc trang Web nào trên máy tính một cách thông minh
+   * @param {string} target Tên app (Antigravity, Chrome, Word, Excel, VSCode...) hoặc URL (https://...)
    */
   static openAppOrUrl(target) {
     return new Promise((resolve) => {
-      if (!target) return resolve({ success: false, error: 'Thiếu tên ứng dụng hoặc link cần mở.' });
+      if (!target || typeof target !== 'string' || !target.trim()) {
+        return resolve({ success: false, error: '⚠️ Vui lòng nhập tên ứng dụng hoặc link cần mở (VD: /pc open Antigravity hoặc /pc open chrome).' });
+      }
 
-      let command = `Start-Process "${target}"`;
-      if (target.toLowerCase() === 'chrome') command = 'Start-Process "chrome.exe"';
-      else if (target.toLowerCase() === 'vscode' || target.toLowerCase() === 'code') command = 'Start-Process "code"';
-      else if (target.toLowerCase() === 'notepad') command = 'Start-Process "notepad.exe"';
-      else if (target.toLowerCase() === 'calc' || target.toLowerCase() === 'calculator') command = 'Start-Process "calc.exe"';
+      const clean = target.trim();
+      const lower = clean.toLowerCase();
 
-      const base64Script = Buffer.from(command, 'utf16le').toString('base64');
+      // 1. Nếu là đường dẫn Web URL
+      if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('www.') || lower.includes('.com') || lower.includes('.vn') || lower.includes('.edu.vn')) {
+        const url = (lower.startsWith('http://') || lower.startsWith('https://')) ? clean : `https://${clean}`;
+        exec(`start "" "${url}"`, (err) => {
+          if (err) return resolve({ success: false, error: `❌ Không thể mở link web: ${err.message}` });
+          return resolve({ success: true, message: `🌐 Đã mở trang web "${url}" trên trình duyệt máy tính của anh!` });
+        });
+        return;
+      }
 
-      exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
-        if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: `🚀 Đã gửi lệnh mở "${target}" trên máy tính của anh!` });
+      // 2. Nếu là đường dẫn file / folder cụ thể có tồn tại
+      if (fs.existsSync(clean)) {
+        exec(`start "" "${clean}"`, (err) => {
+          if (err) return resolve({ success: false, error: `❌ Không thể mở file/thư mục: ${err.message}` });
+          return resolve({ success: true, message: `📁 Đã mở file/thư mục "${path.basename(clean)}" trên máy tính!` });
+        });
+        return;
+      }
+
+      // 3. Tra cứu nhanh các alias phổ biến của Windows
+      const aliasMap = {
+        word: 'winword',
+        excel: 'excel',
+        powerpoint: 'powerpnt',
+        ppt: 'powerpnt',
+        calc: 'calc',
+        calculator: 'calc',
+        notepad: 'notepad',
+        paint: 'mspaint',
+        cmd: 'cmd',
+        terminal: 'wt',
+        powershell: 'powershell',
+        ps: 'powershell',
+        explorer: 'explorer',
+        control: 'control',
+        taskmgr: 'taskmgr',
+        taskmanager: 'taskmgr',
+        settings: 'ms-settings:',
+        caidat: 'ms-settings:',
+        chrome: 'chrome',
+        edge: 'msedge',
+        brave: 'brave',
+        firefox: 'firefox',
+        vscode: 'code',
+        code: 'code'
+      };
+
+      if (aliasMap[lower]) {
+        const cmd = aliasMap[lower];
+        exec(`start "" "${cmd}"`, (err) => {
+          if (!err) {
+            return resolve({ success: true, message: `🚀 Đã mở ứng dụng "${clean}" trên máy tính của anh!` });
+          }
+        });
+      }
+
+      // 4. Tìm kiếm thông minh trong Start Menu & Desktop & Program Files (.lnk / .exe)
+      const shortcut = WindowsController.findInstalledApp(lower);
+      if (shortcut) {
+        exec(`start "" "${shortcut}"`, (err) => {
+          if (err) {
+            return resolve({ success: false, error: `❌ Không thể mở ứng dụng: ${err.message}` });
+          }
+          const appDisplayName = path.basename(shortcut, path.extname(shortcut));
+          return resolve({
+            success: true,
+            message: `🚀 Đã tìm thấy và mở ứng dụng "${appDisplayName}" trên máy tính của anh thành công! ✨`
+          });
+        });
+        return;
+      }
+
+      // 5. Thử kiểm tra xem lệnh có trong PATH không bằng where.exe
+      exec(`where.exe "${clean}"`, (whereErr, whereOut) => {
+        if (!whereErr && whereOut.trim()) {
+          exec(`start "" "${clean}"`);
+          return resolve({ success: true, message: `🚀 Đã khởi chạy "${clean}" trên máy tính của anh!` });
+        }
+
+        // Báo lỗi thân thiện, lịch sự thay vì ném raw XML stack trace
+        return resolve({
+          success: false,
+          error: `⚠️ Không tìm thấy ứng dụng "${clean}" trong danh sách cài đặt trên máy tính của anh.\n💡 Gợi ý: Anh hãy thử gõ tên viết tắt (VD: chrome, vscode, antigravity, word, excel, notepad, zalo) hoặc cung cấp đường dẫn file .exe nhé! 🌸`
+        });
       });
     });
   }
