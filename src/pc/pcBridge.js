@@ -1,7 +1,8 @@
-import path from 'fs';
+import path from 'path';
 import fs from 'fs';
 import WindowsController from './windowsController.js';
 import config from '../config/config.js';
+
 
 export class PCBridgeService {
   constructor() {

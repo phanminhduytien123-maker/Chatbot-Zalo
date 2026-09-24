@@ -151,9 +151,9 @@ using System;
 using System.Runtime.InteropServices;
 public class DisplayHelper {
     [DllImport("user32.dll")]
-    public static extern int SendMessage(int hWnd, int hMsg, int wParam, int lParam);
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
     public static void TurnOff() {
-        SendMessage(0xFFFF, 0x0112, 0xF170, 2);
+        PostMessage((IntPtr)0xFFFF, 0x0112, (IntPtr)0xF170, (IntPtr)2);
     }
 }
 '@
@@ -180,13 +180,17 @@ using System;
 using System.Runtime.InteropServices;
 public class DisplayHelper {
     [DllImport("user32.dll")]
-    public static extern int SendMessage(int hWnd, int hMsg, int wParam, int lParam);
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")]
     public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+    [DllImport("user32.dll")]
+    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
     public static void Wake() {
-        SendMessage(0xFFFF, 0x0112, 0xF170, -1);
+        PostMessage((IntPtr)0xFFFF, 0x0112, (IntPtr)0xF170, (IntPtr)(-1));
         mouse_event(1, 0, 1, 0, 0);
         mouse_event(1, 0, -1, 0, 0);
+        keybd_event(0x1B, 0, 0, UIntPtr.Zero);
+        keybd_event(0x1B, 0, 2, UIntPtr.Zero);
     }
 }
 '@
@@ -201,6 +205,7 @@ Write-Output "OK"
       });
     });
   }
+
 
   /**
    * Kiểm tra thông tin Pin của Laptop (Win32_Battery)
@@ -354,8 +359,10 @@ Write-Output "OK"
       // 1. Nếu là đường dẫn Web URL
       if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('www.') || lower.includes('.com') || lower.includes('.vn') || lower.includes('.edu.vn')) {
         const url = (lower.startsWith('http://') || lower.startsWith('https://')) ? clean : `https://${clean}`;
-        exec(`start "" "${url}"`, (err) => {
-          if (err) return resolve({ success: false, error: `❌ Không thể mở link web: ${err.message}` });
+        exec(`explorer.exe "${url}"`, (err) => {
+          if (err) {
+            exec(`powershell.exe -NoProfile -Command "Start-Process '${url}'"`);
+          }
           return resolve({ success: true, message: `🌐 Đã mở trang web "${url}" trên trình duyệt máy tính của anh!` });
         });
         return;
@@ -378,8 +385,10 @@ Write-Output "OK"
 
       if (webAliasMap[lower]) {
         const url = webAliasMap[lower];
-        exec(`start "" "${url}"`, (err) => {
-          if (err) return resolve({ success: false, error: `❌ Không thể mở trang web: ${err.message}` });
+        exec(`explorer.exe "${url}"`, (err) => {
+          if (err) {
+            exec(`powershell.exe -NoProfile -Command "Start-Process '${url}'"`);
+          }
           return resolve({ success: true, message: `🌐 Đã mở trang web "${url}" trên trình duyệt máy tính của anh!` });
         });
         return;
@@ -387,7 +396,7 @@ Write-Output "OK"
 
       // 2. Nếu là đường dẫn file / folder cụ thể có tồn tại
       if (fs.existsSync(clean)) {
-        exec(`start "" "${clean}"`, (err) => {
+        exec(`explorer.exe "${clean}"`, (err) => {
           if (err) return resolve({ success: false, error: `❌ Không thể mở file/thư mục: ${err.message}` });
           return resolve({ success: true, message: `📁 Đã mở file/thư mục "${path.basename(clean)}" trên máy tính!` });
         });
@@ -424,17 +433,20 @@ Write-Output "OK"
 
       if (aliasMap[lower]) {
         const cmd = aliasMap[lower];
-        exec(`start "" "${cmd}"`, (err) => {
+        exec(`powershell.exe -NoProfile -Command "Start-Process '${cmd}'"`, (err) => {
           if (!err) {
             return resolve({ success: true, message: `🚀 Đã mở ứng dụng "${clean}" trên máy tính của anh!` });
           }
+          exec(`explorer.exe "${cmd}"`);
+          return resolve({ success: true, message: `🚀 Đã mở ứng dụng "${clean}" trên máy tính của anh!` });
         });
+        return;
       }
 
       // 4. Tìm kiếm thông minh trong Start Menu & Desktop & Program Files (.lnk / .exe)
       const shortcut = WindowsController.findInstalledApp(lower);
       if (shortcut) {
-        exec(`start "" "${shortcut}"`, (err) => {
+        exec(`explorer.exe "${shortcut}"`, (err) => {
           if (err) {
             return resolve({ success: false, error: `❌ Không thể mở ứng dụng: ${err.message}` });
           }
@@ -450,9 +462,10 @@ Write-Output "OK"
       // 5. Thử kiểm tra xem lệnh có trong PATH không bằng where.exe
       exec(`where.exe "${clean}"`, (whereErr, whereOut) => {
         if (!whereErr && whereOut.trim()) {
-          exec(`start "" "${clean}"`);
+          exec(`powershell.exe -NoProfile -Command "Start-Process '${clean}'"`);
           return resolve({ success: true, message: `🚀 Đã khởi chạy "${clean}" trên máy tính của anh!` });
         }
+
 
         // Báo lỗi thân thiện, lịch sự thay vì ném raw XML stack trace
         return resolve({
