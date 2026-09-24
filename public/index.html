@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="/style.css?v=5.0">
+  <link rel="stylesheet" href="/style.css?v=5.5">
 </head>
 <body>
   <!-- Ambient background lighting effects -->
@@ -394,6 +394,17 @@
             </label>
 
             <label class="voice-card">
+              <input type="radio" name="voicePreset" value="moss_audio_881639b8-b831-11f1-80cc-aac30e71d302">
+              <div class="voice-card-content">
+                <span class="voice-avatar">🏹</span>
+                <div class="voice-meta">
+                  <strong>Typhoeus (MiniMax)</strong>
+                  <small>moss_audio Endfield Neural</small>
+                </div>
+              </div>
+            </label>
+
+            <label class="voice-card">
               <input type="radio" name="voicePreset" value="device_system">
               <div class="voice-card-content">
                 <span class="voice-avatar">📱</span>
@@ -404,6 +415,12 @@
               </div>
             </label>
           </div>
+        </div>
+
+        <!-- MiniMax API Key & Custom Voice ID (Optional) -->
+        <div class="setting-group" id="minimaxKeyGroup" style="display: none;">
+          <label class="setting-label" for="minimaxApiKeyInput">MiniMax API Key (Tùy chọn - Nếu có)</label>
+          <input type="password" id="minimaxApiKeyInput" placeholder="Nhập MiniMax API Key..." class="custom-select" style="font-family: monospace;">
         </div>
 
         <!-- System Voice Select Dropdown (Shown when device_system is chosen) -->
@@ -460,6 +477,6 @@
     <img class="lightbox-img" id="lightboxImg" src="" alt="Full Screen Screenshot" />
   </div>
 
-  <script src="/app.js?v=5.0"></script>
+  <script src="/app.js?v=5.5"></script>
 </body>
 </html>

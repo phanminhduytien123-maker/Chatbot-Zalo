@@ -126,12 +126,16 @@ class DianaVoiceApp {
     this.voiceSettingsChip = document.getElementById('voiceSettingsChip');
     this.voiceModalBackdrop = document.getElementById('voiceModalBackdrop');
     this.voiceModalCloseBtn = document.getElementById('voiceModalCloseBtn');
+    this.minimaxKeyGroup = document.getElementById('minimaxKeyGroup');
+    this.minimaxApiKeyInput = document.getElementById('minimaxApiKeyInput');
     this.systemVoiceGroup = document.getElementById('systemVoiceGroup');
     this.systemVoiceSelect = document.getElementById('systemVoiceSelect');
     this.voiceSpeedRange = document.getElementById('voiceSpeedRange');
     this.speedValueBadge = document.getElementById('speedValueBadge');
     this.voicePitchRange = document.getElementById('voicePitchRange');
     this.pitchValueBadge = document.getElementById('pitchValueBadge');
+    this.testVoiceBtn = document.getElementById('testVoiceBtn');
+    this.saveVoiceBtn = document.getElementById('saveVoiceBtn');
     this.liveOrbWaveBars = document.querySelectorAll('#liveOrbWaves span');
 
     this.init();
@@ -192,6 +196,9 @@ class DianaVoiceApp {
         this.voiceSettings.voicePreset = selected;
         if (this.systemVoiceGroup) {
           this.systemVoiceGroup.style.display = selected === 'device_system' ? 'flex' : 'none';
+        }
+        if (this.minimaxKeyGroup) {
+          this.minimaxKeyGroup.style.display = selected.startsWith('moss_audio_') ? 'flex' : 'none';
         }
         document.querySelectorAll('.voice-card').forEach(card => card.classList.remove('active'));
         e.target.closest('.voice-card')?.classList.add('active');
@@ -276,6 +283,14 @@ class DianaVoiceApp {
       this.systemVoiceGroup.style.display = this.voiceSettings.voicePreset === 'device_system' ? 'flex' : 'none';
     }
 
+    if (this.minimaxKeyGroup) {
+      this.minimaxKeyGroup.style.display = (this.voiceSettings.voicePreset || '').startsWith('moss_audio_') ? 'flex' : 'none';
+    }
+
+    if (this.minimaxApiKeyInput) {
+      this.minimaxApiKeyInput.value = this.voiceSettings.minimaxApiKey || '';
+    }
+
     if (this.voiceSpeedRange) {
       this.voiceSpeedRange.value = this.voiceSettings.speed || 1.0;
       if (this.speedValueBadge) this.speedValueBadge.textContent = `${(this.voiceSettings.speed || 1.0).toFixed(2)}x`;
@@ -311,6 +326,9 @@ class DianaVoiceApp {
 
   saveVoiceSettings() {
     this.haptic(40);
+    if (this.minimaxApiKeyInput) {
+      this.voiceSettings.minimaxApiKey = this.minimaxApiKeyInput.value.trim();
+    }
     localStorage.setItem('diana_voice_settings', JSON.stringify(this.voiceSettings));
     this.closeVoiceSettingsModal();
     this.showCapsule('idle', 'Cài đặt Giọng nói', '💾 Đã lưu tùy chọn giọng nói thành công!');
@@ -319,6 +337,9 @@ class DianaVoiceApp {
 
   testSelectedVoice() {
     this.haptic(30);
+    if (this.minimaxApiKeyInput) {
+      this.voiceSettings.minimaxApiKey = this.minimaxApiKeyInput.value.trim();
+    }
     const sampleText = 'Dạ em chào anh Tiến, em là trợ lý Diana của anh ạ! Anh thấy giọng này thế nào ạ?';
     this.speak(sampleText);
   }
@@ -1172,9 +1193,9 @@ class DianaVoiceApp {
       return;
     }
 
-    try {
       const voiceParam = encodeURIComponent(this.voiceSettings?.voicePreset || 'diana_female');
-      const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}&voice=${voiceParam}`;
+      const apiKeyParam = this.voiceSettings?.minimaxApiKey ? `&apiKey=${encodeURIComponent(this.voiceSettings.minimaxApiKey)}` : '';
+      const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}&voice=${voiceParam}${apiKeyParam}`;
       const audio = new Audio(ttsUrl);
       this.currentAudio = audio;
       if (this.voiceSettings && this.voiceSettings.speed) {

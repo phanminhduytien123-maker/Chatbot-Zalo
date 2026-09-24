@@ -261,7 +261,44 @@ const server = http.createServer(async (req, res) => {
   }));
 });
 
-async function streamTTS(text, res, voice = 'diana_female') {
+async function callMiniMaxTTS(text, voiceId, apiKey) {
+  const endpoint = 'https://api.minimax.chat/v1/t2a_v2';
+  const key = apiKey || process.env.MINIMAX_API_KEY;
+  if (!key) throw new Error('NO_MINIMAX_KEY');
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'speech-02-hd',
+      text: text,
+      stream: false,
+      voice_setting: {
+        voice_id: voiceId || 'moss_audio_881639b8-b831-11f1-80cc-aac30e71d302',
+        speed: 1.0,
+        vol: 1.0,
+        pitch: 0
+      },
+      audio_setting: {
+        sample_rate: 32000,
+        bitrate: 128000,
+        format: 'mp3',
+        channel: 1
+      }
+    })
+  });
+
+  const data = await response.json();
+  if (data && data.data && data.data.audio) {
+    return Buffer.from(data.data.audio, 'hex');
+  }
+  throw new Error(data?.base_resp?.status_msg || 'Lỗi từ MiniMax API');
+}
+
+async function streamTTS(text, res, voice = 'diana_female', apiKey = '') {
   if (!text || !text.trim()) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Text rỗng.' }));
@@ -273,7 +310,23 @@ async function streamTTS(text, res, voice = 'diana_female') {
     .replace(/\n+/g, '. ')
     .trim();
 
-  // Chia nhỏ thành các đoạn câu <= 180 ký tự
+  // 1. Thử gọi MiniMax Neural TTS nếu chọn giọng moss_audio hoặc typhoeus
+  if (voice.startsWith('moss_audio_') || voice === 'typhoeus' || apiKey || process.env.MINIMAX_API_KEY) {
+    try {
+      const voiceId = voice.startsWith('moss_audio_') ? voice : 'moss_audio_881639b8-b831-11f1-80cc-aac30e71d302';
+      const miniMaxBuffer = await callMiniMaxTTS(cleanText, voiceId, apiKey);
+      res.writeHead(200, {
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': miniMaxBuffer.length,
+        'Cache-Control': 'public, max-age=86400'
+      });
+      return res.end(miniMaxBuffer);
+    } catch (err) {
+      console.warn('[MiniMax TTS Fallback to Google]:', err.message);
+    }
+  }
+
+  // 2. Fallback sang Google TTS tiêu chuẩn
   const chunks = [];
   let remaining = cleanText;
   while (remaining.length > 0) {
