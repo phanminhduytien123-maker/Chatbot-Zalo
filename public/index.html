@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="/style.css?v=4.5">
+  <link rel="stylesheet" href="/style.css?v=5.0">
 </head>
 <body>
   <!-- Ambient background lighting effects -->
@@ -77,6 +77,14 @@
           </svg>
         </button>
 
+        <!-- Voice Settings / Select Voice Modal Button -->
+        <button class="icon-btn" id="voiceSettingsBtn" title="Cài đặt & Lựa chọn Giọng nói Trợ lý" aria-label="Cài đặt giọng nói">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"></path>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"></path>
+          </svg>
+        </button>
+
         <!-- TTS Voice Toggle -->
         <button class="icon-btn" id="ttsToggleBtn" title="Bật/Tắt đọc giọng nói" aria-label="Bật/Tắt đọc giọng nói">
           <svg class="icon" id="ttsIconOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -123,6 +131,9 @@
           <div class="quick-chips-carousel" id="quickChipsCarousel">
             <button class="chip chip-accent" id="autoVadChip">
               <span class="chip-icon">✨</span> Tự động nghe (Rảnh tay)
+            </button>
+            <button class="chip" id="voiceSettingsChip">
+              <span class="chip-icon">🎙️</span> Đổi giọng nói
             </button>
             <button class="chip chip-highlight" data-query="chụp ảnh màn hình máy tính">
               <span class="chip-icon">📸</span> Chụp màn hình PC
@@ -329,6 +340,119 @@
   </div>
 
   <!-- ==========================================================================
+       VOICE SETTINGS MODAL (CÀI ĐẶT & LỰA CHỌN GIỌNG NÓI DIANA)
+       ========================================================================== -->
+  <div class="voice-modal-backdrop" id="voiceModalBackdrop" style="display: none;">
+    <div class="voice-modal" id="voiceSettingsModal" role="dialog" aria-label="Cài đặt giọng nói">
+      <div class="voice-modal-header">
+        <div class="voice-modal-title">
+          <span class="modal-icon">🎙️</span>
+          <div>
+            <h3>Tùy chọn Giọng nói</h3>
+            <p>Chọn giọng đọc & tốc độ yêu thích cho Diana</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="voiceModalCloseBtn" aria-label="Đóng cài đặt">&times;</button>
+      </div>
+
+      <div class="voice-modal-body">
+        <!-- 1. Voice Engine & Preset Selector -->
+        <div class="setting-group">
+          <label class="setting-label">Giọng đọc Trợ lý</label>
+          <div class="voice-options-grid">
+            <label class="voice-card active">
+              <input type="radio" name="voicePreset" value="diana_female" checked>
+              <div class="voice-card-content">
+                <span class="voice-avatar">🌸</span>
+                <div class="voice-meta">
+                  <strong>Diana (Mặc định)</strong>
+                  <small>Nữ dịu dàng, tự nhiên (Cloud)</small>
+                </div>
+              </div>
+            </label>
+
+            <label class="voice-card">
+              <input type="radio" name="voicePreset" value="viet_male">
+              <div class="voice-card-content">
+                <span class="voice-avatar">👨</span>
+                <div class="voice-meta">
+                  <strong>Minh Quân</strong>
+                  <small>Nam trầm ấm, rõ ràng (Cloud)</small>
+                </div>
+              </div>
+            </label>
+
+            <label class="voice-card">
+              <input type="radio" name="voicePreset" value="google_female">
+              <div class="voice-card-content">
+                <span class="voice-avatar">👩‍💼</span>
+                <div class="voice-meta">
+                  <strong>Huyền Trang</strong>
+                  <small>Nữ chuẩn Google Voice</small>
+                </div>
+              </div>
+            </label>
+
+            <label class="voice-card">
+              <input type="radio" name="voicePreset" value="device_system">
+              <div class="voice-card-content">
+                <span class="voice-avatar">📱</span>
+                <div class="voice-meta">
+                  <strong>Giọng máy thiết bị</strong>
+                  <small>Danh sách giọng có trên máy</small>
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- System Voice Select Dropdown (Shown when device_system is chosen) -->
+        <div class="setting-group" id="systemVoiceGroup" style="display: none;">
+          <label class="setting-label" for="systemVoiceSelect">Chọn giọng từ điện thoại / máy tính</label>
+          <select class="custom-select" id="systemVoiceSelect"></select>
+        </div>
+
+        <!-- 2. Speed Slider -->
+        <div class="setting-group">
+          <div class="setting-header-row">
+            <label class="setting-label" for="voiceSpeedRange">Tốc độ đọc</label>
+            <span class="setting-value-badge" id="speedValueBadge">1.0x (Chuẩn)</span>
+          </div>
+          <input type="range" id="voiceSpeedRange" min="0.75" max="1.4" step="0.05" value="1.0" class="custom-range">
+          <div class="range-markers">
+            <span>Chậm (0.75x)</span>
+            <span>Chuẩn (1.0x)</span>
+            <span>Nhanh (1.4x)</span>
+          </div>
+        </div>
+
+        <!-- 3. Pitch / Tone -->
+        <div class="setting-group">
+          <div class="setting-header-row">
+            <label class="setting-label" for="voicePitchRange">Cao độ giọng (Pitch)</label>
+            <span class="setting-value-badge" id="pitchValueBadge">1.0 (Tự nhiên)</span>
+          </div>
+          <input type="range" id="voicePitchRange" min="0.8" max="1.3" step="0.05" value="1.0" class="custom-range">
+          <div class="range-markers">
+            <span>Trầm ấm</span>
+            <span>Tự nhiên</span>
+            <span>Trong trẻo</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="voice-modal-footer">
+        <button class="btn-secondary" id="testVoiceBtn">
+          <span>🔊</span> Nghe thử giọng
+        </button>
+        <button class="btn-primary" id="saveVoiceBtn">
+          <span>💾</span> Lưu cài đặt
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
        IMAGE LIGHTBOX (XEM ẢNH FULL MÀN HÌNH CHO MOBILE)
        ========================================================================== -->
   <div class="image-lightbox" id="imageLightbox" style="display: none;">
@@ -336,6 +460,6 @@
     <img class="lightbox-img" id="lightboxImg" src="" alt="Full Screen Screenshot" />
   </div>
 
-  <script src="/app.js?v=4.5"></script>
+  <script src="/app.js?v=5.0"></script>
 </body>
 </html>

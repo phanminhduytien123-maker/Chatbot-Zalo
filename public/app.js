@@ -107,6 +107,31 @@ class DianaVoiceApp {
     this.dotWaveBars = document.querySelectorAll('#dotWaveBars span');
     this.capsuleWaveBars = document.querySelectorAll('#capsuleWave span');
     this.bottomRecWaves = document.querySelectorAll('#bottomRecWaves span');
+    // Voice Settings Configuration
+    const defaultVoiceSettings = {
+      voicePreset: 'diana_female', // 'diana_female' | 'viet_male' | 'google_female' | 'device_system'
+      speed: 1.0,
+      pitch: 1.0,
+      systemVoiceURI: ''
+    };
+    try {
+      const saved = localStorage.getItem('diana_voice_settings');
+      this.voiceSettings = saved ? { ...defaultVoiceSettings, ...JSON.parse(saved) } : defaultVoiceSettings;
+    } catch (_) {
+      this.voiceSettings = defaultVoiceSettings;
+    }
+
+    // Voice Settings Modal Elements
+    this.voiceSettingsBtn = document.getElementById('voiceSettingsBtn');
+    this.voiceSettingsChip = document.getElementById('voiceSettingsChip');
+    this.voiceModalBackdrop = document.getElementById('voiceModalBackdrop');
+    this.voiceModalCloseBtn = document.getElementById('voiceModalCloseBtn');
+    this.systemVoiceGroup = document.getElementById('systemVoiceGroup');
+    this.systemVoiceSelect = document.getElementById('systemVoiceSelect');
+    this.voiceSpeedRange = document.getElementById('voiceSpeedRange');
+    this.speedValueBadge = document.getElementById('speedValueBadge');
+    this.voicePitchRange = document.getElementById('voicePitchRange');
+    this.pitchValueBadge = document.getElementById('pitchValueBadge');
     this.liveOrbWaveBars = document.querySelectorAll('#liveOrbWaves span');
 
     this.init();
@@ -116,6 +141,7 @@ class DianaVoiceApp {
     this.initDynamicViewport();
     this.initSpeechRecognition();
     this.initAssistiveDotPhysics();
+    this.initVoiceSettings();
     this.setupEventListeners();
     this.setupQuickChips();
     this.setupPWA();
@@ -128,6 +154,173 @@ class DianaVoiceApp {
     if (this.autoVadEnabled) {
       setTimeout(() => this.startAutoVadLoop(), 1200);
     }
+  }
+
+  /**
+   * Khởi tạo Bộ điều khiển & Tùy chọn Giọng nói (Voice Settings Engine)
+   */
+  initVoiceSettings() {
+    this.populateSystemVoices();
+    if (this.synth && 'onvoiceschanged' in this.synth) {
+      this.synth.onvoiceschanged = () => this.populateSystemVoices();
+    }
+
+    this.syncVoiceSettingsToUI();
+
+    if (this.voiceSettingsBtn) {
+      this.voiceSettingsBtn.addEventListener('click', () => this.openVoiceSettingsModal());
+    }
+    if (this.voiceSettingsChip) {
+      this.voiceSettingsChip.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.openVoiceSettingsModal();
+      });
+    }
+    if (this.voiceModalCloseBtn) {
+      this.voiceModalCloseBtn.addEventListener('click', () => this.closeVoiceSettingsModal());
+    }
+    if (this.voiceModalBackdrop) {
+      this.voiceModalBackdrop.addEventListener('click', (e) => {
+        if (e.target === this.voiceModalBackdrop) this.closeVoiceSettingsModal();
+      });
+    }
+
+    const radioCards = document.querySelectorAll('input[name="voicePreset"]');
+    radioCards.forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const selected = e.target.value;
+        this.voiceSettings.voicePreset = selected;
+        if (this.systemVoiceGroup) {
+          this.systemVoiceGroup.style.display = selected === 'device_system' ? 'flex' : 'none';
+        }
+        document.querySelectorAll('.voice-card').forEach(card => card.classList.remove('active'));
+        e.target.closest('.voice-card')?.classList.add('active');
+      });
+    });
+
+    if (this.voiceSpeedRange) {
+      this.voiceSpeedRange.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        this.voiceSettings.speed = val;
+        let label = `${val.toFixed(2)}x`;
+        if (val <= 0.85) label += ' (Chậm)';
+        else if (val >= 0.95 && val <= 1.05) label += ' (Chuẩn)';
+        else if (val > 1.05 && val <= 1.25) label += ' (Nhanh)';
+        else label += ' (Rất nhanh)';
+        if (this.speedValueBadge) this.speedValueBadge.textContent = label;
+      });
+    }
+
+    if (this.voicePitchRange) {
+      this.voicePitchRange.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        this.voiceSettings.pitch = val;
+        let label = `${val.toFixed(2)}`;
+        if (val <= 0.9) label += ' (Trầm ấm)';
+        else if (val >= 0.95 && val <= 1.05) label += ' (Tự nhiên)';
+        else label += ' (Trong trẻo)';
+        if (this.pitchValueBadge) this.pitchValueBadge.textContent = label;
+      });
+    }
+
+    if (this.systemVoiceSelect) {
+      this.systemVoiceSelect.addEventListener('change', (e) => {
+        this.voiceSettings.systemVoiceURI = e.target.value;
+      });
+    }
+
+    if (this.testVoiceBtn) {
+      this.testVoiceBtn.addEventListener('click', () => this.testSelectedVoice());
+    }
+
+    if (this.saveVoiceBtn) {
+      this.saveVoiceBtn.addEventListener('click', () => this.saveVoiceSettings());
+    }
+  }
+
+  populateSystemVoices() {
+    if (!this.synth || !this.systemVoiceSelect) return;
+    const voices = this.synth.getVoices();
+    if (!voices || voices.length === 0) return;
+
+    this.systemVoiceSelect.innerHTML = '';
+
+    const sorted = [...voices].sort((a, b) => {
+      const isViA = (a.lang || '').toLowerCase().includes('vi');
+      const isViB = (b.lang || '').toLowerCase().includes('vi');
+      if (isViA && !isViB) return -1;
+      if (!isViA && isViB) return 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    sorted.forEach((v) => {
+      const option = document.createElement('option');
+      option.value = v.voiceURI || v.name;
+      option.textContent = `${v.name} (${v.lang})`;
+      if (this.voiceSettings.systemVoiceURI && (v.voiceURI === this.voiceSettings.systemVoiceURI || v.name === this.voiceSettings.systemVoiceURI)) {
+        option.selected = true;
+      }
+      this.systemVoiceSelect.appendChild(option);
+    });
+  }
+
+  syncVoiceSettingsToUI() {
+    const radio = document.querySelector(`input[name="voicePreset"][value="${this.voiceSettings.voicePreset}"]`);
+    if (radio) {
+      radio.checked = true;
+      document.querySelectorAll('.voice-card').forEach(card => card.classList.remove('active'));
+      radio.closest('.voice-card')?.classList.add('active');
+    }
+
+    if (this.systemVoiceGroup) {
+      this.systemVoiceGroup.style.display = this.voiceSettings.voicePreset === 'device_system' ? 'flex' : 'none';
+    }
+
+    if (this.voiceSpeedRange) {
+      this.voiceSpeedRange.value = this.voiceSettings.speed || 1.0;
+      if (this.speedValueBadge) this.speedValueBadge.textContent = `${(this.voiceSettings.speed || 1.0).toFixed(2)}x`;
+    }
+
+    if (this.voicePitchRange) {
+      this.voicePitchRange.value = this.voiceSettings.pitch || 1.0;
+      if (this.pitchValueBadge) this.pitchValueBadge.textContent = `${(this.voiceSettings.pitch || 1.0).toFixed(2)}`;
+    }
+  }
+
+  openVoiceSettingsModal() {
+    this.haptic(30);
+    this.populateSystemVoices();
+    this.syncVoiceSettingsToUI();
+    if (this.voiceModalBackdrop) {
+      this.voiceModalBackdrop.style.display = 'flex';
+    }
+  }
+
+  closeVoiceSettingsModal() {
+    this.haptic(20);
+    if (this.voiceModalBackdrop) {
+      this.voiceModalBackdrop.style.display = 'none';
+    }
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+    }
+    if (this.synth) {
+      this.synth.cancel();
+    }
+  }
+
+  saveVoiceSettings() {
+    this.haptic(40);
+    localStorage.setItem('diana_voice_settings', JSON.stringify(this.voiceSettings));
+    this.closeVoiceSettingsModal();
+    this.showCapsule('idle', 'Cài đặt Giọng nói', '💾 Đã lưu tùy chọn giọng nói thành công!');
+    this.scheduleCapsuleClose(3000);
+  }
+
+  testSelectedVoice() {
+    this.haptic(30);
+    const sampleText = 'Dạ em chào anh Tiến, em là trợ lý Diana của anh ạ! Anh thấy giọng này thế nào ạ?';
+    this.speak(sampleText);
   }
 
   /**
@@ -974,10 +1167,19 @@ class DianaVoiceApp {
     this.capsuleStatus.textContent = 'Diana đang nói...';
     this.updateLiveOverlayState('speaking', 'Diana đang nói', text);
 
+    if (this.voiceSettings && this.voiceSettings.voicePreset === 'device_system') {
+      this.fallbackSpeechSynthesis(cleanText);
+      return;
+    }
+
     try {
-      const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}`;
+      const voiceParam = encodeURIComponent(this.voiceSettings?.voicePreset || 'diana_female');
+      const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}&voice=${voiceParam}`;
       const audio = new Audio(ttsUrl);
       this.currentAudio = audio;
+      if (this.voiceSettings && this.voiceSettings.speed) {
+        audio.playbackRate = this.voiceSettings.speed;
+      }
 
       audio.onplay = () => {
         this.isSpeaking = true;
@@ -1034,12 +1236,18 @@ class DianaVoiceApp {
       this.synth.cancel();
       const utterance = new SpeechSynthesisUtterance(cleanText);
       utterance.lang = 'vi-VN';
-      utterance.rate = 1.05;
-      utterance.pitch = 1.0;
+      utterance.rate = this.voiceSettings?.speed || 1.0;
+      utterance.pitch = this.voiceSettings?.pitch || 1.0;
 
       const voices = this.synth.getVoices();
-      const viVoice = voices.find(v => v.lang && (v.lang.includes('vi') || v.lang.includes('VN')));
-      if (viVoice) utterance.voice = viVoice;
+      let selectedVoice = null;
+      if (this.voiceSettings?.systemVoiceURI) {
+        selectedVoice = voices.find(v => v.voiceURI === this.voiceSettings.systemVoiceURI || v.name === this.voiceSettings.systemVoiceURI);
+      }
+      if (!selectedVoice) {
+        selectedVoice = voices.find(v => v.lang && (v.lang.includes('vi') || v.lang.includes('VN')));
+      }
+      if (selectedVoice) utterance.voice = selectedVoice;
 
       utterance.onstart = () => {
         this.isSpeaking = true;

@@ -124,6 +124,7 @@ const server = http.createServer(async (req, res) => {
   // 3. API: Text-to-Speech (TTS) Giọng nói tiếng Việt tự nhiên cho Diana
   if (url.pathname === '/api/tts') {
     let text = url.searchParams.get('text') || '';
+    let voice = url.searchParams.get('voice') || 'diana_female';
     if (!text && req.method === 'POST') {
       let body = '';
       req.on('data', chunk => { body += chunk; });
@@ -131,7 +132,8 @@ const server = http.createServer(async (req, res) => {
         try {
           const json = JSON.parse(body || '{}');
           text = json.text || '';
-          await streamTTS(text, res);
+          voice = json.voice || voice;
+          await streamTTS(text, res, voice);
         } catch (_) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Lỗi parse text' }));
@@ -139,7 +141,7 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    await streamTTS(text, res);
+    await streamTTS(text, res, voice);
     return;
   }
 
@@ -259,7 +261,7 @@ const server = http.createServer(async (req, res) => {
   }));
 });
 
-async function streamTTS(text, res) {
+async function streamTTS(text, res, voice = 'diana_female') {
   if (!text || !text.trim()) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Text rỗng.' }));
