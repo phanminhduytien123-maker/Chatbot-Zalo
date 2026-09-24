@@ -319,23 +319,50 @@ export class ZaloLiveConnector {
 
         // Xử lý tin nhắn qua MessageHandler / Gemini AI (bất đồng bộ độc lập)
         MessageHandler.handleIncomingMessage(finalQuery, threadId).then(async (reply) => {
-          if (reply && reply.trim().length > 0) {
-            const cleanReply = reply.trim();
+          if (!reply) return;
 
+          let cleanReply = '';
+          let attachments = [];
+
+          if (typeof reply === 'string') {
+            cleanReply = reply.trim();
+          } else if (typeof reply === 'object') {
+            cleanReply = (reply.text || '').trim();
+            if (Array.isArray(reply.attachments)) {
+              attachments = reply.attachments.filter(f => typeof f === 'string' && fs.existsSync(f));
+            }
+          }
+
+          if (cleanReply) {
             this.botSentContents.add(cleanReply);
             if (this.botSentContents.size > 100) {
               const first = this.botSentContents.values().next().value;
               this.botSentContents.delete(first);
             }
+          }
 
-            try {
+          try {
+            if (cleanReply) {
               await this.sendSafeMessage(cleanReply, threadId, threadType);
-              console.log(chalk.green(`📤 [Zalo Đã Trả Lời Xong]`));
-            } catch (sendErr) {
-              console.error(chalk.red('❌ Lỗi khi gửi phản hồi Zalo:'), sendErr.message);
-              if (sendErr.message?.includes('socket') || sendErr.message?.includes('network') || sendErr.message?.includes('ECONNRESET')) {
-                this.safeReconnect('Lỗi socket khi gửi phản hồi');
+            }
+            if (attachments.length > 0 && this.api) {
+              for (const attPath of attachments) {
+                try {
+                  await this.api.sendMessage({
+                    msg: '',
+                    attachments: [attPath]
+                  }, threadId, threadType);
+                  console.log(chalk.green(`📎 [Zalo] Đã gửi file đính kèm: ${path.basename(attPath)}`));
+                } catch (attErr) {
+                  console.error(chalk.red(`❌ Lỗi gửi file đính kèm ${attPath}:`), attErr.message);
+                }
               }
+            }
+            console.log(chalk.green(`📤 [Zalo Đã Trả Lời Xong]`));
+          } catch (sendErr) {
+            console.error(chalk.red('❌ Lỗi khi gửi phản hồi Zalo:'), sendErr.message);
+            if (sendErr.message?.includes('socket') || sendErr.message?.includes('network') || sendErr.message?.includes('ECONNRESET')) {
+              this.safeReconnect('Lỗi socket khi gửi phản hồi');
             }
           }
         }).catch((procErr) => {

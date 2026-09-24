@@ -6,17 +6,22 @@ import scheduler from '../services/scheduler.js';
 import config from '../config/config.js';
 import weatherService from '../services/weather.js';
 import TimeService from '../services/timeService.js';
+import ExcelService from '../services/excelService.js';
+import SystemService from '../services/systemService.js';
+import QRService from '../services/qrService.js';
+import SearchService from '../services/searchService.js';
 
 export class MessageHandler {
   /**
    * Xử lý tin nhắn đến (từ người dùng gửi cho Bot)
    * @param {string} rawText 
    * @param {string} [senderThreadId]
-   * @returns {Promise<string>} Tin nhắn phản hồi
+   * @returns {Promise<string|object>} Tin nhắn phản hồi hoặc object đính kèm file
    */
   static async handleIncomingMessage(rawText, senderThreadId = null) {
     if (!rawText || typeof rawText !== 'string') return '';
     const text = rawText.trim();
+    const lower = text.toLowerCase();
 
     // 1. Phân loại lệnh tắt nhanh (Slash commands)
     if (text.startsWith('/')) {
@@ -25,6 +30,7 @@ export class MessageHandler {
       const args = parts.slice(1).join(' ').trim();
 
       switch (command) {
+        // --- NHÓM 1: ĐỒNG HỒ & THỜI TIẾT ---
         case '/time':
         case '/gio':
         case '/ngay':
@@ -39,6 +45,92 @@ export class MessageHandler {
           return await weatherService.generateMorningBriefing();
         }
 
+        // --- NHÓM 2: TÁC VỤ HỌC TẬP & EXCEL XUẤT FILE ---
+        case '/excel':
+        case '/xuatdiem':
+        case '/export':
+        case '/bangdiemfile': {
+          try {
+            const res = ExcelService.generateGradesWorkbook();
+            const msg = `📊 Dạ em Diana đã tạo xong file Excel Bảng điểm cho anh Tiến rồi ạ! 🌸\n` +
+              `• Tổng số môn: ${res.totalGrades} môn học\n` +
+              `• GPA Tích lũy: ${res.overallGPA} / 10 (${res.totalCredits} TC)\n` +
+              `• File gồm 3 Sheet: Bảng Điểm Chi Tiết, Tổng Kết GPA/ĐRL, Học Phí & Đơn Từ.\n` +
+              `📁 Em đang gửi file đính kèm trực tiếp cho anh nhé! ✨`;
+            return {
+              text: msg,
+              attachments: [res.filePath]
+            };
+          } catch (err) {
+            return `❌ Lỗi khi tạo file Excel: ${err.message}`;
+          }
+        }
+
+        // --- NHÓM 3: QUẢN TRỊ SERVER & HỆ THỐNG ---
+        case '/server':
+        case '/ram':
+        case '/cpu':
+        case '/system':
+        case '/hethong': {
+          return SystemService.getSystemReport();
+        }
+
+        case '/clean':
+        case '/donrac':
+        case '/gc': {
+          return SystemService.cleanGarbage();
+        }
+
+        case '/ping':
+        case '/checkweb': {
+          if (!args) {
+            return `⚠️ Vui lòng cung cấp link cần kiểm tra (VD: /ping stdportal.tdtu.edu.vn)`;
+          }
+          return await SystemService.pingWebsite(args);
+        }
+
+        // --- NHÓM 4: TÌM KIẾM WEB REALTIME & QR CODE ---
+        case '/search':
+        case '/timkiem':
+        case '/google': {
+          if (!args) {
+            return `⚠️ Vui lòng nhập từ khóa cần tìm kiếm (VD: /search Đại học Tôn Đức Thắng)`;
+          }
+          const results = await SearchService.searchWeb(args, 4);
+          return SearchService.formatSearchResults(args, results);
+        }
+
+        case '/qr':
+        case '/qrcode': {
+          if (!args) {
+            return `⚠️ Vui lòng nhập nội dung hoặc link cần tạo mã QR (VD: /qr https://tdtu.edu.vn)`;
+          }
+          try {
+            const qrRes = await QRService.generateQRCodeImage(args);
+            return {
+              text: `🔲 Dạ em Diana đã tạo xong mã QR Code cho nội dung: "${args}" rồi ạ! 🌸`,
+              attachments: [qrRes.filePath]
+            };
+          } catch (err) {
+            return `❌ Lỗi khi tạo mã QR: ${err.message}`;
+          }
+        }
+
+        case '/vietqr': {
+          // Cú pháp: /vietqr <MãBank> <STK> [SốTiền] [NộiDung]
+          const qrParts = args.split(/\s+/);
+          if (qrParts.length < 2) {
+            return `⚠️ Cú pháp: /vietqr <MãNgânHàng> <SốTàiKhoản> [SốTiền] [NộiDung]\n(VD: /vietqr MB 0847839234 50000 TienAnTrua)`;
+          }
+          const bank = qrParts[0];
+          const acc = qrParts[1];
+          const amt = qrParts[2] ? parseInt(qrParts[2], 10) : 0;
+          const desc = qrParts.slice(3).join(' ') || '';
+          const vietQrUrl = QRService.generateVietQRUrl(bank, acc, amt, desc);
+          return `💳 LINK MÃ VIETQR THANH TOÁN:\n• Ngân hàng: ${bank.toUpperCase()}\n• STK: ${acc}\n${amt > 0 ? `• Số tiền: ${amt.toLocaleString('vi-VN')} VNĐ\n` : ''}${desc ? `• Nội dung: ${desc}\n` : ''}🔗 Link QR: ${vietQrUrl}`;
+        }
+
+        // --- NHÓM 5: CỔNG THÔNG TIN TDTU ---
         case '/check': {
           const cookieStatus = await scraper.checkCookieStatus();
           const grades = await scraper.getGrades();
@@ -147,7 +239,7 @@ export class MessageHandler {
           const app = monitor.simulateApprovedApp();
           if (app) {
             setTimeout(() => monitor.runCheckCycle(), 500);
-            return `🧪 [Test Giả Lập] Đã chuyển đơn [${app.id}] sang trạng thái ĐÃ DUYỆT! Bot chuẩn bị nổ thông báo tự động!`;
+            return `🧪 [Test Giập Lập] Đã chuyển đơn [${app.id}] sang trạng thái ĐÃ DUYỆT! Bot chuẩn bị nổ thông báo tự động!`;
           }
           return 'Không tìm thấy đơn để giả lập.';
         }
@@ -176,7 +268,83 @@ export class MessageHandler {
       return timeReply;
     }
 
-    // 3. Nhận diện ý định ĐẶT LỊCH HẸN GIỜ (NLP Reminder Extraction)
+    // 3. Nhận diện ý định XUẤT FILE EXCEL BẢNG ĐIỂM
+    if (
+      lower.includes('xuất excel') || 
+      lower.includes('xuat excel') || 
+      lower.includes('file excel') || 
+      lower.includes('gửi file điểm') || 
+      lower.includes('gui file diem') ||
+      lower.includes('bảng điểm excel') ||
+      lower.includes('tải bảng điểm')
+    ) {
+      try {
+        const res = ExcelService.generateGradesWorkbook();
+        const msg = `📊 Dạ em Diana đã tạo xong file Excel Bảng điểm cho anh Tiến rồi ạ! 🌸\n` +
+          `• Tổng số môn: ${res.totalGrades} môn học\n` +
+          `• GPA Tích lũy: ${res.overallGPA} / 10 (${res.totalCredits} TC)\n` +
+          `📁 Em đang gửi file đính kèm trực tiếp cho anh nhé! ✨`;
+        aiAssistant.memory.addTurn(text, msg);
+        return {
+          text: msg,
+          attachments: [res.filePath]
+        };
+      } catch (err) {
+        return `❌ Lỗi khi tạo file Excel: ${err.message}`;
+      }
+    }
+
+    // 4. Nhận diện ý định KIỂM TRA TÀI NGUYÊN SERVER
+    if (
+      lower.includes('tài nguyên server') || 
+      lower.includes('kiểm tra server') || 
+      lower.includes('tình trạng server') || 
+      lower.includes('ram bot') || 
+      lower.includes('cpu bot') ||
+      lower.includes('thông số server')
+    ) {
+      const sysRep = SystemService.getSystemReport();
+      aiAssistant.memory.addTurn(text, sysRep);
+      return sysRep;
+    }
+
+    // 5. Nhận diện ý định DỌN DẸP HỆ THỐNG / BỘ NHỚ
+    if (lower.includes('dọn dẹp server') || lower.includes('dọn rác') || lower.includes('giải phóng ram')) {
+      const cleanRep = SystemService.cleanGarbage();
+      aiAssistant.memory.addTurn(text, cleanRep);
+      return cleanRep;
+    }
+
+    // 6. Nhận diện ý định TẠO MÃ QR CODE
+    if ((lower.startsWith('tạo mã qr') || lower.startsWith('tạo qr') || lower.startsWith('tao qr')) && text.length > 8) {
+      const contentToEncode = text.replace(/^(tạo mã qr|tạo qr|tao qr|mã qr cho)\s*(cho\s*)?/i, '').trim();
+      if (contentToEncode) {
+        try {
+          const qrRes = await QRService.generateQRCodeImage(contentToEncode);
+          const msg = `🔲 Dạ em Diana đã tạo xong mã QR Code cho nội dung: "${contentToEncode}" rồi ạ! 🌸`;
+          aiAssistant.memory.addTurn(text, msg);
+          return {
+            text: msg,
+            attachments: [qrRes.filePath]
+          };
+        } catch (err) {
+          return `❌ Lỗi khi tạo mã QR: ${err.message}`;
+        }
+      }
+    }
+
+    // 7. Nhận diện ý định TÌM KIẾM WEB REALTIME TRỰC TIẾP
+    if (lower.startsWith('tìm kiếm ') || lower.startsWith('tra cứu ') || lower.startsWith('search ')) {
+      const query = text.replace(/^(tìm kiếm|tra cứu|search)\s*(trên web\s*|google\s*)?/i, '').trim();
+      if (query.length > 2) {
+        const results = await SearchService.searchWeb(query, 4);
+        const searchFormatted = SearchService.formatSearchResults(query, results);
+        aiAssistant.memory.addTurn(text, searchFormatted);
+        return searchFormatted;
+      }
+    }
+
+    // 8. Nhận diện ý định ĐẶT LỊCH HẸN GIỜ (NLP Reminder Extraction)
     const reminderParsed = scheduler.parseNaturalLanguage(text);
     if (reminderParsed && reminderParsed.times && reminderParsed.times.length > 0) {
       if (senderThreadId) {
@@ -190,7 +358,7 @@ export class MessageHandler {
       }
     }
 
-    // 4. Nếu không phải lệnh / và không phải cài lịch thì chuyển cho AI Agent Gemini xử lý
+    // 9. Nếu không thuộc các trường hợp trên, chuyển cho Gemini AI Agent xử lý
     return await aiAssistant.processUserMessage(text);
   }
 }

@@ -5,6 +5,8 @@ import storage from '../services/storage.js';
 import memory from '../services/memory.js';
 import weatherService from '../services/weather.js';
 import TimeService from '../services/timeService.js';
+import SearchService from '../services/searchService.js';
+import SystemService from '../services/systemService.js';
 
 // Danh sách các model AI ưu tiên theo tốc độ và dung lượng quota
 const BACKUP_MODELS = [
@@ -142,6 +144,17 @@ export class GeminiAssistant {
         if (lower.includes('thời tiết') || lower.includes('thoitiet') || lower.includes('mưa') || lower.includes('nhiệt độ') || lower.includes('nắng') || lower.includes('áo mưa') || lower.includes('ô')) {
           const weatherInfo = await weatherService.getWeatherSummaryForAI();
           deepExtraInfo += `\n[DỮ LIỆU THỜI TIẾT TP.HCM HÔM NAY TỪ VỆ TINH]:\n${weatherInfo}\n`;
+        }
+
+        if (lower.includes('tìm kiếm') || lower.includes('tra cứu') || lower.includes('tin tức') || lower.includes('search')) {
+          const query = userText.replace(/^(tìm kiếm|tra cứu|search|tin tức)\s*(về|trên web)?/i, '').trim();
+          if (query.length > 2) {
+            const searchResults = await SearchService.searchWeb(query, 3);
+            if (searchResults.length > 0) {
+              const formattedSearch = searchResults.map(s => `- ${s.title}: ${s.snippet} (Link: ${s.link})`).join('\n');
+              deepExtraInfo += `\n[KẾT QUẢ TÌM KIẾM WEB REALTIME MỚI NHẤT]:\n${formattedSearch}\n`;
+            }
+          }
         }
 
         const bot = config.bot;

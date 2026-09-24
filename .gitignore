@@ -11,6 +11,9 @@ data/appstate.json
 data/state.json
 data/memory.json
 data/reminders.json
+data/exports/
+data/qr/
+*.xlsx
 qr.png
 
 # Logs

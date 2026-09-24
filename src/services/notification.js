@@ -191,27 +191,32 @@ export class NotificationFormatter {
    * Menu trợ giúp
    */
   static formatHelpMenu() {
-    return `🤖 DIANA - AI AGENT TRỢ LÝ CỦA ANH TIẾN:\n` +
+    return `🤖 DIANA - AI AGENT TRỢ LÝ TOÀN NĂNG CỦA ANH TIẾN:\n` +
       `━━━━━━━━━━━━━━━━━━━━━\n` +
-      `Dạ em chào anh Tiến! Em là Diana (AI Agent). Dưới đây là các lệnh và tính năng anh có thể sử dụng:\n\n` +
-      `1. 📊 /check - Báo cáo tổng quan tình trạng hệ thống & điểm\n` +
-      `2. 🎓 /diem - Xem bảng điểm chi tiết các môn\n` +
-      `3. 📑 /don - Theo dõi tiến độ duyệt đơn từ trực tuyến\n` +
-      `4. 📢 /tintuc - Xem các thông báo mới nhất từ trường\n` +
-      `5. 🏃 /hoatdong - Xem hoạt động ngoại khóa & điểm rèn luyện\n` +
-      `6. ⛅ /thoitiet - Xem dự báo thời tiết TP.HCM & khung giờ có mưa hôm nay\n` +
-      `7. ⏰ /reminders - Xem danh sách các lịch hẹn giờ đang bật\n` +
-      `8. 🗑️ /xoalich <Mã> - Hủy lịch hẹn giờ (hoặc /xoalich all)\n` +
-      `9. 🔄 /change /MSSV/MậtKhẩu - Đổi tài khoản để check sinh viên khác\n` +
-      `10. 🔑 /cookie <chuỗi_cookie> - Cập nhật Cookie mới\n` +
-      `11. 🧪 /simscore - Thử nghiệm mô phỏng có điểm môn mới\n` +
-      `12. 🧪 /simapp - Thử nghiệm mô phỏng đơn được duyệt\n` +
+      `Dạ em chào anh Tiến! Dưới đây là các nhóm lệnh và tính năng thực thi em có thể làm cho anh:\n\n` +
+      `🎓 [HỌC TẬP & EXCEL]:\n` +
+      `• /excel - Xuất file Excel Bảng điểm toàn khóa (3 Sheet: Điểm, GPA, Học phí)\n` +
+      `• /check - Báo cáo tổng quan tình trạng điểm & hệ thống\n` +
+      `• /diem - Xem bảng điểm chi tiết các môn\n` +
+      `• /don - Theo dõi tiến độ duyệt đơn từ trực tuyến\n` +
+      `• /tintuc - Xem các thông báo mới nhất từ trường\n` +
+      `• /hoatdong - Xem hoạt động ngoại khóa & điểm rèn luyện\n\n` +
+      `💻 [QUẢN TRỊ SERVER & DEVOPS]:\n` +
+      `• /server - Báo cáo tài nguyên máy chủ (RAM, CPU, Uptime, Node.js)\n` +
+      `• /clean - Dọn dẹp file tạm và giải phóng bộ nhớ\n` +
+      `• /ping <url> - Đo độ trễ kết nối (ms) tới trang web bất kỳ\n\n` +
+      `🔍 [TIỆN ÍCH & ĐA PHƯƠNG TIỆN]:\n` +
+      `• /search <từ khóa> - Tìm kiếm Web Google / Wikipedia Realtime\n` +
+      `• /qr <nội dung/link> - Tạo ảnh mã QR Code gửi qua Zalo\n` +
+      `• /vietqr <bank> <stk> [tiền] [noidung] - Tạo mã VietQR thanh toán nhanh\n` +
+      `• /thoitiet - Dự báo thời tiết TP.HCM & khung giờ mưa hôm nay\n` +
+      `• /time - Xem đồng hồ thời gian thực chính xác từng giây\n\n` +
+      `⏰ [HẸN GIỜ & NHẮC VIỆC]:\n` +
+      `• /reminders - Xem danh sách lịch hẹn đang bật\n` +
+      `• /xoalich <Mã> - Hủy lịch hẹn giờ (hoặc /xoalich all)\n` +
+      `• Chat tự nhiên: "6h tối nay nhắc anh làm đồ án", "mỗi ngày nhắc anh chấm công lúc 8h sáng và 5h30 chiều"\n` +
       `━━━━━━━━━━━━━━━━━━━━━\n` +
-      `⏰ HẸN GIỜ TỰ NHIÊN: Anh có thể nhắn bất kỳ câu nào như:\n` +
-      `👉 "6h tối hôm nay em nhắc anh làm đồ án nhé"\n` +
-      `👉 "mỗi ngày nhớ nhắc anh chấm công lúc 8h sáng và 5h30 tối"\n` +
-      `👉 "15 phút nữa nhắc anh uống nước"\n` +
-      `Em sẽ tự động tạo lịch Zalo và gửi tin nhắn trực tiếp nhắc anh đúng giờ ạ! 🌸`;
+      `🌸 Anh có thể gõ lệnh hoặc chat tự nhiên như người thật với em nhé! ✨`;
   }
 }
 
