@@ -7,6 +7,7 @@ import weatherService from '../services/weather.js';
 import TimeService from '../services/timeService.js';
 import SearchService from '../services/searchService.js';
 import SystemService from '../services/systemService.js';
+import VoiceNormalizer from '../services/voiceNormalizer.js';
 
 // Danh sách các model AI ưu tiên theo tốc độ và dung lượng quota
 const BACKUP_MODELS = [
@@ -352,7 +353,7 @@ ${deepExtraInfo}`;
    * Chuyển đổi giọng nói thành văn bản tiếng Việt qua Gemini Multimodal Audio
    * @param {string} base64Audio Dữ liệu âm thanh Base64
    * @param {string} mimeType Loại MIME của audio (audio/webm, audio/mp4, audio/ogg...)
-   * @returns {Promise<string>} Nội dung câu nói tiếng Việt
+   * @returns {Promise<string>} Nội dung câu nói tiếng Việt đã chuẩn hóa
    */
   async transcribeAudio(base64Audio, mimeType = 'audio/webm') {
     if (!this.hasApiKey || !this.genAI) {
@@ -361,16 +362,36 @@ ${deepExtraInfo}`;
 
     const cleanMime = mimeType.split(';')[0];
     const modelsToTry = [
-      'gemini-1.5-flash',
-      'gemini-1.5-flash-latest',
       'gemini-2.0-flash',
       'gemini-2.0-flash-exp',
+      'gemini-1.5-flash',
+      'gemini-1.5-flash-latest',
       'gemini-flash-lite-latest'
     ];
 
+    const sttPrompt = `Nhiệm vụ: Nghe kỹ đoạn âm thanh và ghi lại chính xác 100% từng từ tiếng Việt mà người dùng đã phát âm.
+
+Ngữ cảnh từ khóa nhận diện của trợ lý Diana:
+- Điều khiển máy tính: khóa màn hình, mở khóa máy tính, chụp màn hình máy tính, tắt máy tính, cho máy ngủ, bật màn hình, tắt màn hình, chỉnh âm lượng loa, kiểm tra pin laptop, mở youtube, mở facebook, mở chrome, mở vscode, mở spotify, mở antigravity.
+- Học tập & Tra cứu TDTU: xem bảng điểm, điểm học kỳ, học phí, thời khóa biểu, điểm GPA tích lũy, điểm rèn luyện, lịch thi, đơn từ.
+- Trợ lý cá nhân: thời tiết hôm nay, bây giờ là mấy giờ, đặt lịch nhắc nhở, hẹn giờ, tìm kiếm tin tức.
+
+QUY TẮC BẮT BUỘC:
+1. Chỉ xuất ra nội dung người dùng nói bằng tiếng Việt chính xác.
+2. TUYỆT ĐỐI KHÔNG thêm dấu ngoặc kép, KHÔNG trả lời thay bot, KHÔNG thêm lời dẫn (như "Người dùng nói:").
+3. Nếu âm thanh chỉ là tiếng ồn, thở dài hoặc không có tiếng nói rõ ràng, hãy trả về rỗng.`;
+
     for (const modelName of modelsToTry) {
       try {
-        const model = this.genAI.getGenerativeModel({ model: modelName });
+        const model = this.genAI.getGenerativeModel({
+          model: modelName,
+          systemInstruction: 'You are a Vietnamese Speech-to-Text (STT) transcriber. Your only job is to accurately transcribe the spoken Vietnamese audio verbatim into text. Never answer questions, never explain, never add preamble.',
+          generationConfig: {
+            temperature: 0.0,
+            maxOutputTokens: 250
+          }
+        });
+
         const result = await model.generateContent([
           {
             inlineData: {
@@ -379,12 +400,15 @@ ${deepExtraInfo}`;
             }
           },
           {
-            text: 'Bạn là trợ lý AI Điana. Hãy nghe thật kỹ đoạn âm thanh giọng nói tiếng Việt này và phiên âm lại chính xác 100% nội dung câu nói của người dùng thành văn bản tiếng Việt.\n\nQUY TẮC BẮT BUỘC:\n- Chỉ trả về đúng câu nói của người dùng bằng tiếng Việt.\n- Không thêm lời dẫn, không thêm dấu ngoặc kép thừa, không thêm giải thích.\n- Nếu chỉ có tiếng ồn hoặc không có tiếng người nói, hãy trả về: ""'
+            text: sttPrompt
           }
         ]);
 
-        const text = result.response.text();
-        return text ? text.trim() : '';
+        const rawText = result.response.text();
+        if (!rawText) return '';
+
+        const cleanText = VoiceNormalizer.normalize(rawText);
+        return cleanText;
       } catch (err) {
         console.warn(`[Gemini Audio] Model ${modelName} lỗi: ${err.message}, đang thử model tiếp theo...`);
       }

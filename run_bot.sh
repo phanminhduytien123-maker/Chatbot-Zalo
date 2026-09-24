@@ -1,5 +1,5 @@
 #!/bin/bash
-# 🤖 Khởi chạy AI Zalo Bot (Điana) trên Termux Android
+# 🤖 Khởi chạy AI Zalo Bot (Diana) trên Termux Android
 
 # 1. Giữ CPU và Mạng luôn hoạt động khi tắt màn hình (Termux Wake Lock)
 if command -v termux-wake-lock &> /dev/null; then
@@ -12,7 +12,7 @@ cd "/sdcard/MyFiles/Zalo Bot" 2>/dev/null || cd "$(dirname "$0")"
 
 # 2. Vòng lặp giám sát tự động khởi động lại nếu tiến trình bị ngắt
 while true; do
-    echo "🚀 Đang khởi động AI Zalo Bot (Điana)..."
+    echo "🚀 Đang khởi động AI Zalo Bot (Diana)..."
     node src/zaloLiveIndex.js
     EXIT_CODE=$?
     echo "⚠️ Tiến trình Bot đã dừng (Mã thoát: $EXIT_CODE). Đang tự khởi động lại sau 3 giây..."

@@ -11,6 +11,7 @@ import SystemService from '../services/systemService.js';
 import QRService from '../services/qrService.js';
 import SearchService from '../services/searchService.js';
 import { pcBridge } from '../pc/pcBridge.js';
+import VoiceNormalizer from '../services/voiceNormalizer.js';
 
 export class MessageHandler {
   /**
@@ -21,7 +22,10 @@ export class MessageHandler {
    */
   static async handleIncomingMessage(rawText, senderThreadId = null) {
     if (!rawText || typeof rawText !== 'string') return '';
-    const text = rawText.trim();
+    let text = rawText.trim();
+    if (!text.startsWith('/')) {
+      text = VoiceNormalizer.normalize(text);
+    }
     const lower = text.toLowerCase();
 
     // 1. Phân loại lệnh tắt nhanh (Slash commands)

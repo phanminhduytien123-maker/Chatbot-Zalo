@@ -11,6 +11,7 @@ import { storage } from './services/storage.js';
 import { scheduler } from './services/scheduler.js';
 import { MessageHandler } from './zalo/messageHandler.js';
 import { pcBridge } from './pc/pcBridge.js';
+import VoiceNormalizer from './services/voiceNormalizer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -98,11 +99,12 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'Truy vấn không được để trống.' }));
         }
 
-        const reply = await MessageHandler.handleIncomingMessage(query);
+        const normalizedQuery = VoiceNormalizer.normalize(query);
+        const reply = await MessageHandler.handleIncomingMessage(normalizedQuery);
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         return res.end(JSON.stringify({
           success: true,
-          query,
+          query: normalizedQuery,
           reply
         }));
       } catch (err) {

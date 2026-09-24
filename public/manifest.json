@@ -1,7 +1,7 @@
 {
-  "name": "Điana AI Voice Assistant",
-  "short_name": "Điana AI",
-  "description": "Trợ lý ảo giọng nói Điana - Điều khiển máy tính và hỗ trợ học tập thông minh",
+  "name": "Diana AI Voice Assistant",
+  "short_name": "Diana AI",
+  "description": "Trợ lý ảo giọng nói Diana - Điều khiển máy tính và hỗ trợ học tập thông minh",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

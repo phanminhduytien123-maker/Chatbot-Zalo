@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0f19">
+  <meta name="theme-color" content="#070a12">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Diana AI">
-  <meta name="description" content="Trợ lý ảo giọng nói Điana - Điều khiển máy tính và hỗ trợ học tập thông minh">
+  <meta name="description" content="Trợ lý ảo giọng nói Diana - Chấm điều khiển AssistiveTouch thông minh">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
   <link rel="apple-touch-icon" href="/icon.svg">
   
-  <title>Điana Voice Assistant</title>
+  <title>Diana Voice Assistant</title>
   
   <!-- Google Fonts: Outfit & Be Vietnam Pro -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,7 +22,10 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div class="app-container">
+  <!-- ==========================================================================
+       MAIN APP / DASHBOARD CONTAINER
+       ========================================================================== -->
+  <div class="app-container" id="appContainer">
     <!-- Top Header -->
     <header class="app-header">
       <div class="header-brand">
@@ -31,7 +34,7 @@
           <span class="avatar-emoji">🌸</span>
         </div>
         <div class="brand-info">
-          <h1 class="brand-name">ĐIANA AI</h1>
+          <h1 class="brand-name">DIANA AI</h1>
           <div class="status-badge" id="pcStatusBadge">
             <span class="status-dot"></span>
             <span class="status-text" id="pcStatusText">Đang kiểm tra...</span>
@@ -58,9 +61,9 @@
     <!-- Main Content / Chat Display -->
     <main class="chat-container" id="chatContainer">
       <div class="welcome-card" id="welcomeCard">
-        <div class="welcome-icon">✨</div>
+        <div class="welcome-icon">🌸</div>
         <h2 class="welcome-title">Chào anh Tiến!</h2>
-        <p class="welcome-desc">Em là <strong>Điana</strong>. Anh chỉ cần chạm vào Micro bên dưới và nói, em sẽ lắng nghe và thực thi ngay lập tức!</p>
+        <p class="welcome-desc">Em là <strong>Diana</strong>. Chạm vào <strong>chấm tròn AssistiveTouch</strong> nổi trên màn hình và nói, em sẽ lắng nghe và trả lời bằng giọng nói ngay lập tức nhé!</p>
         
         <!-- Quick Action Chips -->
         <div class="quick-chips">
@@ -76,39 +79,10 @@
       <div class="chat-messages" id="chatMessages"></div>
     </main>
 
-    <!-- Voice Visualizer & Orb Section -->
-    <section class="voice-section">
-      <!-- Live transcript overlay -->
-      <div class="transcript-box" id="transcriptBox">
-        <span class="transcript-placeholder" id="transcriptText">Chạm vào Micro để bắt đầu nói...</span>
-      </div>
-
-      <div class="orb-wrapper">
-        <!-- Visualizer Rings -->
-        <div class="orb-pulse-ring ring-1"></div>
-        <div class="orb-pulse-ring ring-2"></div>
-        <div class="orb-pulse-ring ring-3"></div>
-
-        <!-- Main Mic Button -->
-        <button class="mic-button" id="micButton" aria-label="Bật mic nói chuyện">
-          <div class="mic-glow"></div>
-          <div class="mic-icon-wrapper">
-            <svg class="mic-icon" id="micIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-              <line x1="12" y1="19" x2="12" y2="23"></line>
-              <line x1="8" y1="23" x2="16" y2="23"></line>
-            </svg>
-            <div class="wave-bars" id="waveBars">
-              <span></span><span></span><span></span><span></span><span></span>
-            </div>
-          </div>
-        </button>
-      </div>
-
-      <!-- Text input fallback bar -->
+    <!-- Bottom Text Input Bar -->
+    <footer class="bottom-input-section">
       <div class="text-input-bar">
-        <input type="text" id="textInput" placeholder="Hoặc nhập yêu cầu tại đây..." autocomplete="off">
+        <input type="text" id="textInput" placeholder="Nhập tin nhắn hoặc chạm chấm Diana để nói..." autocomplete="off">
         <button id="sendBtn" class="send-btn" aria-label="Gửi tin nhắn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -116,21 +90,78 @@
           </svg>
         </button>
       </div>
-    </section>
+    </footer>
 
     <!-- PWA Install Banner -->
     <div class="pwa-install-banner" id="pwaBanner">
       <div class="pwa-info">
         <span class="pwa-icon">📱</span>
         <div>
-          <strong>Thêm Điana vào Màn hình chính</strong>
-          <p>Mở nhanh như ứng dụng thật không cần mở trình duyệt!</p>
+          <strong>Thêm Diana vào Màn hình chính</strong>
+          <p>Mở nhanh như nút AssistiveTouch thực thụ trên điện thoại!</p>
         </div>
       </div>
       <div class="pwa-actions">
         <button class="btn-secondary" id="pwaDismissBtn">Để sau</button>
         <button class="btn-primary" id="pwaInstallBtn">Cài đặt ngay</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       FLOATING ASSISTIVETOUCH DIANA WIDGET (CHẤM TRÒN NỔI IPHONE)
+       ========================================================================== -->
+  <div class="assistive-layer">
+    <!-- Dynamic Capsule (Đảo phản hồi & Hiển thị giọng nói) -->
+    <div class="dynamic-capsule" id="dynamicCapsule">
+      <div class="capsule-header">
+        <div class="capsule-indicator">
+          <span class="pulse-dot"></span>
+          <span class="capsule-title" id="capsuleStatus">Diana đang nghe...</span>
+        </div>
+        <button class="capsule-close-btn" id="capsuleCloseBtn" aria-label="Đóng đảo thông tin">
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="capsule-body">
+        <div class="capsule-transcript" id="capsuleTranscript">Hãy nói yêu cầu của anh nhé...</div>
+        <div class="capsule-wave" id="capsuleWave">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <div class="capsule-result" id="capsuleResult" style="display: none;">
+        <div class="capsule-reply-text" id="capsuleReplyText"></div>
+        <div class="capsule-screenshot" id="capsuleScreenshot" style="display: none;">
+          <img id="capsuleScreenshotImg" src="" alt="Screenshot" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating AssistiveTouch Dot -->
+    <div class="assistive-dot" id="assistiveDot" role="button" aria-label="Chấm trợ lý Diana AssistiveTouch" tabindex="0">
+      <!-- Glow Rings & Aura -->
+      <div class="dot-aura"></div>
+      <div class="dot-pulse-ring ring-1"></div>
+      <div class="dot-pulse-ring ring-2"></div>
+      <div class="dot-pulse-ring ring-3"></div>
+
+      <!-- Glass Shell -->
+      <div class="dot-glass-shell">
+        <div class="dot-inner-core">
+          <span class="dot-icon" id="dotIcon">🌸</span>
+          <div class="dot-wave-bars" id="dotWaveBars">
+            <span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hint Tooltip -->
+      <div class="dot-tooltip" id="dotTooltip">Chạm để nói</div>
     </div>
   </div>
 
