@@ -24,6 +24,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# OS Files
+# OS & PID Files
 .DS_Store
 Thumbs.db
+*.pid
+.pc_agent.pid
+
