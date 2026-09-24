@@ -125,11 +125,10 @@ class DianaVoiceApp {
             this.setDotState('idle');
             this.capsuleTranscript.textContent = 'Chạm vào chấm Diana để nói lại nhé...';
             this.scheduleCapsuleClose(3000);
-          } else if (event.error === 'not-allowed') {
-            alert('Anh hãy bấm "Cho phép" khi trình duyệt hỏi quyền sử dụng Micro nhé!');
-            this.stopRecording();
-          } else if (event.error === 'network') {
-            console.log('Chuyển đổi sang chế độ ghi âm dự phòng (Gemini Audio)...');
+          } else {
+            // Khi gặp lỗi quyền (đặc biệt là Xiaomi Mi AI Speech Engine) hoặc lỗi mạng:
+            // Tự động chuyển thẳng sang MediaRecorder + Gemini 2.0 Flash STT ngay lập tức mà không hiện popup cảnh báo!
+            console.log(`WebSpeech lỗi (${event.error}), tự động chuyển sang Direct MediaRecorder + Gemini 2.0...`);
             this.useFallbackRecorder = true;
             this.startMediaRecorder();
           }
@@ -357,7 +356,8 @@ class DianaVoiceApp {
       this.setDotState('idle');
 
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        alert('Anh hãy bấm "Cho phép" khi trình duyệt hỏi quyền sử dụng Micro nhé!');
+        this.showCapsule('idle', 'Quyền Micro', '⚠️ Hãy cho phép quyền truy cập Micro trên trình duyệt Chrome nhé!');
+        this.scheduleCapsuleClose(4000);
       } else {
         this.showCapsule('idle', 'Lỗi Micro', `Lỗi: ${err.message}`);
         this.scheduleCapsuleClose(3000);
@@ -898,10 +898,12 @@ class DianaVoiceApp {
 
       } catch (err) {
         console.warn('Lỗi mở Picture-in-Picture:', err);
-        alert('Để mở chấm tròn nổi trên màn hình máy tính, anh hãy mở file "Chay_Diana_AssistiveTouch_Desktop.bat" nhé!');
+        this.showCapsule('idle', 'Ghim Màn Hình', '💡 Để mở chấm tròn nổi trên Windows, anh hãy mở file Chay_Diana_AssistiveTouch_Desktop.bat nhé!');
+        this.scheduleCapsuleClose(5000);
       }
     } else {
-      alert('💡 Để mở chấm tròn nổi trực tiếp trên màn hình máy tính Windows, anh hãy mở file "Chay_Diana_AssistiveTouch_Desktop.bat" trong thư mục Zalo Bot nhé! 🌸');
+      this.showCapsule('idle', 'Ghim Màn Hình', '💡 Để mở chấm tròn nổi trên Windows, anh hãy mở file Chay_Diana_AssistiveTouch_Desktop.bat nhé!');
+      this.scheduleCapsuleClose(5000);
     }
   }
 }
