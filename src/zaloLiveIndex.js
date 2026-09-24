@@ -3,17 +3,44 @@ import { zaloLive } from './zalo/zaloLive.js';
 import { monitor } from './services/monitor.js';
 import { storage } from './services/storage.js';
 import { scheduler } from './services/scheduler.js';
+import { MessageHandler } from './zalo/messageHandler.js';
+import config from './config/config.js';
 
 // Khởi tạo HTTP Health Check Server cho Render.com
 const PORT = process.env.PORT || 3000;
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  
+  if (url.pathname === '/test') {
+    const q = url.searchParams.get('q') || 'Xin chào';
+    try {
+      const reply = await MessageHandler.handleIncomingMessage(q);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({
+        query: q,
+        reply: reply,
+        hasApiKey: config.ai.hasApiKey,
+        keyLength: config.ai.apiKey?.length || 0,
+        model: config.ai.model,
+        zaloConnected: zaloLive.isConnected
+      }));
+    } catch(err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ error: err.message, stack: err.stack }));
+    }
+  }
+
   res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify({
     status: 'ONLINE',
     bot: 'Diana AI Zalo Agent',
     service: 'Zalo Live Assistant',
     uptime: `${Math.floor(process.uptime())}s`,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    hasApiKey: config.ai.hasApiKey,
+    keyLength: config.ai.apiKey?.length || 0,
+    model: config.ai.model,
+    zaloConnected: zaloLive.isConnected
   }));
 });
 
