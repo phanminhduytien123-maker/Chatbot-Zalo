@@ -1,15 +1,21 @@
 /**
  * ĐIANA AI VOICE ASSISTANT - CLIENT APPLICATION
- * Supports Vietnamese Speech Recognition, TTS Voice Synthesis, PC Control & PWA
+ * Supports Direct Audio Recording (MediaRecorder + Gemini AI), Web Speech API & TTS
  */
 
 class DianaVoiceApp {
   constructor() {
-    this.isListening = false;
+    this.isRecording = false;
     this.isSpeaking = false;
     this.ttsEnabled = localStorage.getItem('diana_tts') !== 'false';
     this.deferredPrompt = null;
-    this.recognition = null;
+    
+    this.mediaRecorder = null;
+    this.audioChunks = [];
+    this.audioStream = null;
+    this.silenceTimer = null;
+    this.audioContext = null;
+    this.analyser = null;
     this.synth = window.speechSynthesis || null;
 
     // DOM Elements
@@ -34,7 +40,6 @@ class DianaVoiceApp {
   }
 
   init() {
-    this.setupSpeechRecognition();
     this.setupEventListeners();
     this.setupPWA();
     this.updateTTSButtonState();
@@ -43,113 +48,224 @@ class DianaVoiceApp {
   }
 
   /**
-   * Khởi tạo Web Speech Recognition tiếng Việt (vi-VN)
+   * Bật/Tắt chế độ thu âm Micro trực tiếp (MediaRecorder - Hoạt động trên mọi dòng máy Xiaomi)
    */
-  setupSpeechRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.warn('Trình duyệt không hỗ trợ Web Speech API.');
-      this.transcriptText.textContent = 'Trình duyệt không hỗ trợ Mic. Hãy nhập văn bản bên dưới!';
-      return;
+  async toggleRecording() {
+    if (this.isRecording) {
+      this.stopRecording();
+    } else {
+      await this.startRecording();
+    }
+  }
+
+  /**
+   * Bắt đầu thu âm giọng nói trực tiếp từ trình duyệt
+   */
+  async startRecording() {
+    // Dừng giọng nói TTS nếu đang phát
+    if (this.synth && this.synth.speaking) {
+      this.synth.cancel();
     }
 
-    this.recognition = new SpeechRecognition();
-    this.recognition.lang = 'vi-VN';
-    this.recognition.continuous = false;
-    this.recognition.interimResults = true;
-    this.recognition.maxAlternatives = 1;
+    try {
+      this.audioChunks = [];
+      this.audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
 
-    this.recognition.onstart = () => {
-      this.isListening = true;
+      // Hỗ trợ các định dạng âm thanh web phổ biến
+      let mimeType = 'audio/webm;codecs=opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 
+                   MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/ogg';
+      }
+
+      this.mediaRecorder = new MediaRecorder(this.audioStream, { mimeType });
+
+      this.mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          this.audioChunks.push(event.data);
+        }
+      };
+
+      this.mediaRecorder.onstop = async () => {
+        this.isRecording = false;
+        this.setOrbState('thinking');
+        this.transcriptText.textContent = '⚡ Điana đang lắng nghe & suy nghĩ...';
+
+        const audioBlob = new Blob(this.audioChunks, { type: mimeType });
+        if (audioBlob.size > 1000) {
+          await this.sendAudioToServer(audioBlob, mimeType);
+        } else {
+          this.setOrbState('idle');
+          this.transcriptText.textContent = 'Chạm vào Micro để nói lại nhé...';
+        }
+
+        // Dọn dẹp stream
+        if (this.audioStream) {
+          this.audioStream.getTracks().forEach(track => track.stop());
+          this.audioStream = null;
+        }
+      };
+
+      // Thiết lập AudioContext để phân tích sóng âm & phát hiện khoảng lặng
+      this.setupAudioAnalyser(this.audioStream);
+
+      this.mediaRecorder.start(250);
+      this.isRecording = true;
       this.setOrbState('listening');
       this.transcriptBox.classList.add('listening');
-      this.transcriptText.textContent = 'Đang lắng nghe anh nói...';
-    };
+      this.transcriptText.textContent = '🎙️ Đang nghe anh nói... (Chạm lại khi nói xong)';
 
-    this.recognition.onresult = (event) => {
-      let interim = '';
-      let final = '';
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          final += event.results[i][0].transcript;
-        } else {
-          interim += event.results[i][0].transcript;
-        }
-      }
-
-      const display = final || interim;
-      if (display) {
-        this.transcriptText.textContent = `"${display}"`;
-      }
-
-      if (final) {
-        this.handleUserQuery(final.trim());
-      }
-    };
-
-    this.recognition.onerror = (event) => {
-      console.error('Lỗi nhận dạng giọng nói:', event.error);
-      this.isListening = false;
+    } catch (err) {
+      console.error('Lỗi truy cập Micro:', err);
+      this.isRecording = false;
       this.setOrbState('idle');
       this.transcriptBox.classList.remove('listening');
-      
-      if (event.error === 'not-allowed') {
-        this.transcriptText.textContent = '⚠️ Hãy cấp quyền Micro trong trình duyệt để nói chuyện với Điana!';
-      } else if (event.error === 'no-speech') {
-        this.transcriptText.textContent = 'Chạm vào Micro để bắt đầu nói...';
+
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        this.transcriptText.textContent = '⚠️ Hãy bấm "Cho phép" Micro trên trình duyệt Chrome nhé!';
+        alert('Anh hãy bấm "Cho phép" khi trình duyệt Chrome hỏi quyền sử dụng Micro nhé!');
       } else {
-        this.transcriptText.textContent = `Lỗi: ${event.error}. Vui lòng thử lại!`;
-      }
-    };
-
-    this.recognition.onend = () => {
-      this.isListening = false;
-      if (!this.isSpeaking && this.orbWrapper.classList.contains('listening')) {
-        this.setOrbState('idle');
-        this.transcriptBox.classList.remove('listening');
-      }
-    };
-  }
-
-  /**
-   * Bật/Tắt Micro lắng nghe
-   */
-  toggleListening() {
-    if (!this.recognition) {
-      alert('Trình duyệt này không hỗ trợ Micro trực tiếp. Anh vui lòng dùng Google Chrome trên điện thoại để trải nghiệm đầy đủ nhé!');
-      return;
-    }
-
-    if (this.isListening) {
-      this.recognition.stop();
-    } else {
-      // Dừng âm thanh đang phát nếu có
-      if (this.synth && this.synth.speaking) {
-        this.synth.cancel();
-      }
-      try {
-        this.recognition.start();
-      } catch (e) {
-        this.recognition.stop();
-        setTimeout(() => this.recognition.start(), 200);
+        this.transcriptText.textContent = `Lỗi Micro: ${err.message}.`;
       }
     }
   }
 
   /**
-   * Gửi câu hỏi / yêu cầu tới Server AI Điana
+   * Dừng thu âm
    */
-  async handleUserQuery(query) {
-    if (!query || !query.trim()) return;
-    const cleanQuery = query.trim();
+  stopRecording() {
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+    }
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+  }
 
-    // Ẩn welcome card sau lần chat đầu
+  /**
+   * Phân tích âm lượng Micro để tự động dừng khi ngừng nói
+   */
+  setupAudioAnalyser(stream) {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      this.audioContext = new AudioCtx();
+      const source = this.audioContext.createMediaStreamSource(stream);
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 256;
+      source.connect(this.analyser);
+
+      const bufferLength = this.analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      let speakingDetected = false;
+      let silenceStartTime = null;
+
+      const checkAudioLevel = () => {
+        if (!this.isRecording) return;
+
+        this.analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / bufferLength;
+
+        // Nếu có tiếng nói
+        if (average > 15) {
+          speakingDetected = true;
+          silenceStartTime = null;
+        } else if (speakingDetected) {
+          // Nếu đã nói xong và im lặng > 1.8 giây thì tự động hoàn tất
+          if (!silenceStartTime) {
+            silenceStartTime = Date.now();
+          } else if (Date.now() - silenceStartTime > 1800) {
+            this.stopRecording();
+            return;
+          }
+        }
+
+        requestAnimationFrame(checkAudioLevel);
+      };
+
+      requestAnimationFrame(checkAudioLevel);
+    } catch (_) {}
+  }
+
+  /**
+   * Gửi file âm thanh đã thu trực tiếp lên Gemini AI Multimodal Endpoint
+   */
+  async sendAudioToServer(audioBlob, mimeType) {
+    // Ẩn welcome card
     if (this.welcomeCard) {
       this.welcomeCard.style.display = 'none';
     }
 
-    // Hiển thị tin nhắn người dùng
+    try {
+      // Chuyển Blob sang Base64
+      const reader = new FileReader();
+      reader.readAsDataURL(audioBlob);
+      reader.onloadend = async () => {
+        const base64Audio = reader.result.split(',')[1];
+
+        const response = await fetch('/api/voice-audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audio: base64Audio,
+            mimeType: mimeType
+          })
+        });
+
+        const data = await response.json();
+        this.setOrbState('idle');
+        this.transcriptBox.classList.remove('listening');
+
+        if (data && data.success) {
+          const userQuery = data.query || 'Giọng nói';
+          this.addMessage('user', userQuery);
+          this.transcriptText.textContent = `"${userQuery}"`;
+
+          const textReply = typeof data.reply === 'string' ? data.reply : (data.reply.text || JSON.stringify(data.reply));
+          const attachments = data.reply.attachments || data.attachments || [];
+
+          this.addMessage('bot', textReply, attachments);
+
+          // Đọc phản hồi
+          if (this.ttsEnabled) {
+            this.speak(textReply);
+          }
+        } else {
+          const errText = data.error || 'Không nhận diện được âm thanh. Anh vui lòng thử lại nhé!';
+          this.transcriptText.textContent = errText;
+          this.addMessage('bot', `⚠️ ${errText}`);
+        }
+      };
+    } catch (err) {
+      console.error('Lỗi khi gửi âm thanh:', err);
+      this.setOrbState('idle');
+      this.transcriptText.textContent = 'Chạm vào Micro để thử lại...';
+      this.addMessage('bot', '⚠️ Lỗi kết nối máy chủ. Vui lòng kiểm tra lại mạng nhé!');
+    }
+  }
+
+  /**
+   * Gửi câu hỏi dạng Text (Nhập bàn phím / Chip bấm)
+   */
+  async handleTextQuery(query) {
+    if (!query || !query.trim()) return;
+    const cleanQuery = query.trim();
+
+    if (this.welcomeCard) {
+      this.welcomeCard.style.display = 'none';
+    }
+
     this.addMessage('user', cleanQuery);
     this.transcriptText.textContent = `Đang xử lý: "${cleanQuery}"...`;
     this.setOrbState('thinking');
@@ -171,7 +287,6 @@ class DianaVoiceApp {
 
         this.addMessage('bot', textReply, attachments);
 
-        // Phát giọng nói tiếng Việt nếu bật TTS
         if (this.ttsEnabled) {
           this.speak(textReply);
         }
@@ -182,7 +297,7 @@ class DianaVoiceApp {
       console.error('Lỗi khi gửi yêu cầu:', err);
       this.setOrbState('idle');
       this.transcriptText.textContent = 'Chạm vào Micro để thử lại...';
-      this.addMessage('bot', '⚠️ Không thể kết nối tới máy chủ Điana. Anh vui lòng kiểm tra kết nối mạng nhé!');
+      this.addMessage('bot', '⚠️ Không thể kết nối tới máy chủ Điana.');
     }
   }
 
@@ -192,7 +307,6 @@ class DianaVoiceApp {
   speak(text) {
     if (!this.synth || !this.ttsEnabled) return;
 
-    // Lọc bỏ markdown, emoji và ký tự thừa để đọc mượt mà
     const cleanText = text
       .replace(/[*_#`~]/g, '')
       .replace(/[\u{1F600}-\u{1F6FF}|[\u{1F300}-\u{1F5FF}|[\u{1F900}-\u{1F9FF}|[\u{2600}-\u{26FF}]/gu, '')
@@ -201,38 +315,36 @@ class DianaVoiceApp {
 
     if (!cleanText) return;
 
-    this.synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = 'vi-VN';
-    utterance.rate = 1.05;
-    utterance.pitch = 1.0;
+    try {
+      this.synth.cancel();
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = 'vi-VN';
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
 
-    // Chọn voice tiếng Việt nếu có
-    const voices = this.synth.getVoices();
-    const viVoice = voices.find(v => v.lang.includes('vi') || v.lang.includes('VN'));
-    if (viVoice) utterance.voice = viVoice;
+      const voices = this.synth.getVoices();
+      const viVoice = voices.find(v => v.lang.includes('vi') || v.lang.includes('VN'));
+      if (viVoice) utterance.voice = viVoice;
 
-    utterance.onstart = () => {
-      this.isSpeaking = true;
-      this.setOrbState('speaking');
-    };
+      utterance.onstart = () => {
+        this.isSpeaking = true;
+        this.setOrbState('speaking');
+      };
 
-    utterance.onend = () => {
-      this.isSpeaking = false;
-      this.setOrbState('idle');
-    };
+      utterance.onend = () => {
+        this.isSpeaking = false;
+        this.setOrbState('idle');
+      };
 
-    utterance.onerror = () => {
-      this.isSpeaking = false;
-      this.setOrbState('idle');
-    };
+      utterance.onerror = () => {
+        this.isSpeaking = false;
+        this.setOrbState('idle');
+      };
 
-    this.synth.speak(utterance);
+      this.synth.speak(utterance);
+    } catch (_) {}
   }
 
-  /**
-   * Đổi trạng thái hiển thị của Orb (idle, listening, thinking, speaking)
-   */
   setOrbState(state) {
     this.orbWrapper.classList.remove('listening', 'thinking', 'speaking');
     if (state !== 'idle') {
@@ -240,9 +352,6 @@ class DianaVoiceApp {
     }
   }
 
-  /**
-   * Thêm tin nhắn vào giao diện
-   */
   addMessage(sender, text, attachments = []) {
     const item = document.createElement('div');
     item.className = `message-item ${sender}`;
@@ -285,9 +394,6 @@ class DianaVoiceApp {
       .replace(/\n/g, '<br/>');
   }
 
-  /**
-   * Kiểm tra tình trạng kết nối PC (Online / Offline)
-   */
   async checkPCStatus() {
     try {
       const res = await fetch('/api/status');
@@ -305,9 +411,6 @@ class DianaVoiceApp {
     }
   }
 
-  /**
-   * Đổi trạng thái đọc âm thanh
-   */
   toggleTTS() {
     this.ttsEnabled = !this.ttsEnabled;
     localStorage.setItem('diana_tts', this.ttsEnabled);
@@ -327,9 +430,6 @@ class DianaVoiceApp {
     }
   }
 
-  /**
-   * Cài đặt PWA (Thêm vào màn hình chính Android)
-   */
   setupPWA() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -364,14 +464,14 @@ class DianaVoiceApp {
   }
 
   setupEventListeners() {
-    // Chạm nút Mic
-    this.micButton.addEventListener('click', () => this.toggleListening());
+    // Chạm vào nút quả cầu Micro để ghi âm trực tiếp
+    this.micButton.addEventListener('click', () => this.toggleRecording());
 
     // Nút gửi text
     this.sendBtn.addEventListener('click', () => {
       const q = this.textInput.value;
       if (q.trim()) {
-        this.handleUserQuery(q);
+        this.handleTextQuery(q);
         this.textInput.value = '';
       }
     });
@@ -380,7 +480,7 @@ class DianaVoiceApp {
       if (e.key === 'Enter') {
         const q = this.textInput.value;
         if (q.trim()) {
-          this.handleUserQuery(q);
+          this.handleTextQuery(q);
           this.textInput.value = '';
         }
       }
@@ -390,7 +490,7 @@ class DianaVoiceApp {
     document.querySelectorAll('.chip').forEach(chip => {
       chip.addEventListener('click', () => {
         const query = chip.getAttribute('data-query');
-        if (query) this.handleUserQuery(query);
+        if (query) this.handleTextQuery(query);
       });
     });
 
@@ -403,7 +503,6 @@ class DianaVoiceApp {
   }
 }
 
-// Khởi chạy ứng dụng khi DOM sẵn sàng
 document.addEventListener('DOMContentLoaded', () => {
   window.dianaApp = new DianaVoiceApp();
 });

@@ -347,7 +347,53 @@ ${deepExtraInfo}`;
 
     return `Dạ em đã nhận yêu cầu của anh: "${userText}".`;
   }
+
+  /**
+   * Chuyển đổi giọng nói thành văn bản tiếng Việt qua Gemini Multimodal Audio
+   * @param {string} base64Audio Dữ liệu âm thanh Base64
+   * @param {string} mimeType Loại MIME của audio (audio/webm, audio/mp4, audio/ogg...)
+   * @returns {Promise<string>} Nội dung câu nói tiếng Việt
+   */
+  async transcribeAudio(base64Audio, mimeType = 'audio/webm') {
+    if (!this.hasApiKey || !this.genAI) {
+      throw new Error('Chưa cấu hình Gemini API Key.');
+    }
+
+    const cleanMime = mimeType.split(';')[0];
+    const modelsToTry = [
+      'gemini-1.5-flash',
+      'gemini-1.5-flash-latest',
+      'gemini-2.0-flash',
+      'gemini-2.0-flash-exp',
+      'gemini-flash-lite-latest'
+    ];
+
+    for (const modelName of modelsToTry) {
+      try {
+        const model = this.genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent([
+          {
+            inlineData: {
+              mimeType: cleanMime,
+              data: base64Audio
+            }
+          },
+          {
+            text: 'Bạn là trợ lý AI Điana. Hãy nghe thật kỹ đoạn âm thanh giọng nói tiếng Việt này và phiên âm lại chính xác 100% nội dung câu nói của người dùng thành văn bản tiếng Việt.\n\nQUY TẮC BẮT BUỘC:\n- Chỉ trả về đúng câu nói của người dùng bằng tiếng Việt.\n- Không thêm lời dẫn, không thêm dấu ngoặc kép thừa, không thêm giải thích.\n- Nếu chỉ có tiếng ồn hoặc không có tiếng người nói, hãy trả về: ""'
+          }
+        ]);
+
+        const text = result.response.text();
+        return text ? text.trim() : '';
+      } catch (err) {
+        console.warn(`[Gemini Audio] Model ${modelName} lỗi: ${err.message}, đang thử model tiếp theo...`);
+      }
+    }
+
+    throw new Error('Không thể nhận diện âm thanh.');
+  }
 }
 
 export const aiAssistant = new GeminiAssistant();
 export default aiAssistant;
+

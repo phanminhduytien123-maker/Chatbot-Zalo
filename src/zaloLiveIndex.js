@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import config from './config/config.js';
+import aiAssistant from './ai/gemini.js';
 import { zaloLive } from './zalo/zaloLive.js';
 import { monitor } from './services/monitor.js';
 import { storage } from './services/storage.js';
@@ -43,7 +44,48 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  // 1. API: Voice Assistant Endpoint
+  // 1. API: Voice Assistant Audio Endpoint (Ghi âm trực tiếp - Bỏ qua Mi AI & Google STT)
+  if (url.pathname === '/api/voice-audio' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const audioBase64 = data.audio;
+        const mimeType = data.mimeType || 'audio/webm';
+
+        if (!audioBase64) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error: 'Dữ liệu âm thanh rỗng.' }));
+        }
+
+        // Nhận diện giọng nói qua Gemini AI Multimodal Audio
+        const transcribedQuery = await aiAssistant.transcribeAudio(audioBase64, mimeType);
+        if (!transcribedQuery) {
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({
+            success: false,
+            error: 'Không nhận diện được giọng nói. Anh vui lòng nói lại nhé!'
+          }));
+        }
+
+        // Xử lý câu lệnh
+        const reply = await MessageHandler.handleIncomingMessage(transcribedQuery);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({
+          success: true,
+          query: transcribedQuery,
+          reply
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: err.message, stack: err.stack }));
+      }
+    });
+    return;
+  }
+
+  // 2. API: Voice Assistant Text Endpoint
   if (url.pathname === '/api/voice' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
