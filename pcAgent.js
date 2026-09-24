@@ -168,6 +168,13 @@ async function pollServer() {
           break;
         }
 
+        case 'unlock': {
+          result = await WindowsController.unlockScreen(params?.password || '/');
+          result.id = id;
+          break;
+        }
+
+
         case 'screenshot': {
           const screen = await WindowsController.takeScreenshot();
           if (screen.success && screen.filePath && fs.existsSync(screen.filePath)) {

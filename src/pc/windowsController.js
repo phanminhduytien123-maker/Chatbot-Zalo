@@ -65,6 +65,83 @@ Write-Output "OK"
   }
 
   /**
+   * Mở khóa màn hình máy tính bằng mật khẩu / PIN
+   * @param {string} [password='/'] Mật khẩu mở khóa (mặc định là "/")
+   */
+  static unlockScreen(password = '/') {
+    return new Promise((resolve) => {
+      const pass = (password && typeof password === 'string' && password.trim()) ? password.trim() : '/';
+      const escapedPass = pass.replace(/'/g, "''");
+
+      const psScript = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+
+public class Unlocker {
+    [DllImport("user32.dll")]
+    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    [DllImport("user32.dll")]
+    public static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+    public const uint KEYEVENTF_KEYUP = 0x0002;
+    public const uint KEYEVENTF_UNICODE = 0x0004;
+
+    public static void PressKey(byte vk) {
+        keybd_event(vk, (byte)MapVirtualKey(vk, 0), 0, UIntPtr.Zero);
+        Thread.Sleep(50);
+        keybd_event(vk, (byte)MapVirtualKey(vk, 0), KEYEVENTF_KEYUP, UIntPtr.Zero);
+    }
+
+    public static void SendChar(char c) {
+        keybd_event(0, (byte)c, KEYEVENTF_UNICODE, UIntPtr.Zero);
+        Thread.Sleep(30);
+        keybd_event(0, (byte)c, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, UIntPtr.Zero);
+    }
+
+    public static void Unlock(string pass) {
+        // 1. Nhấn ESC rồi SPACE để đánh thức màn hình khóa và đưa về ô nhập mật khẩu
+        PressKey(0x1B); // ESC
+        Thread.Sleep(200);
+        PressKey(0x20); // SPACE
+        Thread.Sleep(600);
+        PressKey(0x20); // SPACE lần 2 để đảm bảo đã vào ô nhập mật khẩu
+        Thread.Sleep(500);
+
+        // 2. Gõ từng ký tự của password bằng Unicode (hỗ trợ mọi ký tự gồm / # @ ...)
+        foreach (char c in pass) {
+            SendChar(c);
+            Thread.Sleep(50);
+        }
+
+        Thread.Sleep(250);
+        // 3. Nhấn ENTER để xác nhận mở khóa
+        PressKey(0x0D); // ENTER
+    }
+}
+'@
+[Unlocker]::Unlock('${escapedPass}')
+Write-Output "OK"
+      `.trim();
+
+      const base64Script = Buffer.from(psScript, 'utf16le').toString('base64');
+
+      exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
+        if (error) {
+          return resolve({ success: false, error: `❌ Lỗi khi mở khóa máy: ${error.message}` });
+        }
+        resolve({
+          success: true,
+          message: `🔓 Đã gửi lệnh đánh thức và mở khóa máy tính thành công với mật khẩu "${pass}"! ✨`
+        });
+      });
+    });
+  }
+
+
+  /**
    * Kiểm tra thông tin Pin của Laptop (Win32_Battery)
    */
   static getBatteryInfo() {

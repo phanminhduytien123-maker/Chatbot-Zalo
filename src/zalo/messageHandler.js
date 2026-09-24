@@ -37,6 +37,14 @@ export class MessageHandler {
           return res.message || (res.success ? '🔒 Đã khóa màn hình máy tính!' : res.error);
         }
 
+        case '/unlock':
+        case '/mokhoa': {
+          const pass = args || '/';
+          const res = await pcBridge.executeCommand('unlock', { password: pass });
+          return res.message || (res.success ? '🔓 Đã mở khóa máy tính thành công!' : res.error);
+        }
+
+
         case '/screenshot':
         case '/chupmanhinh': {
           const res = await pcBridge.executeCommand('screenshot');
@@ -65,6 +73,14 @@ export class MessageHandler {
               const res = await pcBridge.executeCommand('lock');
               return res.message || (res.success ? '🔒 Đã khóa máy tính thành công!' : res.error);
             }
+
+            case 'unlock':
+            case 'mokhoa': {
+              const pass = subArgs || '/';
+              const res = await pcBridge.executeCommand('unlock', { password: pass });
+              return res.message || (res.success ? '🔓 Đã mở khóa máy tính thành công!' : res.error);
+            }
+
 
             case 'screen':
             case 'screenshot':
@@ -149,6 +165,7 @@ export class MessageHandler {
               return `🖥️ CÁC LỆNH ĐIỀU KHIỂN MÁY TÍNH WINDOWS (/pc):\n` +
                 `• /pc status - Kiểm tra máy tính có đang kết nối online không\n` +
                 `• /pc lock - Khóa màn hình máy tính (Win + L)\n` +
+                `• /pc unlock [pass] - Đánh thức và mở khóa máy tính (mặc định pass: /)\n` +
                 `• /pc screen - Chụp ảnh màn hình Desktop gửi qua Zalo\n` +
                 `• /pc pin - Xem % pin và trạng thái sạc laptop\n` +
                 `• /pc vol <0-100> - Chỉnh âm lượng loa máy tính\n` +
@@ -159,6 +176,7 @@ export class MessageHandler {
                 `• /pc shutdown [phút] - Hẹn giờ tắt máy tính\n` +
                 `• /pc cancel - Hủy lệnh tắt máy\n` +
                 `• /pc sleep - Cho máy tính vào chế độ Ngủ`;
+
           }
         }
 
@@ -477,6 +495,19 @@ export class MessageHandler {
     }
 
     // 8. Nhận diện ý định ĐIỀU KHIỂN MÁY TÍNH WINDOWS (NLP PC Commands)
+    // 8.0. UNLOCK (Mở khóa máy)
+    if (lower.includes('mở khóa') || lower.includes('mo khoa') || lower.includes('mở màn hình') || lower.includes('mo man hinh') || lower.includes('mở máy tính') || lower.includes('mo may tinh') || lower.includes('mở pc') || lower.includes('mo pc') || lower.includes('mở laptop') || lower.includes('mo laptop') || lower.includes('unlock')) {
+      let pass = '/';
+      const passMatch = text.match(/(?:pass(?:word)?|mật khẩu|mat khau)(?:\s+là|\s*:)?\s*([^\s]+)/i);
+      if (passMatch) {
+        pass = passMatch[1].trim();
+      }
+      const res = await pcBridge.executeCommand('unlock', { password: pass });
+      const reply = res.message || (res.success ? '🔓 Đã mở khóa máy tính của anh rồi ạ!' : res.error);
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
     // 8.1. SLEEP (Cho máy tính ngủ)
     if (lower.includes('sleep') || lower.includes('cho máy ngủ') || lower.includes('cho may ngu') || lower.includes('ngủ máy') || lower.includes('ngu may') || lower.includes('vào chế độ ngủ')) {
       const res = await pcBridge.executeCommand('sleep');
@@ -492,6 +523,7 @@ export class MessageHandler {
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
+
 
     // 8.3. SCREENSHOT (Chụp màn hình)
     if (lower.includes('chụp màn hình') || lower.includes('chup man hinh') || lower.includes('chụp desktop') || lower.includes('chup desktop') || lower.includes('chụp pc') || lower.includes('screenshot')) {
