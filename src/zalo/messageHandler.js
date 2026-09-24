@@ -521,15 +521,15 @@ export class MessageHandler {
     }
 
     // 8. Nhận diện ý định ĐIỀU KHIỂN MÁY TÍNH WINDOWS (NLP PC Commands)
-    // 8.0. TURN OFF / ON DISPLAY (Tắt/Bật màn hình)
-    if (lower.includes('tắt màn hình') || lower.includes('tat man hinh') || lower.includes('tắt display') || lower.includes('tat display')) {
+    // 8.0. TURN OFF / ON DISPLAY (Tắt/Bật/Mở màn hình)
+    if (lower.includes('tắt màn hình') || lower.includes('tat man hinh') || lower.includes('tắt display') || lower.includes('tat display') || lower.includes('tắt màn') || lower.includes('tat man')) {
       const res = await pcBridge.executeCommand('turnoff_display');
       const reply = res.message || res.error || '🖥️ Đã tắt màn hình máy tính của anh!';
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
 
-    if (lower.includes('bật màn hình') || lower.includes('bat man hinh') || lower.includes('sáng màn hình') || lower.includes('sang man hinh') || lower.includes('đánh thức màn hình') || lower.includes('danh thuc man hinh') || lower.includes('bật display')) {
+    if (lower.includes('bật màn hình') || lower.includes('bat man hinh') || lower.includes('mở màn hình') || lower.includes('mo man hinh') || lower.includes('sáng màn hình') || lower.includes('sang man hinh') || lower.includes('đánh thức màn hình') || lower.includes('danh thuc man hinh') || lower.includes('bật display') || lower.includes('bat display') || lower.includes('mở display') || lower.includes('mo display') || lower.includes('bật màn') || lower.includes('mở màn')) {
       const res = await pcBridge.executeCommand('wake_display');
       const reply = res.message || res.error || '💡 Đã bật sáng lại màn hình máy tính của anh!';
       aiAssistant.memory.addTurn(text, reply);
@@ -549,8 +549,7 @@ export class MessageHandler {
       return reply;
     }
 
-
-    // 8.1. SLEEP (Cho máy tính ngủ)
+    // 8.2. SLEEP (Cho máy tính ngủ)
     if (lower.includes('sleep') || lower.includes('cho máy ngủ') || lower.includes('cho may ngu') || lower.includes('ngủ máy') || lower.includes('ngu may') || lower.includes('vào chế độ ngủ')) {
       const res = await pcBridge.executeCommand('sleep');
       const reply = res.message || res.error || (res.success ? '💤 Đã cho máy tính của anh vào chế độ Sleep rồi ạ!' : '❌ Không thể đưa máy vào chế độ Sleep.');
@@ -558,7 +557,7 @@ export class MessageHandler {
       return reply;
     }
 
-    // 8.2. LOCK (Khóa máy)
+    // 8.3. LOCK (Khóa máy)
     if ((lower.includes('lock') || lower.includes('khóa máy') || lower.includes('khoa may') || lower.includes('khóa màn hình') || lower.includes('khoa man hinh') || lower.includes('khóa pc') || lower.includes('khoa pc')) && !lower.includes('xoalich') && !lower.includes('xóa')) {
       const res = await pcBridge.executeCommand('lock');
       const reply = res.message || (res.success ? '🔒 Đã khóa màn hình máy tính của anh rồi ạ!' : res.error);
@@ -566,9 +565,8 @@ export class MessageHandler {
       return reply;
     }
 
-
-    // 8.3. SCREENSHOT (Chụp màn hình)
-    if (lower.includes('chụp màn hình') || lower.includes('chup man hinh') || lower.includes('chụp desktop') || lower.includes('chup desktop') || lower.includes('chụp pc') || lower.includes('screenshot')) {
+    // 8.4. SCREENSHOT (Chụp ảnh màn hình)
+    if (lower.includes('chụp ảnh màn hình') || lower.includes('chup anh man hinh') || lower.includes('chụp màn hình') || lower.includes('chup man hinh') || lower.includes('chụp ảnh desktop') || lower.includes('chup anh desktop') || lower.includes('chụp desktop') || lower.includes('chup desktop') || lower.includes('chụp ảnh pc') || lower.includes('chụp pc') || lower.includes('chup pc') || lower.includes('chụp ảnh máy') || lower.includes('chup anh may') || lower.includes('screenshot') || lower.includes('chụp màn') || lower.includes('chup man')) {
       const res = await pcBridge.executeCommand('screenshot');
       if (res.success && res.filePath) {
         const replyObj = {
@@ -582,6 +580,7 @@ export class MessageHandler {
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
+
 
     // 8.4. BATTERY (Pin)
     if (lower.includes('pin laptop') || lower.includes('pin máy') || lower.includes('pin may') || lower.includes('kiểm tra pin') || lower.includes('xem pin') || lower.includes('battery')) {
