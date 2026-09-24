@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+process.env.TZ = 'Asia/Ho_Chi_Minh';
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 export const config = {

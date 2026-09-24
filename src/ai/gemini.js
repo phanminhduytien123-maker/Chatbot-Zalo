@@ -4,6 +4,7 @@ import scraper from '../portal/scraper.js';
 import storage from '../services/storage.js';
 import memory from '../services/memory.js';
 import weatherService from '../services/weather.js';
+import TimeService from '../services/timeService.js';
 
 // Danh sách các model AI ưu tiên theo tốc độ và dung lượng quota
 const BACKUP_MODELS = [
@@ -145,8 +146,8 @@ export class GeminiAssistant {
 
         const bot = config.bot;
         const boss = config.boss;
-        const now = new Date();
-        const timeContext = `- Hôm nay là: ${now.toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })} (Giờ Việt Nam: ${now.toLocaleTimeString('vi-VN')})`;
+        const timeInfo = TimeService.getRealtimeVN();
+        const timeContext = `${timeInfo.fullStr} (Bây giờ là ${timeInfo.timeStr} buổi ${timeInfo.session})`;
 
         const systemPrompt = `BẠN LÀ:
 - Tên: ${bot.name}
@@ -154,7 +155,8 @@ export class GeminiAssistant {
 - Giới tính: ${bot.gender}
 - Vai trò: ${bot.role}
 - Xưng hô: Xưng là "${bot.pronounSelf}", gọi người dùng là "${bot.pronounBoss}" (hoặc "anh Tiến").
-- Thời gian hiện tại: ${timeContext}
+- THỜI GIAN THỜI THỰC (REALTIME GMT+7 VIỆT NAM): ${timeContext}
+  • Độ chính xác đồng hồ: 100% Realtime theo múi giờ Việt Nam (GMT+7). Khi được hỏi về giờ, phút, giây, thứ, ngày, tháng, năm, bạn hãy trả lời chính xác theo mốc này.
 
 THÔNG TIN VỀ ANH TIẾN (SẾP):
 - Tên: ${boss.name} (${boss.fullName}), Sinh ngày: ${boss.dob}, Sở thích: ${boss.hobby}, MSSV: ${boss.studentId} tại TDTU.
@@ -258,6 +260,11 @@ ${deepExtraInfo}`;
     // 0.1. Thời tiết
     if (text.includes('thời tiết') || text.includes('thoitiet') || text.includes('có mưa không') || text.includes('mấy giờ mưa') || text.includes('trời mưa') || text.includes('nhiệt độ')) {
       return await weatherService.generateMorningBriefing();
+    }
+
+    // 0.2. Đồng hồ / Giờ / Ngày Realtime
+    if (TimeService.isTimeQuery(text)) {
+      return TimeService.generateCurrentTimeReply();
     }
 
     // 1. Hỏi về tính năng hẹn giờ / nhắc nhở

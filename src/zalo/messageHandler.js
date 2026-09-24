@@ -5,6 +5,7 @@ import aiAssistant from '../ai/gemini.js';
 import scheduler from '../services/scheduler.js';
 import config from '../config/config.js';
 import weatherService from '../services/weather.js';
+import TimeService from '../services/timeService.js';
 
 export class MessageHandler {
   /**
@@ -24,6 +25,14 @@ export class MessageHandler {
       const args = parts.slice(1).join(' ').trim();
 
       switch (command) {
+        case '/time':
+        case '/gio':
+        case '/ngay':
+        case '/clock':
+        case '/dongho': {
+          return TimeService.generateCurrentTimeReply();
+        }
+
         case '/thoitiet':
         case '/weather':
         case '/mua': {
@@ -160,7 +169,14 @@ export class MessageHandler {
       }
     }
 
-    // 2. Nhận diện ý định ĐẶT LỊCH HẸN GIỜ (NLP Reminder Extraction)
+    // 2. Nhận diện câu hỏi THỜI GIAN THỜI THỰC (Real-time Clock Query)
+    if (TimeService.isTimeQuery(text)) {
+      const timeReply = TimeService.generateCurrentTimeReply();
+      aiAssistant.memory.addTurn(text, timeReply);
+      return timeReply;
+    }
+
+    // 3. Nhận diện ý định ĐẶT LỊCH HẸN GIỜ (NLP Reminder Extraction)
     const reminderParsed = scheduler.parseNaturalLanguage(text);
     if (reminderParsed && reminderParsed.times && reminderParsed.times.length > 0) {
       if (senderThreadId) {
@@ -174,7 +190,7 @@ export class MessageHandler {
       }
     }
 
-    // 3. Nếu không phải lệnh / và không phải cài lịch thì chuyển cho AI Agent Gemini xử lý
+    // 4. Nếu không phải lệnh / và không phải cài lịch thì chuyển cho AI Agent Gemini xử lý
     return await aiAssistant.processUserMessage(text);
   }
 }

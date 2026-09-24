@@ -1,3 +1,4 @@
+process.env.TZ = 'Asia/Ho_Chi_Minh';
 import http from 'http';
 import { zaloLive } from './zalo/zaloLive.js';
 import { monitor } from './services/monitor.js';

@@ -5,8 +5,8 @@
 export class NotificationFormatter {
   static getFormattedTimestamp() {
     const now = new Date();
-    const time = now.toLocaleTimeString('vi-VN', { hour12: false });
-    const date = now.toLocaleDateString('vi-VN');
+    const time = now.toLocaleTimeString('vi-VN', { hour12: false, timeZone: 'Asia/Ho_Chi_Minh' });
+    const date = now.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
     return `${time} | ${date}`;
   }
 
