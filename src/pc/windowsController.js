@@ -471,14 +471,38 @@ Write-Output "OK"
     }
 
     if (urlToOpen) {
-      const ps = `Start-Process "${urlToOpen}"`;
+      const ps = `
+        $url = '${urlToOpen.replace(/'/g, "''")}'
+        try {
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = $url
+          $psi.UseShellExecute = $true
+          $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+          [System.Diagnostics.Process]::Start($psi) | Out-Null
+        } catch {
+          try {
+            $shell = New-Object -ComObject Shell.Application
+            $shell.Open($url)
+          } catch {
+            Start-Process $url -WindowStyle Normal
+          }
+        }
+      `;
+      exec(`rundll32.exe url.dll,FileProtocolHandler "${urlToOpen}"`);
       await WindowsController.runPowerShell(ps);
       return { success: true, message: `🌐 Đã mở trang web "${urlToOpen}" trên trình duyệt máy tính của anh!` };
     }
 
     // 2. Nếu là đường dẫn file / folder cụ thể có tồn tại
     if (fs.existsSync(clean)) {
-      const ps = `Start-Process "${clean.replace(/"/g, '`"')}"`;
+      const ps = `
+        $target = '${clean.replace(/'/g, "''")}'
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $target
+        $psi.UseShellExecute = $true
+        $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+        [System.Diagnostics.Process]::Start($psi) | Out-Null
+      `;
       await WindowsController.runPowerShell(ps);
       return { success: true, message: `📁 Đã mở "${path.basename(clean)}" trên máy tính!` };
     }
@@ -493,33 +517,36 @@ Write-Output "OK"
       'C:\\Program Files (x86)\\Microsoft Office\\Office15'
     ];
 
+    const launchExe = async (exePath, displayName) => {
+      const ps = `
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = '${exePath.replace(/'/g, "''")}'
+        $psi.UseShellExecute = $true
+        $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+        [System.Diagnostics.Process]::Start($psi) | Out-Null
+      `;
+      await WindowsController.runPowerShell(ps);
+      return { success: true, message: `🚀 Đã mở ứng dụng "${displayName}" trên máy tính của anh!` };
+    };
+
     if (lower === 'word' || lower === 'winword' || lower.includes('word')) {
       for (const r of officeRoots) {
         const p = path.join(r, 'WINWORD.EXE');
-        if (fs.existsSync(p)) {
-          await WindowsController.runPowerShell(`Start-Process "${p}"`);
-          return { success: true, message: `🚀 Đã mở ứng dụng "Microsoft Word" trên máy tính của anh!` };
-        }
+        if (fs.existsSync(p)) return await launchExe(p, 'Microsoft Word');
       }
     }
 
     if (lower === 'excel' || lower.includes('excel')) {
       for (const r of officeRoots) {
         const p = path.join(r, 'EXCEL.EXE');
-        if (fs.existsSync(p)) {
-          await WindowsController.runPowerShell(`Start-Process "${p}"`);
-          return { success: true, message: `🚀 Đã mở ứng dụng "Microsoft Excel" trên máy tính của anh!` };
-        }
+        if (fs.existsSync(p)) return await launchExe(p, 'Microsoft Excel');
       }
     }
 
     if (lower === 'powerpoint' || lower === 'ppt' || lower.includes('powerpoint')) {
       for (const r of officeRoots) {
         const p = path.join(r, 'POWERPNT.EXE');
-        if (fs.existsSync(p)) {
-          await WindowsController.runPowerShell(`Start-Process "${p}"`);
-          return { success: true, message: `🚀 Đã mở ứng dụng "Microsoft PowerPoint" trên máy tính của anh!` };
-        }
+        if (fs.existsSync(p)) return await launchExe(p, 'Microsoft PowerPoint');
       }
     }
 
@@ -557,8 +584,20 @@ Write-Output "OK"
 
     if (aliasMap[lower]) {
       const cmd = aliasMap[lower];
-      const res = await WindowsController.runPowerShell(`Start-Process "${cmd}"`);
-      if (!res.err) {
+      const ps = `
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = '${cmd}'
+        $psi.UseShellExecute = $true
+        $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+        try {
+          [System.Diagnostics.Process]::Start($psi) | Out-Null
+          Write-Output "OK"
+        } catch {
+          Write-Output "ERR"
+        }
+      `;
+      const res = await WindowsController.runPowerShell(ps);
+      if (res.stdout === 'OK') {
         return { success: true, message: `🚀 Đã mở ứng dụng "${clean}" trên máy tính của anh!` };
       }
     }
@@ -566,26 +605,24 @@ Write-Output "OK"
     // 5. Tìm kiếm thông minh trong Start Menu & Desktop & Program Files (.lnk / .exe)
     const shortcut = WindowsController.findInstalledApp(lower);
     if (shortcut) {
-      const res = await WindowsController.runPowerShell(`Start-Process "${shortcut.replace(/"/g, '`"')}"`);
-      if (!res.err) {
-        const appDisplayName = path.basename(shortcut, path.extname(shortcut));
-        return {
-          success: true,
-          message: `🚀 Đã tìm thấy và mở ứng dụng "${appDisplayName}" trên máy tính của anh thành công! ✨`
-        };
-      }
+      const appDisplayName = path.basename(shortcut, path.extname(shortcut));
+      return await launchExe(shortcut, appDisplayName);
     }
 
     // 6. Thử khởi chạy trực tiếp bằng PowerShell Start-Process
-    const directRes = await WindowsController.runPowerShell(`
+    const directPs = `
       try {
-        Start-Process "${clean}" -ErrorAction Stop
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = '${clean.replace(/'/g, "''")}'
+        $psi.UseShellExecute = $true
+        $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+        [System.Diagnostics.Process]::Start($psi) | Out-Null
         Write-Output "OK"
       } catch {
         Write-Output "ERR:$($_.Exception.Message)"
       }
-    `);
-
+    `;
+    const directRes = await WindowsController.runPowerShell(directPs);
     if (directRes.stdout === 'OK') {
       return { success: true, message: `🚀 Đã khởi chạy "${clean}" trên máy tính của anh!` };
     }
