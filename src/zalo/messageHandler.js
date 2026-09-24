@@ -51,7 +51,7 @@ export class MessageHandler {
         case '/export':
         case '/bangdiemfile': {
           try {
-            const res = ExcelService.generateGradesWorkbook();
+            const res = await ExcelService.generateGradesWorkbook();
             const msg = `📊 Dạ em Diana đã tạo xong file Excel Bảng điểm cho anh Tiến rồi ạ! 🌸\n` +
               `• Tổng số môn: ${res.totalGrades} môn học\n` +
               `• GPA Tích lũy: ${res.overallGPA} / 10 (${res.totalCredits} TC)\n` +
@@ -279,7 +279,7 @@ export class MessageHandler {
       lower.includes('tải bảng điểm')
     ) {
       try {
-        const res = ExcelService.generateGradesWorkbook();
+        const res = await ExcelService.generateGradesWorkbook();
         const msg = `📊 Dạ em Diana đã tạo xong file Excel Bảng điểm cho anh Tiến rồi ạ! 🌸\n` +
           `• Tổng số môn: ${res.totalGrades} môn học\n` +
           `• GPA Tích lũy: ${res.overallGPA} / 10 (${res.totalCredits} TC)\n` +

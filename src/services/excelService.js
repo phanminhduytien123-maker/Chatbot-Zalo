@@ -3,20 +3,33 @@ import path from 'path';
 import fs from 'fs';
 import storage from './storage.js';
 import config from '../config/config.js';
+import scraper from '../portal/scraper.js';
 
 export class ExcelService {
   /**
-   * Tạo file Excel bảng điểm toàn khóa chi tiết
-   * @returns {string} Đường dẫn tuyệt đối đến file .xlsx vừa tạo
+   * Tạo file Excel bảng điểm toàn khóa chi tiết từ Cổng TDTU THẬT
+   * @returns {Promise<{ filePath: string, fileName: string, totalGrades: number, overallGPA: number, totalCredits: number }>}
    */
-  static generateGradesWorkbook() {
+  static async generateGradesWorkbook() {
     const exportDir = path.resolve(config.paths.dataDir, 'exports');
     if (!fs.existsSync(exportDir)) {
       fs.mkdirSync(exportDir, { recursive: true });
     }
 
-    const state = storage.getState();
-    const grades = state.grades || [];
+    let state = storage.getState();
+    let grades = state.grades || [];
+
+    // Nếu chưa có dữ liệu thật (đang là dữ liệu mẫu <= 4 môn), cào trực tiếp toàn bộ 84 môn từ TDTU
+    if (!grades || grades.length <= 4) {
+      try {
+        console.log('🔄 Đang tải toàn bộ bảng điểm thật từ Cổng TDTU để xuất Excel...');
+        grades = await scraper.getGrades(true);
+        state = storage.getState();
+      } catch (e) {
+        console.error('⚠️ Lỗi khi tải điểm trực tiếp từ TDTU:', e.message);
+      }
+    }
+
     const learningInfo = state.learningInfo || { overallGPA: 7.73, overallCredits: 128, semesters: [] };
     const drlList = state.trainingPoints || [];
     const apps = state.applications || [];
