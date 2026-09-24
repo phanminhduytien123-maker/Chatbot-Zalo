@@ -520,24 +520,55 @@ export class MessageHandler {
       }
     }
 
-    // 8. Nhận diện ý định ĐIỀU KHIỂN MÁY TÍNH WINDOWS (NLP PC Commands)
-    // 8.0. TURN OFF / ON DISPLAY (Tắt/Bật/Mở màn hình)
-    if (lower.includes('tắt màn hình') || lower.includes('tat man hinh') || lower.includes('tắt display') || lower.includes('tat display') || lower.includes('tắt màn') || lower.includes('tat man')) {
-      const res = await pcBridge.executeCommand('turnoff_display');
-      const reply = res.message || res.error || '🖥️ Đã tắt màn hình máy tính của anh!';
-      aiAssistant.memory.addTurn(text, reply);
-      return reply;
-    }
+    // Helper làm sạch hậu tố kính ngữ, từ đệm tiếng Việt
+    const cleanCommandSuffix = (raw) => {
+      if (!raw || typeof raw !== 'string') return '';
+      let str = raw.trim();
+      const suffixRegex = /\s+(?:giùm\s+anh|dùm\s+anh|giúp\s+anh|hộ\s+anh|cho\s+anh|với\s+anh|giùm\s+em|dùm\s+em|giúp\s+em|hộ\s+em|cho\s+em|với\s+em|giùm\s+tôi|giúp\s+tôi|hộ\s+tôi|cho\s+tôi|giùm\s+mình|giúp\s+mình|hộ\s+mình|cho\s+mình|cho\s+anh\s+xem|cho\s+anh\s+coi|cho\s+anh\s+nghe|để\s+anh\s+xem|để\s+anh\s+lướt|để\s+anh\s+nghe|giùm|dùm|hộ|giúp|cho|với|đi\s+em|đi\s+anh|đi|lên|xíu|chút|nhanh|lẹ|ngay|liền|xem\s+với|coi\s+với|nghe\s+với|xem|coi|nghe|thử|và\s+gửi\s+cho\s+anh|và\s+gửi\s+anh|gửi\s+cho\s+anh|gửi\s+anh|gửi\s+qua\s+zalo|gửi\s+zalo|gửi\s+em|trên\s+máy\s+tính\s+của\s+anh|trên\s+máy\s+tính|trên\s+pc|trên\s+máy|trên\s+laptop|nhé\s+em|nhé\s+anh|nhé|nhe|nha|ạ|nhá|ha|diana|em)+$/i;
+      while (suffixRegex.test(str)) {
+        str = str.replace(suffixRegex, '').trim();
+      }
+      return str;
+    };
 
-    if (lower.includes('bật màn hình') || lower.includes('bat man hinh') || lower.includes('mở màn hình') || lower.includes('mo man hinh') || lower.includes('sáng màn hình') || lower.includes('sang man hinh') || lower.includes('đánh thức màn hình') || lower.includes('danh thuc man hinh') || lower.includes('bật display') || lower.includes('bat display') || lower.includes('mở display') || lower.includes('mo display') || lower.includes('bật màn') || lower.includes('mở màn')) {
+    // 8. Nhận diện ý định ĐIỀU KHIỂN MÁY TÍNH WINDOWS (NLP PC Commands)
+    // 8.0. WAKE / TURN OFF DISPLAY (Ưu tiên kiểm tra trước mở App)
+    if (
+      lower.includes('bật màn hình') || lower.includes('bat man hinh') || 
+      lower.includes('mở màn hình') || lower.includes('mo man hinh') || 
+      lower.includes('sáng màn hình') || lower.includes('sang man hinh') || 
+      lower.includes('đánh thức màn hình') || lower.includes('danh thuc man hinh') || 
+      lower.includes('bật display') || lower.includes('bat display') || 
+      lower.includes('mở display') || lower.includes('mo display') || 
+      lower.includes('bật màn') || lower.includes('bat man') || 
+      lower.includes('mở màn') || lower.includes('mo man')
+    ) {
       const res = await pcBridge.executeCommand('wake_display');
       const reply = res.message || res.error || '💡 Đã bật sáng lại màn hình máy tính của anh!';
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
 
+    if (
+      lower.includes('tắt màn hình') || lower.includes('tat man hinh') || 
+      lower.includes('tắt display') || lower.includes('tat display') || 
+      lower.includes('tắt màn') || lower.includes('tat man') ||
+      lower.includes('tối màn hình') || lower.includes('toi man hinh')
+    ) {
+      const res = await pcBridge.executeCommand('turnoff_display');
+      const reply = res.message || res.error || '🖥️ Đã tắt màn hình máy tính của anh!';
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
     // 8.1. UNLOCK (Mở khóa máy)
-    if (lower.includes('mở khóa') || lower.includes('mo khoa') || lower.includes('mở máy tính') || lower.includes('mo may tinh') || lower.includes('mở pc') || lower.includes('mo pc') || lower.includes('mở laptop') || lower.includes('mo laptop') || lower.includes('unlock')) {
+    if (
+      lower.includes('mở khóa') || lower.includes('mo khoa') || 
+      lower.includes('mở máy tính') || lower.includes('mo may tinh') || 
+      lower.includes('mở pc') || lower.includes('mo pc') || 
+      lower.includes('mở laptop') || lower.includes('mo laptop') || 
+      lower.includes('unlock')
+    ) {
       let pass = '/';
       const passMatch = text.match(/(?:pass(?:word)?|mật khẩu|mat khau)(?:\s+là|\s*:)?\s*([^\s]+)/i);
       if (passMatch) {
@@ -550,7 +581,12 @@ export class MessageHandler {
     }
 
     // 8.2. SLEEP (Cho máy tính ngủ)
-    if (lower.includes('sleep') || lower.includes('cho máy ngủ') || lower.includes('cho may ngu') || lower.includes('ngủ máy') || lower.includes('ngu may') || lower.includes('vào chế độ ngủ')) {
+    if (
+      lower.includes('sleep') || 
+      lower.includes('cho máy ngủ') || lower.includes('cho may ngu') || 
+      lower.includes('ngủ máy') || lower.includes('ngu may') || 
+      lower.includes('vào chế độ ngủ')
+    ) {
       const res = await pcBridge.executeCommand('sleep');
       const reply = res.message || res.error || (res.success ? '💤 Đã cho máy tính của anh vào chế độ Sleep rồi ạ!' : '❌ Không thể đưa máy vào chế độ Sleep.');
       aiAssistant.memory.addTurn(text, reply);
@@ -558,7 +594,12 @@ export class MessageHandler {
     }
 
     // 8.3. LOCK (Khóa máy)
-    if ((lower.includes('lock') || lower.includes('khóa máy') || lower.includes('khoa may') || lower.includes('khóa màn hình') || lower.includes('khoa man hinh') || lower.includes('khóa pc') || lower.includes('khoa pc')) && !lower.includes('xoalich') && !lower.includes('xóa')) {
+    if (
+      (lower.includes('lock') || lower.includes('khóa máy') || lower.includes('khoa may') || 
+       lower.includes('khóa màn hình') || lower.includes('khoa man hinh') || 
+       lower.includes('khóa pc') || lower.includes('khoa pc')) && 
+      !lower.includes('xoalich') && !lower.includes('xóa')
+    ) {
       const res = await pcBridge.executeCommand('lock');
       const reply = res.message || (res.success ? '🔒 Đã khóa màn hình máy tính của anh rồi ạ!' : res.error);
       aiAssistant.memory.addTurn(text, reply);
@@ -566,7 +607,16 @@ export class MessageHandler {
     }
 
     // 8.4. SCREENSHOT (Chụp ảnh màn hình)
-    if (lower.includes('chụp ảnh màn hình') || lower.includes('chup anh man hinh') || lower.includes('chụp màn hình') || lower.includes('chup man hinh') || lower.includes('chụp ảnh desktop') || lower.includes('chup anh desktop') || lower.includes('chụp desktop') || lower.includes('chup desktop') || lower.includes('chụp ảnh pc') || lower.includes('chụp pc') || lower.includes('chup pc') || lower.includes('chụp ảnh máy') || lower.includes('chup anh may') || lower.includes('screenshot') || lower.includes('chụp màn') || lower.includes('chup man')) {
+    if (
+      lower.includes('chụp ảnh màn hình') || lower.includes('chup anh man hinh') || 
+      lower.includes('chụp màn hình') || lower.includes('chup man hinh') || 
+      lower.includes('chụp ảnh desktop') || lower.includes('chup anh desktop') || 
+      lower.includes('chụp desktop') || lower.includes('chup desktop') || 
+      lower.includes('chụp ảnh pc') || lower.includes('chup anh pc') || 
+      lower.includes('chụp pc') || lower.includes('chup pc') || 
+      lower.includes('chụp ảnh máy') || lower.includes('chup anh may') || 
+      lower.includes('screenshot') || lower.includes('chụp màn') || lower.includes('chup man')
+    ) {
       const res = await pcBridge.executeCommand('screenshot');
       if (res.success && res.filePath) {
         const replyObj = {
@@ -581,24 +631,30 @@ export class MessageHandler {
       return reply;
     }
 
-
-    // 8.4. BATTERY (Pin)
-    if (lower.includes('pin laptop') || lower.includes('pin máy') || lower.includes('pin may') || lower.includes('kiểm tra pin') || lower.includes('xem pin') || lower.includes('battery')) {
+    // 8.5. BATTERY (Pin)
+    if (
+      lower.includes('pin laptop') || lower.includes('pin máy') || lower.includes('pin may') || 
+      lower.includes('kiểm tra pin') || lower.includes('xem pin') || lower.includes('battery')
+    ) {
       const res = await pcBridge.executeCommand('battery');
       const reply = res.message || res.error || '❌ Không thể đọc thông tin pin.';
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
 
-    // 8.5. CANCEL SHUTDOWN (Hủy tắt máy)
-    if (lower.includes('hủy tắt máy') || lower.includes('huy tat may') || lower.includes('không tắt máy') || lower.includes('khong tat may') || lower.includes('cancel shutdown')) {
+    // 8.6. CANCEL SHUTDOWN (Hủy tắt máy)
+    if (
+      lower.includes('hủy tắt máy') || lower.includes('huy tat may') || 
+      lower.includes('không tắt máy') || lower.includes('khong tat may') || 
+      lower.includes('cancel shutdown')
+    ) {
       const res = await pcBridge.executeCommand('cancel_shutdown');
       const reply = res.message || res.error;
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
 
-    // 8.6. SHUTDOWN (Tắt máy)
+    // 8.7. SHUTDOWN (Tắt máy)
     if (lower.includes('tắt máy') || lower.includes('tat may') || lower.includes('shutdown')) {
       let minutes = 0;
       const minMatch = text.match(/(\d+)\s*(?:phút|p|m)/i);
@@ -609,7 +665,7 @@ export class MessageHandler {
       return reply;
     }
 
-    // 8.7. VOLUME / MUTE (Âm lượng / Tắt tiếng)
+    // 8.8. VOLUME / MUTE (Âm lượng / Tắt tiếng)
     if (lower.includes('tắt tiếng') || lower.includes('tat tieng') || lower.includes('bật tiếng') || lower.includes('bat tieng') || lower.includes('mute')) {
       const res = await pcBridge.executeCommand('mute');
       const reply = res.message || res.error;
@@ -625,15 +681,10 @@ export class MessageHandler {
       return reply;
     }
 
-    // 8.8. OPEN APP / WEB (Mở app, mở web)
-    const openMatch = text.match(/^(?:diana\s+ơi\s*,?\s*|diana\s*,?\s*|em\s+ơi\s*,?\s*)?(?:hãy\s+|nhờ\s+em\s+)?(?:mở|bật|open|khởi\s+động|chạy|vào)\s+(?:ứng\s+dụng\s+|app\s+|phần\s+mềm\s+|web\s+|trang\s+web\s+|trang\s+)?(.+?)$/i);
+    // 8.9. OPEN APP / WEB (Mở app, mở web linh hoạt không cứng nhắc)
+    const openMatch = text.match(/^(?:diana\s+ơi\s*,?\s*|diana\s*,?\s*|em\s+ơi\s*,?\s*|bot\s+ơi\s*,?\s*)?(?:hãy\s+|nhờ\s+em\s+|làm\s+phiền\s+em\s+|phiền\s+em\s+|vui\s+lòng\s+|làm\s+ơn\s+)?(?:mở|bật|open|khởi\s+động|chạy|vào)\s+(?:ứng\s+dụng\s+|app\s+|phần\s+mềm\s+|web\s+|trang\s+web\s+|trang\s+|link\s+)?(.+?)$/i);
     if (openMatch && openMatch[1] && !lower.includes('thời tiết') && !lower.includes('bảng điểm') && !lower.includes('nhắc') && !lower.includes('hẹn')) {
-      let target = openMatch[1].trim();
-      const suffixRegex = /\s+(?:cho\s+anh|giúp\s+anh|hộ\s+anh|đi\s+em|đi|lên|nhé\s+em|nhé|nhe|nha|ạ|diana|em)+$/i;
-      while (suffixRegex.test(target)) {
-        target = target.replace(suffixRegex, '').trim();
-      }
-
+      const target = cleanCommandSuffix(openMatch[1]);
       if (target.length > 0) {
         const res = await pcBridge.executeCommand('open', { target });
         const reply = res.message || res.error || (res.success ? `🚀 Đã mở "${target}" trên máy tính của anh!` : `❌ Không thể mở "${target}".`);
@@ -656,7 +707,7 @@ export class MessageHandler {
       }
     }
 
-    // 9. Nếu không thuộc các trường hợp trên, chuyển cho Gemini AI Agent xử lý
+    // 10. Nếu không thuộc các trường hợp trên, chuyển cho Gemini AI Agent xử lý
     return await aiAssistant.processUserMessage(text);
   }
 }
