@@ -13,6 +13,8 @@ const STOP_WORDS_SET = new Set([
   'nhắc', 'em', 'anh', 'tôi', 'mình', 'ơn', 'cài', 'hẹn', 'giờ', 'lịch'
 ]);
 
+import weatherService from './weather.js';
+
 export class SchedulerService {
   constructor() {
     this.reminders = [];
@@ -29,7 +31,37 @@ export class SchedulerService {
     this.zaloLive = zaloLiveInstance;
     this.loadReminders();
     this.restoreSchedules();
+    this.setupMorningWeatherCron();
     console.log(chalk.cyan(`⏰ [Scheduler] Đã nạp ${this.getActiveReminders().length} lịch hẹn giờ hoạt động.`));
+  }
+
+  /**
+   * Đăng ký cron job tự động gửi Bản tin Thời tiết & Nhắc nhở lúc 7h00 sáng mỗi ngày
+   */
+  setupMorningWeatherCron() {
+    if (this.cronJobs.has('morning_weather_7am')) {
+      try { this.cronJobs.get('morning_weather_7am').stop(); } catch (_) {}
+    }
+
+    try {
+      const task = cron.schedule('0 7 * * *', async () => {
+        console.log(chalk.cyan.bold('⛅ [7:00 AM] Đang chuẩn bị gửi bản tin thời tiết buổi sáng cho anh Tiến...'));
+        const briefing = await weatherService.generateMorningBriefing();
+        const targetId = this.zaloLive?.ownerThreadId || '4150026493728653560';
+
+        if (this.zaloLive?.sendSafeMessage) {
+          await this.zaloLive.sendSafeMessage(briefing, targetId, 0);
+          console.log(chalk.green('✅ Đã gửi bản tin thời tiết 7h00 sáng thành công tới Zalo của anh Tiến!'));
+        }
+      }, {
+        timezone: 'Asia/Ho_Chi_Minh'
+      });
+
+      this.cronJobs.set('morning_weather_7am', task);
+      console.log(chalk.cyan('⏰ [Scheduler] Đã kích hoạt lịch tự động gửi Bản tin Thời tiết mỗi sáng lúc 07:00!'));
+    } catch (err) {
+      console.error(chalk.red('❌ Lỗi khi đăng ký cron thời tiết 7h00:'), err.message);
+    }
   }
 
   /**

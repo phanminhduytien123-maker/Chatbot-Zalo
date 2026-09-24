@@ -199,12 +199,13 @@ export class NotificationFormatter {
       `3. 📑 /don - Theo dõi tiến độ duyệt đơn từ trực tuyến\n` +
       `4. 📢 /tintuc - Xem các thông báo mới nhất từ trường\n` +
       `5. 🏃 /hoatdong - Xem hoạt động ngoại khóa & điểm rèn luyện\n` +
-      `6. ⏰ /reminders - Xem danh sách các lịch hẹn giờ đang bật\n` +
-      `7. 🗑️ /xoalich <Mã> - Hủy lịch hẹn giờ (hoặc /xoalich all)\n` +
-      `8. 🔄 /change /MSSV/MậtKhẩu - Đổi tài khoản để check sinh viên khác\n` +
-      `9. 🔑 /cookie <chuỗi_cookie> - Cập nhật Cookie mới\n` +
-      `10. 🧪 /simscore - Thử nghiệm mô phỏng có điểm môn mới\n` +
-      `11. 🧪 /simapp - Thử nghiệm mô phỏng đơn được duyệt\n` +
+      `6. ⛅ /thoitiet - Xem dự báo thời tiết TP.HCM & khung giờ có mưa hôm nay\n` +
+      `7. ⏰ /reminders - Xem danh sách các lịch hẹn giờ đang bật\n` +
+      `8. 🗑️ /xoalich <Mã> - Hủy lịch hẹn giờ (hoặc /xoalich all)\n` +
+      `9. 🔄 /change /MSSV/MậtKhẩu - Đổi tài khoản để check sinh viên khác\n` +
+      `10. 🔑 /cookie <chuỗi_cookie> - Cập nhật Cookie mới\n` +
+      `11. 🧪 /simscore - Thử nghiệm mô phỏng có điểm môn mới\n` +
+      `12. 🧪 /simapp - Thử nghiệm mô phỏng đơn được duyệt\n` +
       `━━━━━━━━━━━━━━━━━━━━━\n` +
       `⏰ HẸN GIỜ TỰ NHIÊN: Anh có thể nhắn bất kỳ câu nào như:\n` +
       `👉 "6h tối hôm nay em nhắc anh làm đồ án nhé"\n` +

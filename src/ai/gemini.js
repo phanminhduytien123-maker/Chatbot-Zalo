@@ -3,6 +3,7 @@ import config from '../config/config.js';
 import scraper from '../portal/scraper.js';
 import storage from '../services/storage.js';
 import memory from '../services/memory.js';
+import weatherService from '../services/weather.js';
 
 // Danh sách các model AI ưu tiên theo tốc độ và dung lượng quota
 const BACKUP_MODELS = [
@@ -137,6 +138,11 @@ export class GeminiAssistant {
           deepExtraInfo += `\n[THỜI KHÓA BIỂU]:\n${tkb.join('\n')}\n`;
         }
 
+        if (lower.includes('thời tiết') || lower.includes('thoitiet') || lower.includes('mưa') || lower.includes('nhiệt độ') || lower.includes('nắng') || lower.includes('áo mưa') || lower.includes('ô')) {
+          const weatherInfo = await weatherService.getWeatherSummaryForAI();
+          deepExtraInfo += `\n[DỮ LIỆU THỜI TIẾT TP.HCM HÔM NAY TỪ VỆ TINH]:\n${weatherInfo}\n`;
+        }
+
         const bot = config.bot;
         const boss = config.boss;
         const now = new Date();
@@ -247,6 +253,11 @@ ${deepExtraInfo}`;
     const greetings = ['chào em', 'xin chào', 'chào diana', 'chào bot', 'hello', 'hi em', 'alo', 'diana ơi', 'bot ơi'];
     if (greetings.some(g => text === g || text.startsWith(g))) {
       return `Dạ em chào anh Tiến ạ! Em là Diana luôn sẵn sàng hỗ trợ anh nè. Anh cần em tra cứu điểm số, đơn từ, nhắc nhở hay giúp gì không ạ? 🌸✨`;
+    }
+
+    // 0.1. Thời tiết
+    if (text.includes('thời tiết') || text.includes('thoitiet') || text.includes('có mưa không') || text.includes('mấy giờ mưa') || text.includes('trời mưa') || text.includes('nhiệt độ')) {
+      return await weatherService.generateMorningBriefing();
     }
 
     // 1. Hỏi về tính năng hẹn giờ / nhắc nhở

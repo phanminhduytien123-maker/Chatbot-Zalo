@@ -4,6 +4,7 @@ import monitor from '../services/monitor.js';
 import aiAssistant from '../ai/gemini.js';
 import scheduler from '../services/scheduler.js';
 import config from '../config/config.js';
+import weatherService from '../services/weather.js';
 
 export class MessageHandler {
   /**
@@ -23,6 +24,12 @@ export class MessageHandler {
       const args = parts.slice(1).join(' ').trim();
 
       switch (command) {
+        case '/thoitiet':
+        case '/weather':
+        case '/mua': {
+          return await weatherService.generateMorningBriefing();
+        }
+
         case '/check': {
           const cookieStatus = await scraper.checkCookieStatus();
           const grades = await scraper.getGrades();
