@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "node src/zaloLiveIndex.js",
+    "start:mock": "node src/index.js",
     "start:zalo": "node src/zaloLiveIndex.js",
     "reset:zalo": "node -e \"import fs from 'fs'; if(fs.existsSync('data/appstate.json')) fs.unlinkSync('data/appstate.json'); console.log('✅ Đã xóa phiên Zalo cũ! Lần chạy tiếp theo sẽ hiện mã QR mới.');\"",
     "test": "node src/test.js",

@@ -1,7 +1,25 @@
+import http from 'http';
 import { zaloLive } from './zalo/zaloLive.js';
 import { monitor } from './services/monitor.js';
 import { storage } from './services/storage.js';
 import { scheduler } from './services/scheduler.js';
+
+// Khởi tạo HTTP Health Check Server cho Render.com
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify({
+    status: 'ONLINE',
+    bot: 'Diana AI Zalo Agent',
+    service: 'Zalo Live Assistant',
+    uptime: `${Math.floor(process.uptime())}s`,
+    timestamp: new Date().toISOString()
+  }));
+});
+
+server.listen(PORT, () => {
+  console.log(`🌐 [Web Service] Health Check Server đang chạy tại cổng ${PORT}`);
+});
 
 async function bootstrapZaloLive() {
   console.log('🤖 Đang khởi động AI Zalo Bot (Chế độ Zalo Live Thực Tế)...');

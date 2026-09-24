@@ -3,6 +3,7 @@ import qrcode from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
+import dns from 'dns/promises';
 import { exec } from 'child_process';
 import config from '../config/config.js';
 import MessageHandler from './messageHandler.js';
@@ -27,6 +28,15 @@ export class ZaloLiveConnector {
     // Bộ nhớ lưu các tin nhắn do chính Bot gửi đi để chống lặp
     this.botSentContents = new Set();
     this.botSentMsgIds = new Set();
+
+    // Trạng thái kết nối và tự phục hồi
+    this.isConnected = false;
+    this.isReconnecting = false;
+    this.isSchedulerInitialized = false;
+    this.reconnectAttempts = 0;
+    this.lastActiveTime = Date.now();
+    this.wasOnline = true;
+    this.watchdogInterval = null;
   }
 
   /**
@@ -34,6 +44,19 @@ export class ZaloLiveConnector {
    */
   async start() {
     console.log(chalk.cyan.bold('\n📱 [Zalo Live] Đang chuẩn bị kết nối Zalo...'));
+
+    // 0. Khôi phục session từ biến môi trường APPSTATE_JSON (nếu chạy trên Render Cloud)
+    if (!fs.existsSync(APPSTATE_FILE) && process.env.APPSTATE_JSON) {
+      try {
+        if (!fs.existsSync(config.paths.dataDir)) {
+          fs.mkdirSync(config.paths.dataDir, { recursive: true });
+        }
+        fs.writeFileSync(APPSTATE_FILE, process.env.APPSTATE_JSON.trim(), 'utf8');
+        console.log(chalk.green('💾 [Cloud Session] Đã nạp phiên đăng nhập Zalo từ biến môi trường APPSTATE_JSON.'));
+      } catch (e) {
+        console.error(chalk.red('⚠️ Lỗi nạp APPSTATE_JSON:'), e.message);
+      }
+    }
 
     // 1. Kiểm tra session đã lưu trước đó
     if (fs.existsSync(APPSTATE_FILE)) {
@@ -111,23 +134,136 @@ export class ZaloLiveConnector {
   }
 
   /**
-   * Lắng nghe tin nhắn đến và gửi phản hồi (Không bao giờ bị đơ hay bỏ sót tin nhắn)
+   * Kiểm tra kết nối Internet thực tế bằng cách phân giải DNS đa nguồn
+   */
+  async checkInternet() {
+    try {
+      await Promise.any([
+        dns.lookup('chat.zalo.me'),
+        dns.lookup('google.com'),
+        dns.lookup('old-stdportal.tdtu.edu.vn')
+      ]);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Tự động kết nối lại an toàn khi gặp sự cố mạng (Đổi WiFi, rớt mạng, socket treo)
+   */
+  async safeReconnect(reason = 'Mất kết nối hoặc mạng gián đoạn') {
+    if (this.isReconnecting) return;
+    this.isReconnecting = true;
+
+    console.log(chalk.yellow(`\n🔄 [Zalo Live Reconnect] ${reason}. Đang chuẩn bị kết nối lại...`));
+
+    try {
+      // 1. Dọn dẹp listener cũ
+      if (this.api?.listener) {
+        try {
+          this.api.listener.stop();
+        } catch (_) {}
+      }
+
+      // 2. Chờ socket cũ giải phóng hoàn toàn
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // 3. Kiểm tra internet trước khi thử kết nối
+      const isOnline = await this.checkInternet();
+      if (!isOnline) {
+        console.log(chalk.gray('⏳ [Zalo Live] Thiết bị hiện chưa có kết nối Internet. Chờ có mạng để thử lại...'));
+        this.isReconnecting = false;
+        return;
+      }
+
+      // 4. Nếu đã thử nhiều lần (>= 3 lần) hoặc api bị hỏng, làm mới phiên đăng nhập từ appstate.json
+      if ((this.reconnectAttempts >= 3 || !this.api) && fs.existsSync(APPSTATE_FILE)) {
+        console.log(chalk.yellow('🔑 Đang làm mới phiên đăng nhập Zalo từ appstate.json...'));
+        const credentials = JSON.parse(fs.readFileSync(APPSTATE_FILE, 'utf8'));
+        this.api = await this.zalo.login(credentials);
+        await this.resolveTargetUser();
+      }
+
+      // 5. Khởi động lại listener
+      this.setupListeners();
+      this.reconnectAttempts = 0;
+      this.isConnected = true;
+      this.lastActiveTime = Date.now();
+      console.log(chalk.green.bold('🎉 [Zalo Live] ĐÃ KẾT NỐI LẠI THÀNH CÔNG! ĐIANA ĐANG ONLINE TRÊN ZALO.'));
+    } catch (err) {
+      this.reconnectAttempts++;
+      console.error(chalk.red(`❌ [Zalo Live] Kết nối lại thất bại (Lần ${this.reconnectAttempts}):`), err.message);
+      
+      // Lên lịch thử lại theo lũy thừa
+      const delay = Math.min(3000 * Math.pow(1.5, this.reconnectAttempts), 20000);
+      setTimeout(() => {
+        this.isReconnecting = false;
+        this.safeReconnect('Tự động thử lại theo chu kỳ');
+      }, delay);
+      return;
+    }
+
+    this.isReconnecting = false;
+  }
+
+  /**
+   * Lắng nghe tin nhắn đến và gửi phản hồi (Tự động phục hồi khi rớt mạng / đổi WiFi)
    */
   setupListeners() {
     if (!this.api) return;
 
-    // Khởi tạo hệ thống Hẹn giờ & Nhắc nhở
-    scheduler.init(this);
-
-    // Đăng ký gửi thông báo chủ động từ Monitor tới Zalo
-    monitor.setSender(async (alertMessage) => {
-      await this.broadcastAlert(alertMessage);
-    });
+    // Khởi tạo hệ thống Hẹn giờ & Nhắc nhở (chỉ khởi tạo 1 lần)
+    if (!this.isSchedulerInitialized) {
+      scheduler.init(this);
+      monitor.setSender(async (alertMessage) => {
+        await this.broadcastAlert(alertMessage);
+      });
+      this.isSchedulerInitialized = true;
+    }
 
     const myUid = String(this.api?.listener?.ctx?.uid || this.api?.getOwnId?.() || '');
 
+    // Dọn dẹp listener sự kiện cũ để tránh đăng ký hàm trùng lặp
+    if (this.api.listener) {
+      try {
+        this.api.listener.removeAllListeners?.();
+      } catch (_) {}
+    }
+
+    // Ghi nhận trạng thái kết nối thành công
+    this.api.listener.on('connected', () => {
+      this.isConnected = true;
+      this.lastActiveTime = Date.now();
+      this.reconnectAttempts = 0;
+      console.log(chalk.green('⚡ [Zalo Socket] Đã thiết lập kết nối dữ liệu trực tiếp với Zalo!'));
+    });
+
+    this.api.listener.on('cipher_key', () => {
+      this.isConnected = true;
+      this.lastActiveTime = Date.now();
+    });
+
+    // Bắt sự kiện ngắt kết nối và tự động phục hồi
+    this.api.listener.on('disconnected', (code, reason) => {
+      this.isConnected = false;
+      console.log(chalk.yellow(`⚠️ [Zalo Socket] Mất kết nối (Code: ${code}, Lý do: ${reason || 'Không rõ'})`));
+      this.safeReconnect('Socket bị ngắt kết nối (disconnected)');
+    });
+
+    this.api.listener.on('closed', (code, reason) => {
+      this.isConnected = false;
+      console.log(chalk.yellow(`⚠️ [Zalo Socket] Đóng kết nối (Code: ${code}, Lý do: ${reason || 'Không rõ'})`));
+      this.safeReconnect('Socket đã đóng (closed)');
+    });
+
+    this.api.listener.on('error', (err) => {
+      console.error(chalk.red('⚠️ [Zalo Socket Error]:'), err?.message || err);
+    });
+
     // Bắt đầu lắng nghe tin nhắn
     this.api.listener.on('message', async (message) => {
+      this.lastActiveTime = Date.now();
       try {
         const msgId = message.data.msgId || message.data.cliMsgId;
         const senderId = message.data.uidFrom || message.data.from;
@@ -201,6 +337,9 @@ export class ZaloLiveConnector {
               console.log(chalk.green(`📤 [Zalo Đã Trả Lời Xong]`));
             } catch (sendErr) {
               console.error(chalk.red('❌ Lỗi khi gửi phản hồi Zalo:'), sendErr.message);
+              if (sendErr.message?.includes('socket') || sendErr.message?.includes('network') || sendErr.message?.includes('ECONNRESET')) {
+                this.safeReconnect('Lỗi socket khi gửi phản hồi');
+              }
             }
           }
         }).catch((procErr) => {
@@ -212,8 +351,63 @@ export class ZaloLiveConnector {
       }
     });
 
-    this.api.listener.start();
-    console.log(chalk.cyan.bold('\n👂 Bot đang lắng nghe tin nhắn trên Zalo.'));
+    try {
+      this.api.listener.start({ retryOnClose: true });
+      console.log(chalk.cyan.bold('\n👂 Điana đang lắng nghe tin nhắn trên Zalo.'));
+    } catch (err) {
+      if (!err.message?.includes('Already started')) {
+        console.error(chalk.red('❌ Lỗi khi khởi động Listener:'), err.message);
+      }
+    }
+
+    // Kích hoạt Watchdog giám sát kết nối
+    this.startWatchdog();
+  }
+
+  /**
+   * Watchdog định kỳ 15s kiểm tra kết nối mạng và tình trạng WebSocket
+   */
+  startWatchdog() {
+    if (this.watchdogInterval) return;
+
+    this.watchdogInterval = setInterval(async () => {
+      try {
+        const isOnline = await this.checkInternet();
+
+        if (!isOnline) {
+          if (this.wasOnline) {
+            console.log(chalk.yellow('\n📡 [Watchdog] Phát hiện mất kết nối Internet (đổi WiFi/sóng yếu). Điana đang đợi có mạng lại...'));
+            this.wasOnline = false;
+            this.isConnected = false;
+          }
+          return;
+        }
+
+        // Nếu vừa có mạng trở lại sau khi mất mạng
+        if (!this.wasOnline) {
+          console.log(chalk.green.bold('\n📶 [Watchdog] Đã khôi phục kết nối Internet! Tiến hành kết nối lại Zalo ngay...'));
+          this.wasOnline = true;
+          await this.safeReconnect('Khôi phục kết nối mạng');
+          return;
+        }
+
+        // Nếu có mạng nhưng WebSocket không ở trạng thái OPEN (1)
+        const wsState = this.api?.listener?.ws?.readyState;
+        if (wsState !== 1 && !this.isReconnecting) {
+          console.log(chalk.yellow(`\n🔄 [Watchdog] Phát hiện Socket Zalo không hoạt động (Trạng thái: ${wsState ?? 'Null'}). Đang tự động kết nối lại...`));
+          await this.safeReconnect('Socket Zalo không hoạt động');
+          return;
+        }
+
+        // Kiểm tra Zombie Socket: Nếu quá 90 giây không nhận được bất kỳ tín hiệu nào từ Zalo (trong khi ping chuẩn 30s)
+        const now = Date.now();
+        if (now - this.lastActiveTime > 90000 && !this.isReconnecting) {
+          console.log(chalk.yellow('\n🔄 [Watchdog] Quá 90s không nhận được tín hiệu mạng (Zombie Socket do đổi mạng). Đang làm mới kết nối...'));
+          this.lastActiveTime = now;
+          await this.safeReconnect('Làm mới Zombie Socket');
+        }
+      } catch (_) {}
+    }, 15000);
   }
 
   /**
@@ -233,6 +427,9 @@ export class ZaloLiveConnector {
       console.log(chalk.green.bold(`🚨 [Zalo Alert] Đã gửi thông báo biến động mới thành công tới SĐT ${config.zalo.targetPhone} (Duy Tiến)!`));
     } catch (err) {
       console.error(chalk.red('❌ Lỗi khi gửi alert Zalo:'), err.message);
+      if (err.message?.includes('socket') || err.message?.includes('network') || err.message?.includes('ECONNRESET')) {
+        this.safeReconnect('Lỗi socket khi gửi cảnh báo');
+      }
     }
   }
 }
