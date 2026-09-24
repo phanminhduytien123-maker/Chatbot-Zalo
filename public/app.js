@@ -678,10 +678,10 @@ class DianaVoiceApp {
   }
 
   /**
-   * Phát âm văn bản tiếng Việt (Text-to-Speech)
+   * Phát âm văn bản tiếng Việt tự nhiên cho Diana (Cloud Natural Voice + Fallback SpeechSynthesis)
    */
   speak(text) {
-    if (!this.synth || !this.ttsEnabled) return;
+    if (!this.ttsEnabled) return;
 
     const cleanText = text
       .replace(/[*_#`~]/g, '')
@@ -692,6 +692,65 @@ class DianaVoiceApp {
     if (!cleanText) {
       this.setDotState('idle');
       this.scheduleCapsuleClose(4000);
+      return;
+    }
+
+    // Dừng âm thanh cũ nếu đang phát
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio.currentTime = 0;
+      this.currentAudio = null;
+    }
+    if (this.synth && this.synth.speaking) {
+      this.synth.cancel();
+    }
+
+    try {
+      this.isSpeaking = true;
+      this.setDotState('speaking');
+      this.capsuleStatus.textContent = 'Diana đang nói...';
+      this.updateLiveOverlayState('speaking', 'Diana đang nói', text);
+
+      // Thử phát âm thanh chất lượng cao từ /api/tts
+      const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}`;
+      const audio = new Audio(ttsUrl);
+      this.currentAudio = audio;
+
+      audio.onplay = () => {
+        this.isSpeaking = true;
+        this.setDotState('speaking');
+        this.capsuleStatus.textContent = 'Diana đang nói...';
+      };
+
+      audio.onended = () => {
+        this.isSpeaking = false;
+        this.setDotState('idle');
+        this.scheduleCapsuleClose(4000);
+        this.currentAudio = null;
+      };
+
+      audio.onerror = () => {
+        console.warn('Lỗi tải TTS audio, chuyển sang SpeechSynthesis fallback...');
+        this.fallbackSpeechSynthesis(cleanText);
+      };
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('Audio play bị chặn hoặc lỗi:', err);
+          this.fallbackSpeechSynthesis(cleanText);
+        });
+      }
+    } catch (_) {
+      this.fallbackSpeechSynthesis(cleanText);
+    }
+  }
+
+  fallbackSpeechSynthesis(cleanText) {
+    if (!this.synth) {
+      this.isSpeaking = false;
+      this.setDotState('idle');
+      this.scheduleCapsuleClose(3000);
       return;
     }
 
@@ -726,6 +785,7 @@ class DianaVoiceApp {
 
       this.synth.speak(utterance);
     } catch (_) {
+      this.isSpeaking = false;
       this.setDotState('idle');
       this.scheduleCapsuleClose(3000);
     }

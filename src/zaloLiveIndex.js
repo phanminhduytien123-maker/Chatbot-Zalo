@@ -121,7 +121,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 2. API: Trạng thái hệ thống & PC Status
+  // 3. API: Text-to-Speech (TTS) Giọng nói tiếng Việt tự nhiên cho Diana
+  if (url.pathname === '/api/tts') {
+    let text = url.searchParams.get('text') || '';
+    if (!text && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          const json = JSON.parse(body || '{}');
+          text = json.text || '';
+          await streamTTS(text, res);
+        } catch (_) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Lỗi parse text' }));
+        }
+      });
+      return;
+    }
+    await streamTTS(text, res);
+    return;
+  }
+
+  // 4. API: Trạng thái hệ thống & PC Status
   if (url.pathname === '/api/status' || url.pathname === '/pc/status') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     return res.end(JSON.stringify({
@@ -236,6 +258,62 @@ const server = http.createServer(async (req, res) => {
     pcOnline: pcBridge.isPCOnline()
   }));
 });
+
+async function streamTTS(text, res) {
+  if (!text || !text.trim()) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Text rỗng.' }));
+  }
+
+  const cleanText = text
+    .replace(/[*_#`~]/g, '')
+    .replace(/[\u{1F600}-\u{1F6FF}|[\u{1F300}-\u{1F5FF}|[\u{1F900}-\u{1F9FF}|[\u{2600}-\u{26FF}]/gu, '')
+    .replace(/\n+/g, '. ')
+    .trim();
+
+  // Chia nhỏ thành các đoạn câu <= 180 ký tự
+  const chunks = [];
+  let remaining = cleanText;
+  while (remaining.length > 0) {
+    if (remaining.length <= 180) {
+      chunks.push(remaining);
+      break;
+    }
+    let idx = remaining.lastIndexOf('. ', 180);
+    if (idx === -1) idx = remaining.lastIndexOf(', ', 180);
+    if (idx === -1) idx = remaining.lastIndexOf(' ', 180);
+    if (idx === -1) idx = 180;
+    chunks.push(remaining.slice(0, idx).trim());
+    remaining = remaining.slice(idx).trim();
+  }
+
+  try {
+    const buffers = await Promise.all(chunks.map(async (chunk) => {
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=vi&client=tw-ob`;
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+      if (!response.ok) {
+        throw new Error(`TTS upstream error: ${response.status}`);
+      }
+      return Buffer.from(await response.arrayBuffer());
+    }));
+
+    const fullAudio = Buffer.concat(buffers);
+    res.writeHead(200, {
+      'Content-Type': 'audio/mpeg',
+      'Content-Length': fullAudio.length,
+      'Cache-Control': 'public, max-age=86400'
+    });
+    return res.end(fullAudio);
+  } catch (err) {
+    console.error('[TTS Error]:', err);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Không thể tạo âm thanh giọng nói.' }));
+  }
+}
 
 server.listen(PORT, () => {
   console.log(`🌐 [Web Service] Health Check & Voice Assistant PWA đang chạy tại cổng ${PORT}`);
