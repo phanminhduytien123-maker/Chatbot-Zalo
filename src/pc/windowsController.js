@@ -464,6 +464,125 @@ Write-Output "OK"
   }
 
   /**
+   * Khởi chạy ứng dụng hoặc link đảm bảo luôn hiển thị cửa sổ trên màn hình tương tác người dùng
+   * @param {string} target Đường dẫn file, shortcut, URL hoặc lệnh thực thi
+   * @param {string} [args=""]
+   * @returns {Promise<{ success: boolean, output: string }>}
+   */
+  static async launchInteractive(target, args = '') {
+    const ps = `
+      Add-Type @"
+        using System;
+        using System.Runtime.InteropServices;
+        public class Win32Gui {
+            [DllImport("user32.dll")]
+            public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+            
+            [DllImport("user32.dll")]
+            public static extern bool SetForegroundWindow(IntPtr hWnd);
+            
+            [DllImport("user32.dll")]
+            public static extern bool BringWindowToTop(IntPtr hWnd);
+            
+            [DllImport("user32.dll")]
+            public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
+            
+            [DllImport("user32.dll")]
+            public static extern IntPtr GetForegroundWindow();
+            
+            [DllImport("user32.dll")]
+            public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr ProcessId);
+            
+            [DllImport("user32.dll")]
+            public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+            
+            [DllImport("kernel32.dll")]
+            public static extern uint GetCurrentThreadId();
+
+            public const int SW_RESTORE = 9;
+            public const int SW_SHOWNORMAL = 1;
+            public const byte VK_MENU = 0x12;
+            public const uint KEYEVENTF_KEYUP = 0x0002;
+
+            public static void ForceForeground(IntPtr hWnd) {
+                if (hWnd == IntPtr.Zero) return;
+                ShowWindowAsync(hWnd, SW_RESTORE);
+                ShowWindowAsync(hWnd, SW_SHOWNORMAL);
+
+                keybd_event(VK_MENU, 0, 0, 0);
+                SetForegroundWindow(hWnd);
+                BringWindowToTop(hWnd);
+                keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+
+                IntPtr fgWnd = GetForegroundWindow();
+                if (fgWnd != hWnd) {
+                    uint fgThread = GetWindowThreadProcessId(fgWnd, IntPtr.Zero);
+                    uint curThread = GetCurrentThreadId();
+                    if (fgThread != curThread && fgThread != 0) {
+                        AttachThreadInput(curThread, fgThread, true);
+                        SetForegroundWindow(hWnd);
+                        BringWindowToTop(hWnd);
+                        AttachThreadInput(curThread, fgThread, false);
+                    }
+                }
+            }
+        }
+"@
+
+      $targetPath = '${target.replace(/'/g, "''")}'
+      $argStr = '${args.replace(/'/g, "''")}'
+      $isUrl = $targetPath -match '^(https?://|www\.)'
+
+      # 1. Dọn dẹp các tiến trình zombie bị treo ẩn không có cửa sổ (MainWindowHandle = 0)
+      $baseName = [System.IO.Path]::GetFileNameWithoutExtension($targetPath)
+      if ($baseName -match '^(WINWORD|EXCEL|POWERPNT|notepad|mspaint)$') {
+          Get-Process $baseName -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -eq 0 } | ForEach-Object {
+              Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+          }
+      }
+
+      # 2. Khởi chạy thông qua Windows Shell (Shell.Application) để luôn bật ở giao diện người dùng
+      try {
+          $shell = New-Object -ComObject Shell.Application
+          $shell.ShellExecute($targetPath, $argStr, "", "open", 1)
+          Write-Output "LAUNCHED_SHELL"
+      } catch {
+          try {
+              $psi = New-Object System.Diagnostics.ProcessStartInfo
+              $psi.FileName = $targetPath
+              if ($argStr) { $psi.Arguments = $argStr }
+              $psi.UseShellExecute = $true
+              $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+              [System.Diagnostics.Process]::Start($psi) | Out-Null
+              Write-Output "LAUNCHED_PSI"
+          } catch {
+              Write-Output "ERR:$($_.Exception.Message)"
+          }
+      }
+
+      # 3. Kích hoạt và kéo cửa sổ ứng dụng hoặc trình duyệt lên vị trí nổi bật (Foreground)
+      Start-Sleep -Milliseconds 600
+      if ($isUrl) {
+          $browserProcs = Get-Process chrome, msedge, brave, coccoc, firefox, iexplore -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
+          foreach ($bp in $browserProcs) {
+              [Win32Gui]::ForceForeground($bp.MainWindowHandle)
+          }
+      } else {
+          $appProcs = Get-Process $baseName, WINWORD, EXCEL, POWERPNT, notepad, mspaint -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
+          foreach ($ap in $appProcs) {
+              [Win32Gui]::ForceForeground($ap.MainWindowHandle)
+          }
+      }
+    `;
+
+    const res = await WindowsController.runPowerShell(ps);
+    return {
+      success: !res.stdout.startsWith('ERR:'),
+      output: res.stdout
+    };
+  }
+
+  /**
    * Mở bất kỳ ứng dụng hoặc trang Web nào trên máy tính một cách thông minh và chắc chắn
    * @param {string} rawTarget Tên app (Antigravity, Chrome, Word, Excel, VSCode...) hoặc URL (https://...)
    */
@@ -549,25 +668,13 @@ Write-Output "OK"
     }
 
     if (urlToOpen) {
-      // Mở URL bằng Explorer & WScript.Shell để chắc chắn hiện cửa sổ trình duyệt trên màn hình
-      const ps = `
-        Start-Process "explorer.exe" -ArgumentList "${urlToOpen}"
-        $wsh = New-Object -ComObject WScript.Shell
-        $wsh.Run('${urlToOpen.replace(/'/g, "''")}', 1, $false)
-        Write-Output "OK"
-      `;
-      await WindowsController.runPowerShell(ps);
+      await WindowsController.launchInteractive(urlToOpen);
       return { success: true, message: `🌐 Đã mở trang web "${urlToOpen}" trên trình duyệt máy tính của anh!` };
     }
 
     // 2. Nếu là đường dẫn file / folder cụ thể có tồn tại
     if (fs.existsSync(clean)) {
-      const ps = `
-        $wsh = New-Object -ComObject WScript.Shell
-        $wsh.Run('"${clean.replace(/"/g, '`"')}"', 1, $false)
-        Write-Output "OK"
-      `;
-      await WindowsController.runPowerShell(ps);
+      await WindowsController.launchInteractive(clean);
       return { success: true, message: `📁 Đã mở "${path.basename(clean)}" trên máy tính!` };
     }
 
@@ -600,13 +707,8 @@ Write-Output "OK"
     const normLower = WindowsController.removeVietnameseTones(lower).replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
     const sysCmd = systemAliasMap[lower] || systemAliasMap[normLower];
     if (sysCmd) {
-      const ps = `
-        $wsh = New-Object -ComObject WScript.Shell
-        $wsh.Run('${sysCmd}', 1, $false)
-        Write-Output "OK"
-      `;
-      const res = await WindowsController.runPowerShell(ps);
-      if (res.stdout.includes('OK')) {
+      const res = await WindowsController.launchInteractive(sysCmd);
+      if (res.success) {
         return { success: true, message: `🚀 Đã mở ứng dụng "${clean}" trên máy tính của anh!` };
       }
     }
@@ -614,30 +716,18 @@ Write-Output "OK"
     // 4. Tìm shortcut trong Start Menu / Desktop
     const appFound = WindowsController.findInstalledApp(lower);
     if (appFound && appFound.filePath) {
-      const ps = `
-        $wsh = New-Object -ComObject WScript.Shell
-        $wsh.Run('"${appFound.filePath.replace(/"/g, '`"')}"', 1, $false)
-        Write-Output "OK"
-      `;
-      await WindowsController.runPowerShell(ps);
-      return {
-        success: true,
-        message: `🚀 Đã tìm thấy và mở ứng dụng "${appFound.displayName}" trên máy tính của anh thành công! ✨`
-      };
+      const res = await WindowsController.launchInteractive(appFound.filePath);
+      if (res.success) {
+        return {
+          success: true,
+          message: `🚀 Đã tìm thấy và mở ứng dụng "${appFound.displayName}" trên máy tính của anh thành công! ✨`
+        };
+      }
     }
 
-    // 5. Thử khởi chạy trực tiếp bằng WScript.Shell
-    const directPs = `
-      try {
-        $wsh = New-Object -ComObject WScript.Shell
-        $wsh.Run('${clean.replace(/'/g, "''")}', 1, $false)
-        Write-Output "OK"
-      } catch {
-        Write-Output "ERR:$($_.Exception.Message)"
-      }
-    `;
-    const directRes = await WindowsController.runPowerShell(directPs);
-    if (directRes.stdout.includes('OK')) {
+    // 5. Thử khởi chạy trực tiếp bằng launchInteractive
+    const directRes = await WindowsController.launchInteractive(clean);
+    if (directRes.success) {
       return { success: true, message: `🚀 Đã khởi chạy "${clean}" trên máy tính của anh!` };
     }
 
