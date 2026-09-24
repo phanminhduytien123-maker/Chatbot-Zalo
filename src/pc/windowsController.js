@@ -222,6 +222,30 @@ Write-Output "OK"
         return;
       }
 
+      // 1.1. Tra cứu tên trang web phổ biến (VD: youtube, facebook, chatgpt, github)
+      const webAliasMap = {
+        youtube: 'https://www.youtube.com',
+        yt: 'https://www.youtube.com',
+        facebook: 'https://www.facebook.com',
+        fb: 'https://www.facebook.com',
+        google: 'https://www.google.com',
+        gg: 'https://www.google.com',
+        github: 'https://github.com',
+        chatgpt: 'https://chatgpt.com',
+        portal: 'https://stdportal.tdtu.edu.vn',
+        stdportal: 'https://stdportal.tdtu.edu.vn',
+        tdtu: 'https://tdtu.edu.vn'
+      };
+
+      if (webAliasMap[lower]) {
+        const url = webAliasMap[lower];
+        exec(`start "" "${url}"`, (err) => {
+          if (err) return resolve({ success: false, error: `❌ Không thể mở trang web: ${err.message}` });
+          return resolve({ success: true, message: `🌐 Đã mở trang web "${url}" trên trình duyệt máy tính của anh!` });
+        });
+        return;
+      }
+
       // 2. Nếu là đường dẫn file / folder cụ thể có tồn tại
       if (fs.existsSync(clean)) {
         exec(`start "" "${clean}"`, (err) => {
