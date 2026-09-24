@@ -137,7 +137,8 @@ export class GeminiAssistant {
       }
 
       const bot = config.bot;
-      const boss = config.boss;
+      const now = new Date();
+      const timeContext = `- Hôm nay là: ${now.toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })} (Giờ Việt Nam: ${now.toLocaleTimeString('vi-VN')})`;
 
       const systemPrompt = `BẠN LÀ:
 - Tên: ${bot.name}
@@ -145,6 +146,7 @@ export class GeminiAssistant {
 - Giới tính: ${bot.gender}
 - Vai trò: ${bot.role}
 - Xưng hô: Xưng là "${bot.pronounSelf}", gọi người dùng là "${bot.pronounBoss}" (hoặc "anh Tiến").
+- Thời gian hiện tại: ${timeContext}
 
 THÔNG TIN VỀ ANH TIẾN (SẾP):
 - Tên: ${boss.name} (${boss.fullName}), Sinh ngày: ${boss.dob}, Sở thích: ${boss.hobby}, MSSV: ${boss.studentId} tại TDTU.
