@@ -83,64 +83,66 @@ export class GeminiAssistant {
    * Xử lý tin nhắn ngôn ngữ tự nhiên từ người dùng (Ngắn gọn, chuẩn xác, tiết kiệm token)
    */
   async processUserMessage(userText) {
-    if (this.hasApiKey && this.genAI) {
-      const state = storage.getState();
-      const allGrades = state.grades || [];
-      const relevantGrades = this.filterRelevantGrades(allGrades, userText);
+    try {
+      if (this.hasApiKey && this.genAI) {
+        const state = storage.getState();
+        const allGrades = state.grades || [];
+        const relevantGrades = this.filterRelevantGrades(allGrades, userText);
 
-      const gradesSummary = relevantGrades.map(g => 
-        `- [${g.code}] ${g.name} (${g.semester}): Điểm TK: ${g.totalScore || 'Chưa có'}, Điểm CK: ${g.finalScore || 'Chưa có'}, Điểm chữ: ${g.gradeLetter || 'Chưa có'}, TT: ${g.status}`
-      ).join('\n');
+        const gradesSummary = relevantGrades.map(g => 
+          `- [${g.code}] ${g.name} (${g.semester}): Điểm TK: ${g.totalScore || 'Chưa có'}, Điểm CK: ${g.finalScore || 'Chưa có'}, Điểm chữ: ${g.gradeLetter || 'Chưa có'}, TT: ${g.status}`
+        ).join('\n');
 
-      const drlList = state.trainingPoints || [];
-      const drlSummary = drlList.map(d => 
-        `- ${d.semester}: ${d.score} điểm`
-      ).join('\n');
+        const drlList = state.trainingPoints || [];
+        const drlSummary = drlList.map(d => 
+          `- ${d.semester}: ${d.score} điểm`
+        ).join('\n');
 
-      const learningInfo = state.learningInfo || { overallGPA: 7.73, overallCredits: 128, semesters: [] };
-      const gpaSemestersSummary = (learningInfo.semesters || []).map(s => 
-        `- Kỳ ${s.semester}: ĐTBHK: ${s.termGPA} | ĐTBTL: ${s.cumulativeGPA} | TCTL: ${s.cumulativeCredits} | Tiến độ: ${s.progress}`
-      ).join('\n');
+        const learningInfo = state.learningInfo || { overallGPA: 7.73, overallCredits: 128, semesters: [] };
+        const gpaSemestersSummary = (learningInfo.semesters || []).map(s => 
+          `- Kỳ ${s.semester}: ĐTBHK: ${s.termGPA} | ĐTBTL: ${s.cumulativeGPA} | TCTL: ${s.cumulativeCredits} | Tiến độ: ${s.progress}`
+        ).join('\n');
 
-      const gpaSummary = `• Điểm TB Tích Lũy chung (GPA): ${learningInfo.overallGPA} / 10\n• Tổng số tín chỉ tích lũy: ${learningInfo.overallCredits} TC\n${gpaSemestersSummary}`;
+        const gpaSummary = `• Điểm TB Tích Lũy chung (GPA): ${learningInfo.overallGPA} / 10\n• Tổng số tín chỉ tích lũy: ${learningInfo.overallCredits} TC\n${gpaSemestersSummary}`;
 
-      const tuitionSummary = state.tuition?.formattedSummary || 
-        `💰 TỔNG HỌP HỌC PHÍ TOÀN KHÓA:\n• Tổng học phí đã thanh toán: 129.709.000 VNĐ\n• Công nợ hiện tại: 0 VNĐ\nĐã thanh toán đầy đủ 13 học kỳ (2022-2026).`;
+        const tuitionSummary = state.tuition?.formattedSummary || 
+          `💰 TỔNG HỌP HỌC PHÍ TOÀN KHÓA:\n• Tổng học phí đã thanh toán: 129.709.000 VNĐ\n• Công nợ hiện tại: 0 VNĐ\nĐã thanh toán đầy đủ 13 học kỳ (2022-2026).`;
 
-      const appsSummary = (state.applications || []).map(a => 
-        `- Mã đơn: ${a.id}, Loại: ${a.type}, Trạng thái: ${a.status}, Ngày gửi: ${a.submitDate}`
-      ).join('\n');
+        const appsSummary = (state.applications || []).map(a => 
+          `- Mã đơn: ${a.id}, Loại: ${a.type}, Trạng thái: ${a.status}, Ngày gửi: ${a.submitDate}`
+        ).join('\n');
 
-      const newsSummary = (state.announcements || []).slice(0, 3).map(n => 
-        `- ${n.title}`
-      ).join('\n');
+        const newsSummary = (state.announcements || []).slice(0, 3).map(n => 
+          `- ${n.title}`
+        ).join('\n');
 
-      let deepExtraInfo = '';
-      const lower = userText.toLowerCase();
+        let deepExtraInfo = '';
+        const lower = userText.toLowerCase();
 
-      if (lower.includes('lịch thi') || lower.includes('phòng thi') || lower.includes('ca thi')) {
-        const exams = await scraper.getExamSchedule();
-        deepExtraInfo += `\n[LỊCH THI]:\n${exams.join('\n')}\n`;
-      }
-
-      if (lower.includes('học phí') || lower.includes('tiền học') || lower.includes('công nợ')) {
-        let fee = state.tuition?.formattedSummary;
-        if (!fee) {
-          fee = await scraper.getTuition();
+        if (lower.includes('lịch thi') || lower.includes('phòng thi') || lower.includes('ca thi')) {
+          const exams = await scraper.getExamSchedule();
+          deepExtraInfo += `\n[LỊCH THI]:\n${exams.join('\n')}\n`;
         }
-        deepExtraInfo += `\n[HỌC PHÍ CHI TIẾT]:\n${fee}\n`;
-      }
 
-      if (lower.includes('thời khóa biểu') || lower.includes('tkb') || lower.includes('lịch học')) {
-        const tkb = await scraper.getScheduleTKB();
-        deepExtraInfo += `\n[THỜI KHÓA BIỂU]:\n${tkb.join('\n')}\n`;
-      }
+        if (lower.includes('học phí') || lower.includes('tiền học') || lower.includes('công nợ')) {
+          let fee = state.tuition?.formattedSummary;
+          if (!fee) {
+            fee = await scraper.getTuition();
+          }
+          deepExtraInfo += `\n[HỌC PHÍ CHI TIẾT]:\n${fee}\n`;
+        }
 
-      const bot = config.bot;
-      const now = new Date();
-      const timeContext = `- Hôm nay là: ${now.toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })} (Giờ Việt Nam: ${now.toLocaleTimeString('vi-VN')})`;
+        if (lower.includes('thời khóa biểu') || lower.includes('tkb') || lower.includes('lịch học')) {
+          const tkb = await scraper.getScheduleTKB();
+          deepExtraInfo += `\n[THỜI KHÓA BIỂU]:\n${tkb.join('\n')}\n`;
+        }
 
-      const systemPrompt = `BẠN LÀ:
+        const bot = config.bot;
+        const boss = config.boss;
+        const now = new Date();
+        const timeContext = `- Hôm nay là: ${now.toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })} (Giờ Việt Nam: ${now.toLocaleTimeString('vi-VN')})`;
+
+        const systemPrompt = `BẠN LÀ:
 - Tên: ${bot.name}
 - Ngày sinh: ${bot.dob}
 - Giới tính: ${bot.gender}
@@ -188,39 +190,42 @@ ${appsSummary}
 ${newsSummary}
 ${deepExtraInfo}`;
 
-      const history = this.memory.getGeminiHistory();
+        const history = this.memory.getGeminiHistory();
 
-      for (const currentModel of BACKUP_MODELS) {
-        try {
-          const model = this.genAI.getGenerativeModel({
-            model: currentModel,
-            systemInstruction: systemPrompt
-          });
+        for (const currentModel of BACKUP_MODELS) {
+          try {
+            const model = this.genAI.getGenerativeModel({
+              model: currentModel,
+              systemInstruction: systemPrompt
+            });
 
-          const chat = model.startChat({
-            history: history
-          });
+            const chat = model.startChat({
+              history: history
+            });
 
-          const executePromise = (async () => {
-            const result = await chat.sendMessage(userText);
-            return result.response.text();
-          })();
+            const executePromise = (async () => {
+              const result = await chat.sendMessage(userText);
+              return result.response.text();
+            })();
 
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('AI Model Timeout')), 6000)
-          );
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('AI Model Timeout')), 6000)
+            );
 
-          const reply = await Promise.race([executePromise, timeoutPromise]);
+            const reply = await Promise.race([executePromise, timeoutPromise]);
 
-          if (reply && reply.trim().length > 0) {
-            const cleanReply = reply.trim();
-            this.memory.addTurn(userText, cleanReply);
-            return cleanReply;
+            if (reply && reply.trim().length > 0) {
+              const cleanReply = reply.trim();
+              this.memory.addTurn(userText, cleanReply);
+              return cleanReply;
+            }
+          } catch (_) {
+            continue;
           }
-        } catch (_) {
-          continue;
         }
       }
+    } catch (outerErr) {
+      console.error('⚠️ [AI Outer Error]:', outerErr.message);
     }
 
     const fallbackReply = await this.fallbackNLP(userText);
