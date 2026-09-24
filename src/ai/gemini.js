@@ -4,19 +4,19 @@ import scraper from '../portal/scraper.js';
 import storage from '../services/storage.js';
 import memory from '../services/memory.js';
 
-// Danh sách các model AI để tự động luân chuyển
+// Danh sách các model AI ưu tiên theo tốc độ và dung lượng quota
 const BACKUP_MODELS = [
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
+  'gemini-flash-lite-latest',
   'gemini-3.5-flash-lite',
-  'gemini-flash-latest',
-  'gemini-flash-lite-latest'
+  'gemini-3.1-flash-lite',
+  'gemini-3-flash-preview',
+  'gemini-3.6-flash'
 ];
 
 export class GeminiAssistant {
   constructor() {
     this.apiKey = config.ai.apiKey;
-    this.modelName = config.ai.model || 'gemini-3.6-flash';
+    this.modelName = config.ai.model || 'gemini-flash-lite-latest';
     this.hasApiKey = config.ai.hasApiKey;
     this.genAI = this.hasApiKey ? new GoogleGenerativeAI(this.apiKey) : null;
     this.memory = memory;
@@ -196,8 +196,16 @@ ${deepExtraInfo}`;
             history: history
           });
 
-          const result = await chat.sendMessage(userText);
-          const reply = result.response.text();
+          const executePromise = (async () => {
+            const result = await chat.sendMessage(userText);
+            return result.response.text();
+          })();
+
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('AI Model Timeout')), 6000)
+          );
+
+          const reply = await Promise.race([executePromise, timeoutPromise]);
 
           if (reply && reply.trim().length > 0) {
             const cleanReply = reply.trim();
@@ -224,6 +232,12 @@ ${deepExtraInfo}`;
     const allGrades = state.grades || [];
     const bot = config.bot;
     const boss = config.boss;
+
+    // 0. Chào hỏi thông thường
+    const greetings = ['chào em', 'xin chào', 'chào diana', 'chào bot', 'hello', 'hi em', 'alo', 'diana ơi', 'bot ơi'];
+    if (greetings.some(g => text === g || text.startsWith(g))) {
+      return `Dạ em chào anh Tiến ạ! Em là Diana luôn sẵn sàng hỗ trợ anh nè. Anh cần em tra cứu điểm số, đơn từ, nhắc nhở hay giúp gì không ạ? 🌸✨`;
+    }
 
     // 1. Hỏi về tính năng hẹn giờ / nhắc nhở
     if (text.includes('hẹn giờ') || text.includes('nhắc nhở') || text.includes('báo thức') || text.includes('nhắc việc') || text.includes('cài lịch')) {

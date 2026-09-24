@@ -28,7 +28,7 @@ export const config = {
   },
   ai: {
     apiKey: process.env.GEMINI_API_KEY || '',
-    model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+    model: process.env.GEMINI_MODEL || 'gemini-flash-lite-latest',
     hasApiKey: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 10)
   },
   portal: {
