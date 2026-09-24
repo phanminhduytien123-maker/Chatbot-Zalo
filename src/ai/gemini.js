@@ -36,11 +36,14 @@ export class GeminiAssistant {
    * Lọc và chuẩn bị bảng điểm toàn khóa thông minh dựa trên câu hỏi
    */
   filterRelevantGrades(allGrades, userText) {
+    if (!Array.isArray(allGrades)) return [];
+    if (!userText) return allGrades;
     const text = userText.toLowerCase();
 
     // 1. Nếu hỏi học kỳ cụ thể (ví dụ: "kỳ 1 2024", "kỳ 2 2023", "kỳ hè 2025")
     const matchedBySemester = allGrades.filter(g => {
-      const sem = g.semester.toLowerCase();
+      const sem = (g.semester || g.nameTable || '').toLowerCase();
+      if (!sem) return false;
       if (text.includes('kỳ 1') || text.includes('học kỳ 1') || text.includes('hk1')) {
         if (text.includes('2025') && sem.includes('2025-2026') && sem.includes('1')) return true;
         if (text.includes('2024') && sem.includes('2024-2025') && sem.includes('1')) return true;
@@ -62,10 +65,10 @@ export class GeminiAssistant {
 
     // 2. Nếu hỏi môn học cụ thể (tìm kiếm theo tên môn trên toàn khóa)
     const matchedBySubject = allGrades.filter(g => {
-      const name = g.name.toLowerCase();
-      const code = g.code.toLowerCase();
+      const name = (g.name || '').toLowerCase();
+      const code = (g.code || '').toLowerCase();
       const words = text.split(/\s+/).filter(w => w.length > 2);
-      return words.some(w => name.includes(w) || code.includes(w));
+      return words.some(w => (name && name.includes(w)) || (code && code.includes(w)));
     });
 
     if (matchedBySubject.length > 0) {
@@ -272,8 +275,8 @@ ${deepExtraInfo}`;
 
     // 6. Tìm môn học
     const matched = allGrades.filter(g => 
-      text.includes(g.name.toLowerCase()) || 
-      text.includes(g.code.toLowerCase())
+      (g.name && text.includes(g.name.toLowerCase())) || 
+      (g.code && text.includes(g.code.toLowerCase()))
     );
 
     if (matched.length > 0) {
