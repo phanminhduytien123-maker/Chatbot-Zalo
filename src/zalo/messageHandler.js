@@ -477,6 +477,23 @@ export class MessageHandler {
     }
 
     // 8. Nhận diện ý định ĐIỀU KHIỂN MÁY TÍNH WINDOWS (NLP PC Commands)
+    // 8.1. Mở ứng dụng hoặc trang Web bằng giọng văn tự nhiên (VD: "Mở Facebook cho anh đi Diana", "Bật youtube lên nhé", "mở antigravity")
+    const openMatch = text.match(/^(?:diana\s+ơi\s*,?\s*|diana\s*,?\s*|em\s+ơi\s*,?\s*)?(?:hãy\s+|nhờ\s+em\s+)?(?:mở|bật|open|khởi\s+động|chạy)\s+(?:ứng\s+dụng\s+|app\s+|phần\s+mềm\s+|web\s+|trang\s+web\s+|trang\s+)?(.+?)$/i);
+    if (openMatch && openMatch[1] && !lower.includes('thời tiết') && !lower.includes('bảng điểm') && !lower.includes('nhắc') && !lower.includes('hẹn')) {
+      let target = openMatch[1].trim();
+      const suffixRegex = /\s+(?:cho\s+anh|giúp\s+anh|hộ\s+anh|đi\s+em|đi|lên|nhé\s+em|nhé|nhe|nha|ạ|diana|em)+$/i;
+      while (suffixRegex.test(target)) {
+        target = target.replace(suffixRegex, '').trim();
+      }
+
+      if (target.length > 0) {
+        const res = await pcBridge.executeCommand('open', { target });
+        const reply = res.message || res.error || (res.success ? `🚀 Đã mở "${target}" trên máy tính của anh!` : `❌ Không thể mở "${target}".`);
+        aiAssistant.memory.addTurn(text, reply);
+        return reply;
+      }
+    }
+
     if (lower.includes('khóa máy tính') || lower.includes('khóa màn hình máy tính') || lower.includes('lock máy tính')) {
       const res = await pcBridge.executeCommand('lock');
       const reply = res.message || (res.success ? '🔒 Đã khóa màn hình máy tính của anh rồi ạ!' : res.error);
