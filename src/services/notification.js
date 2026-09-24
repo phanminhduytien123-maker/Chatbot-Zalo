@@ -149,31 +149,37 @@ export class NotificationFormatter {
     msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
 
     if (diff.gradeUpdates.length > 0) {
-      msg += `🎉 PHÁT HIỆN CẬP NHẬT ĐIỂM MỚI:\n`;
-      diff.gradeUpdates.forEach(item => {
+      msg += `🎉 PHÁT HIỆN CẬP NHẬT ĐIỂM MỚI (${diff.gradeUpdates.length} môn):\n`;
+      diff.gradeUpdates.slice(0, 10).forEach(item => {
         msg += `👉 Môn [${item.subject.code}] ${item.subject.name}: `;
         if (item.subject.totalScore !== null) {
-          msg += `Điểm TK: ${item.subject.totalScore} (${item.subject.gradeLetter})\n`;
+          msg += `Điểm TK: ${item.subject.totalScore} (${item.subject.gradeLetter || ''})\n`;
         } else {
           msg += `Trạng thái: ${item.subject.status}\n`;
         }
       });
+      if (diff.gradeUpdates.length > 10) {
+        msg += `... và ${diff.gradeUpdates.length - 10} môn khác (Gõ /diem để xem chi tiết).\n`;
+      }
       msg += `\n`;
     }
 
     if (diff.applicationUpdates.length > 0) {
       msg += `📑 CẬP NHẬT TIẾN ĐỘ ĐƠN TỪ:\n`;
-      diff.applicationUpdates.forEach(item => {
+      diff.applicationUpdates.slice(0, 5).forEach(item => {
         msg += `👉 Đơn "${item.application.type}" vừa chuyển sang: 【${item.application.status.toUpperCase()}】\n`;
       });
       msg += `\n`;
     }
 
     if (diff.newAnnouncements.length > 0) {
-      msg += `📢 CÓ THÔNG BÁO MỚI TỪ TRƯỜNG:\n`;
-      diff.newAnnouncements.forEach(item => {
+      msg += `📢 CÓ THÔNG BÁO MỚI TỪ TRƯỜNG (${diff.newAnnouncements.length} tin):\n`;
+      diff.newAnnouncements.slice(0, 5).forEach(item => {
         msg += `👉 ${item.title} (${item.department})\n`;
       });
+      if (diff.newAnnouncements.length > 5) {
+        msg += `... và ${diff.newAnnouncements.length - 5} tin khác (Gõ /tintuc để xem tất cả).\n`;
+      }
       msg += `\n`;
     }
 

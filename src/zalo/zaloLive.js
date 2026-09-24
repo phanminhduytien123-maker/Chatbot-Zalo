@@ -330,10 +330,7 @@ export class ZaloLiveConnector {
             }
 
             try {
-              const sendResult = await this.api.sendMessage(cleanReply, threadId, threadType);
-              if (sendResult?.message?.msgId) {
-                this.botSentMsgIds.add(String(sendResult.message.msgId));
-              }
+              await this.sendSafeMessage(cleanReply, threadId, threadType);
               console.log(chalk.green(`📤 [Zalo Đã Trả Lời Xong]`));
             } catch (sendErr) {
               console.error(chalk.red('❌ Lỗi khi gửi phản hồi Zalo:'), sendErr.message);
@@ -362,6 +359,49 @@ export class ZaloLiveConnector {
 
     // Kích hoạt Watchdog giám sát kết nối
     this.startWatchdog();
+  }
+
+  /**
+   * Gửi tin nhắn an toàn tự động phân đoạn nếu vượt quá giới hạn ký tự của Zalo (~1200 ký tự)
+   */
+  async sendSafeMessage(text, threadId, threadType = ThreadType.User) {
+    if (!this.api || !text) return;
+    const cleanText = text.trim();
+    const MAX_CHUNK = 1200;
+
+    if (cleanText.length <= MAX_CHUNK) {
+      this.botSentContents.add(cleanText);
+      const res = await this.api.sendMessage(cleanText, threadId, threadType);
+      if (res?.message?.msgId) this.botSentMsgIds.add(String(res.message.msgId));
+      return res;
+    }
+
+    // Nếu tin nhắn dài, chia nhỏ theo từng đoạn hoặc dòng
+    const lines = cleanText.split('\n');
+    let currentChunk = '';
+    const chunks = [];
+
+    for (const line of lines) {
+      if ((currentChunk + '\n' + line).length > MAX_CHUNK) {
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+        }
+        currentChunk = line;
+      } else {
+        currentChunk = currentChunk ? currentChunk + '\n' + line : line;
+      }
+    }
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+
+    // Gửi từng phần cách nhau 400ms
+    for (const chunk of chunks) {
+      this.botSentContents.add(chunk);
+      const res = await this.api.sendMessage(chunk, threadId, threadType);
+      if (res?.message?.msgId) this.botSentMsgIds.add(String(res.message.msgId));
+      await new Promise(r => setTimeout(r, 400));
+    }
   }
 
   /**
@@ -418,12 +458,12 @@ export class ZaloLiveConnector {
 
     try {
       const cleanAlert = alertText.trim();
-      this.botSentContents.add(cleanAlert);
+      if (!cleanAlert) return;
 
       const targetId = this.ownerThreadId || '4150026493728653560';
       const targetType = this.ownerThreadType || ThreadType.User;
 
-      await this.api.sendMessage(cleanAlert, targetId, targetType);
+      await this.sendSafeMessage(cleanAlert, targetId, targetType);
       console.log(chalk.green.bold(`🚨 [Zalo Alert] Đã gửi thông báo biến động mới thành công tới SĐT ${config.zalo.targetPhone} (Duy Tiến)!`));
     } catch (err) {
       console.error(chalk.red('❌ Lỗi khi gửi alert Zalo:'), err.message);
