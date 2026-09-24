@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f19">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Diana AI">
+  <meta name="description" content="Trợ lý ảo giọng nói Điana - Điều khiển máy tính và hỗ trợ học tập thông minh">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  
+  <title>Điana Voice Assistant</title>
+  
+  <!-- Google Fonts: Outfit & Be Vietnam Pro -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-avatar">
+          <div class="avatar-ring"></div>
+          <span class="avatar-emoji">🌸</span>
+        </div>
+        <div class="brand-info">
+          <h1 class="brand-name">ĐIANA AI</h1>
+          <div class="status-badge" id="pcStatusBadge">
+            <span class="status-dot"></span>
+            <span class="status-text" id="pcStatusText">Đang kiểm tra...</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="header-actions">
+        <button class="icon-btn" id="ttsToggleBtn" title="Bật/Tắt đọc giọng nói" aria-label="Bật/Tắt đọc giọng nói">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+        </button>
+        <button class="icon-btn" id="clearChatBtn" title="Xóa hội thoại" aria-label="Xóa hội thoại">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content / Chat Display -->
+    <main class="chat-container" id="chatContainer">
+      <div class="welcome-card" id="welcomeCard">
+        <div class="welcome-icon">✨</div>
+        <h2 class="welcome-title">Chào anh Tiến!</h2>
+        <p class="welcome-desc">Em là <strong>Điana</strong>. Anh chỉ cần chạm vào Micro bên dưới và nói, em sẽ lắng nghe và thực thi ngay lập tức!</p>
+        
+        <!-- Quick Action Chips -->
+        <div class="quick-chips">
+          <button class="chip" data-query="chụp ảnh màn hình máy tính">📸 Chụp màn hình PC</button>
+          <button class="chip" data-query="mở youtube trên máy tính">🌐 Mở Youtube</button>
+          <button class="chip" data-query="chỉnh âm lượng máy tính 70%">🔊 Âm lượng 70%</button>
+          <button class="chip" data-query="thời tiết hôm nay thế nào">🌤️ Thời tiết</button>
+          <button class="chip" data-query="kiểm tra pin laptop">🔋 Kiểm tra pin</button>
+          <button class="chip" data-query="khóa màn hình máy tính">🔒 Khóa máy tính</button>
+        </div>
+      </div>
+
+      <div class="chat-messages" id="chatMessages"></div>
+    </main>
+
+    <!-- Voice Visualizer & Orb Section -->
+    <section class="voice-section">
+      <!-- Live transcript overlay -->
+      <div class="transcript-box" id="transcriptBox">
+        <span class="transcript-placeholder" id="transcriptText">Chạm vào Micro để bắt đầu nói...</span>
+      </div>
+
+      <div class="orb-wrapper">
+        <!-- Visualizer Rings -->
+        <div class="orb-pulse-ring ring-1"></div>
+        <div class="orb-pulse-ring ring-2"></div>
+        <div class="orb-pulse-ring ring-3"></div>
+
+        <!-- Main Mic Button -->
+        <button class="mic-button" id="micButton" aria-label="Bật mic nói chuyện">
+          <div class="mic-glow"></div>
+          <div class="mic-icon-wrapper">
+            <svg class="mic-icon" id="micIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+            <div class="wave-bars" id="waveBars">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+        </button>
+      </div>
+
+      <!-- Text input fallback bar -->
+      <div class="text-input-bar">
+        <input type="text" id="textInput" placeholder="Hoặc nhập yêu cầu tại đây..." autocomplete="off">
+        <button id="sendBtn" class="send-btn" aria-label="Gửi tin nhắn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- PWA Install Banner -->
+    <div class="pwa-install-banner" id="pwaBanner">
+      <div class="pwa-info">
+        <span class="pwa-icon">📱</span>
+        <div>
+          <strong>Thêm Điana vào Màn hình chính</strong>
+          <p>Mở nhanh như ứng dụng thật không cần mở trình duyệt!</p>
+        </div>
+      </div>
+      <div class="pwa-actions">
+        <button class="btn-secondary" id="pwaDismissBtn">Để sau</button>
+        <button class="btn-primary" id="pwaInstallBtn">Cài đặt ngay</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

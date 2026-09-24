@@ -1,5 +1,8 @@
 process.env.TZ = 'Asia/Ho_Chi_Minh';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import config from './config/config.js';
 import { zaloLive } from './zalo/zaloLive.js';
 import { monitor } from './services/monitor.js';
@@ -8,12 +11,96 @@ import { scheduler } from './services/scheduler.js';
 import { MessageHandler } from './zalo/messageHandler.js';
 import { pcBridge } from './pc/pcBridge.js';
 
-// Khởi tạo HTTP Health Check Server cho Render.com
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const publicDir = path.resolve(__dirname, '..', 'public');
+const dataDir = path.resolve(__dirname, '..', 'data');
+
+const mimeTypes = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.svg': 'image/svg+xml; charset=utf-8',
+  '.ico': 'image/x-icon'
+};
+
+// Khởi tạo HTTP Web Service & Voice Assistant Server cho Render.com
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   
-  // 1. Endpoint thăm dò lệnh cho PC Agent
+  // CORS Headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    return res.end();
+  }
+
+  // 1. API: Voice Assistant Endpoint
+  if (url.pathname === '/api/voice' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const query = (data.query || data.text || '').trim();
+        if (!query) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error: 'Truy vấn không được để trống.' }));
+        }
+
+        const reply = await MessageHandler.handleIncomingMessage(query);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({
+          success: true,
+          query,
+          reply
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: err.message, stack: err.stack }));
+      }
+    });
+    return;
+  }
+
+  // 2. API: Trạng thái hệ thống & PC Status
+  if (url.pathname === '/api/status' || url.pathname === '/pc/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({
+      status: 'ONLINE',
+      bot: 'Diana AI Voice Assistant',
+      uptime: `${Math.floor(process.uptime())}s`,
+      timestamp: new Date().toISOString(),
+      hasApiKey: config.ai.hasApiKey,
+      model: config.ai.model,
+      zaloConnected: zaloLive.isConnected,
+      pcOnline: pcBridge.isPCOnline(),
+      pcInfo: pcBridge.pcInfo
+    }));
+  }
+
+  // 3. API: Phục vụ ảnh chụp màn hình máy tính (Screenshots)
+  if (url.pathname.startsWith('/api/screenshot/')) {
+    const fileName = path.basename(url.pathname.replace('/api/screenshot/', ''));
+    const filePath = path.join(dataDir, 'screenshots', fileName);
+    if (fs.existsSync(filePath)) {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      return fs.createReadStream(filePath).pipe(res);
+    } else {
+      res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ error: 'Không tìm thấy ảnh chụp màn hình.' }));
+    }
+  }
+
+  // 4. Endpoint thăm dò lệnh cho PC Agent
   if (url.pathname === '/pc/poll') {
     const cmd = pcBridge.pollCommand();
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -24,7 +111,7 @@ const server = http.createServer(async (req, res) => {
     }));
   }
 
-  // 2. Endpoint nhận kết quả xử lý từ PC Agent
+  // 5. Endpoint nhận kết quả xử lý từ PC Agent
   if (url.pathname === '/pc/result' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
@@ -42,15 +129,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 3. Endpoint kiểm tra tình trạng kết nối PC
-  if (url.pathname === '/pc/status') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({
-      pcOnline: pcBridge.isPCOnline(),
-      info: pcBridge.pcInfo
-    }));
-  }
-
+  // 6. Endpoint kiểm tra thử nghiệm (Test API)
   if (url.pathname === '/test') {
     const q = url.searchParams.get('q') || 'Xin chào';
     try {
@@ -70,6 +149,31 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // 7. Phục vụ Static Files cho PWA Web Voice App (public/)
+  let reqPath = url.pathname === '/' ? '/index.html' : url.pathname;
+  let filePath = path.join(publicDir, reqPath);
+
+  // Bảo vệ an toàn chống Directory Traversal
+  if (!filePath.startsWith(publicDir)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    return res.end('Forbidden');
+  }
+
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': contentType });
+    return fs.createReadStream(filePath).pipe(res);
+  }
+
+  // Fallback về index.html nếu là route SPA
+  const indexHtmlPath = path.join(publicDir, 'index.html');
+  if (fs.existsSync(indexHtmlPath)) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return fs.createReadStream(indexHtmlPath).pipe(res);
+  }
+
+  // Health Check JSON mặc định nếu không có UI
   res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify({
     status: 'ONLINE',
@@ -78,15 +182,13 @@ const server = http.createServer(async (req, res) => {
     uptime: `${Math.floor(process.uptime())}s`,
     timestamp: new Date().toISOString(),
     hasApiKey: config.ai.hasApiKey,
-    keyLength: config.ai.apiKey?.length || 0,
-    model: config.ai.model,
     zaloConnected: zaloLive.isConnected,
     pcOnline: pcBridge.isPCOnline()
   }));
 });
 
 server.listen(PORT, () => {
-  console.log(`🌐 [Web Service] Health Check Server đang chạy tại cổng ${PORT}`);
+  console.log(`🌐 [Web Service] Health Check & Voice Assistant PWA đang chạy tại cổng ${PORT}`);
 });
 
 async function bootstrapZaloLive() {
