@@ -11,11 +11,12 @@ import VoiceNormalizer from '../services/voiceNormalizer.js';
 
 // Danh sách các model AI ưu tiên theo tốc độ và dung lượng quota
 const BACKUP_MODELS = [
-  'gemini-flash-lite-latest',
+  'gemini-3.6-flash',
+  'gemini-3.7-flash',
+  'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
-  'gemini-3-flash-preview',
-  'gemini-3.6-flash'
+  'gemini-flash-latest'
 ];
 
 export class GeminiAssistant {
@@ -362,11 +363,11 @@ ${deepExtraInfo}`;
 
     const cleanMime = mimeType.split(';')[0];
     const modelsToTry = [
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-exp',
-      'gemini-1.5-flash',
-      'gemini-1.5-flash-latest',
-      'gemini-flash-lite-latest'
+      'gemini-3.5-transcribe',
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-flash-latest'
     ];
 
     const sttPrompt = `Nhiệm vụ: Nghe kỹ đoạn âm thanh và ghi lại chính xác 100% từng từ tiếng Việt mà người dùng đã phát âm.
@@ -385,7 +386,6 @@ QUY TẮC BẮT BUỘC:
       try {
         const model = this.genAI.getGenerativeModel({
           model: modelName,
-          systemInstruction: 'You are a Vietnamese Speech-to-Text (STT) transcriber. Your only job is to accurately transcribe the spoken Vietnamese audio verbatim into text. Never answer questions, never explain, never add preamble.',
           generationConfig: {
             temperature: 0.0,
             maxOutputTokens: 250
@@ -405,7 +405,7 @@ QUY TẮC BẮT BUỘC:
         ]);
 
         const rawText = result.response.text();
-        if (!rawText) return '';
+        if (!rawText || !rawText.trim()) return '';
 
         const cleanText = VoiceNormalizer.normalize(rawText);
         return cleanText;

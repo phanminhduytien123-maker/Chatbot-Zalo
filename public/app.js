@@ -163,6 +163,7 @@ class DianaVoiceApp {
         this.recognition.onstart = () => {
           this.isRecording = true;
           this.finalTranscript = '';
+          this.lastInterim = '';
           this.updateRecordingUI(true);
           this.showCapsule('listening', 'Diana đang nghe...', 'Hãy nói yêu cầu của anh nhé!');
           this.updateLiveOverlayState('listening', 'Đang lắng nghe...', 'Em đang nghe anh nói...');
@@ -182,6 +183,7 @@ class DianaVoiceApp {
           }
 
           if (interimText) {
+            this.lastInterim = interimText;
             this.capsuleTranscript.innerHTML = `<span class="interim-text">"${interimText}"</span>`;
             if (this.liveTranscriptText) this.liveTranscriptText.textContent = `"${interimText}"`;
           }
@@ -201,7 +203,7 @@ class DianaVoiceApp {
             this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói...');
             this.scheduleCapsuleClose(2500);
           } else {
-            console.log(`WebSpeech (${event.error}), tự động chuyển sang MediaRecorder + Gemini 2.0...`);
+            console.log(`WebSpeech (${event.error}), tự động chuyển sang Direct MediaRecorder + Gemini...`);
             this.useFallbackRecorder = true;
             this.startMediaRecorder();
           }
@@ -211,10 +213,12 @@ class DianaVoiceApp {
           this.isRecording = false;
           this.updateRecordingUI(false);
 
-          if (this.finalTranscript && this.finalTranscript.trim().length > 0) {
-            const query = this.finalTranscript.trim();
-            this.finalTranscript = '';
-            this.handleTextQuery(query);
+          const recognizedQuery = (this.finalTranscript || this.lastInterim || '').trim();
+          this.finalTranscript = '';
+          this.lastInterim = '';
+
+          if (recognizedQuery.length > 0) {
+            this.handleTextQuery(recognizedQuery);
           } else {
             if (!this.useFallbackRecorder) {
               this.setDotState('idle');
@@ -365,31 +369,40 @@ class DianaVoiceApp {
   }
 
   /**
-   * Ghi âm bằng MediaRecorder + Gemini 2.0 Flash STT
+   * Ghi âm bằng MediaRecorder + Gemini STT
    */
   async startMediaRecorder() {
     try {
       this.audioChunks = [];
-      this.audioStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 44100,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true }
+        });
+      } catch (_) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+      this.audioStream = stream;
 
-      let mimeType = 'audio/webm;codecs=opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 
-                   MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/ogg';
+      let mimeType = '';
+      const preferredMimes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/aac',
+        'audio/ogg',
+        'audio/wav'
+      ];
+      for (const m of preferredMimes) {
+        if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) {
+          mimeType = m;
+          break;
+        }
       }
 
-      this.mediaRecorder = new MediaRecorder(this.audioStream, {
-        mimeType,
-        audioBitsPerSecond: 128000
-      });
+      const options = mimeType ? { mimeType } : {};
+      this.mediaRecorder = new MediaRecorder(this.audioStream, options);
+      const actualMime = this.mediaRecorder.mimeType || mimeType || 'audio/webm';
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
@@ -404,9 +417,9 @@ class DianaVoiceApp {
         this.showCapsule('thinking', 'Diana đang xử lý...', '⚡ Đang lắng nghe & suy nghĩ...');
         this.updateLiveOverlayState('thinking', 'Đang xử lý...', 'Diana đang suy nghĩ và thực thi...');
 
-        const audioBlob = new Blob(this.audioChunks, { type: mimeType });
-        if (audioBlob.size > 1200) {
-          await this.sendAudioToServer(audioBlob, mimeType);
+        const audioBlob = new Blob(this.audioChunks, { type: actualMime });
+        if (audioBlob.size > 200) {
+          await this.sendAudioToServer(audioBlob, actualMime);
         } else {
           this.setDotState('idle');
           this.capsuleTranscript.textContent = 'Chạm vào Mic để nói lại nhé...';
@@ -439,7 +452,7 @@ class DianaVoiceApp {
       this.setDotState('idle');
 
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        this.showCapsule('idle', 'Quyền Micro', '⚠️ Hãy cho phép quyền Micro trên trình duyệt của điện thoại nhé!');
+        this.showCapsule('idle', 'Quyền Micro', '⚠️ Hãy cho phép quyền truy cập Micro trên trình duyệt của điện thoại nhé!');
         this.scheduleCapsuleClose(4000);
       } else {
         this.showCapsule('idle', 'Lỗi Micro', `Lỗi: ${err.message}`);
