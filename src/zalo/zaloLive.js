@@ -247,14 +247,13 @@ export class ZaloLiveConnector {
     // Bắt sự kiện ngắt kết nối và tự động phục hồi
     this.api.listener.on('disconnected', (code, reason) => {
       this.isConnected = false;
-      console.log(chalk.yellow(`⚠️ [Zalo Socket] Mất kết nối (Code: ${code}, Lý do: ${reason || 'Không rõ'})`));
-      this.safeReconnect('Socket bị ngắt kết nối (disconnected)');
+      console.log(chalk.yellow(`⚠️ [Zalo Socket] Tạm ngắt kết nối (Code: ${code}, Lý do: ${reason || 'Không rõ'}). zca-js đang phục hồi...`));
     });
 
     this.api.listener.on('closed', (code, reason) => {
       this.isConnected = false;
       console.log(chalk.yellow(`⚠️ [Zalo Socket] Đóng kết nối (Code: ${code}, Lý do: ${reason || 'Không rõ'})`));
-      this.safeReconnect('Socket đã đóng (closed)');
+      this.safeReconnect('Socket đã đóng hoàn toàn (closed)');
     });
 
     this.api.listener.on('error', (err) => {
@@ -431,20 +430,12 @@ export class ZaloLiveConnector {
           return;
         }
 
-        // Nếu có mạng nhưng WebSocket không ở trạng thái OPEN (1)
+        // Chỉ kết nối lại nếu WebSocket thực sự bị ngắt (không ở trạng thái OPEN = 1)
         const wsState = this.api?.listener?.ws?.readyState;
-        if (wsState !== 1 && !this.isReconnecting) {
-          console.log(chalk.yellow(`\n🔄 [Watchdog] Phát hiện Socket Zalo không hoạt động (Trạng thái: ${wsState ?? 'Null'}). Đang tự động kết nối lại...`));
-          await this.safeReconnect('Socket Zalo không hoạt động');
+        if (wsState !== undefined && wsState !== 1 && !this.isReconnecting) {
+          console.log(chalk.yellow(`\n🔄 [Watchdog] Phát hiện Socket Zalo bị ngắt (Trạng thái: ${wsState}). Đang tự động kết nối lại...`));
+          await this.safeReconnect('Socket Zalo không ở trạng thái OPEN');
           return;
-        }
-
-        // Kiểm tra Zombie Socket: Nếu quá 90 giây không nhận được bất kỳ tín hiệu nào từ Zalo (trong khi ping chuẩn 30s)
-        const now = Date.now();
-        if (now - this.lastActiveTime > 90000 && !this.isReconnecting) {
-          console.log(chalk.yellow('\n🔄 [Watchdog] Quá 90s không nhận được tín hiệu mạng (Zombie Socket do đổi mạng). Đang làm mới kết nối...'));
-          this.lastActiveTime = now;
-          await this.safeReconnect('Làm mới Zombie Socket');
         }
       } catch (_) {}
     }, 15000);
