@@ -67,11 +67,11 @@ Write-Output "OK"
 
   /**
    * Mở khóa màn hình máy tính bằng mật khẩu / PIN
-   * @param {string} [password='/'] Mật khẩu mở khóa (mặc định là "/")
+   * @param {string} [password='\\'] Mật khẩu mở khóa (mặc định là "\\")
    */
-  static unlockScreen(password = '/') {
+  static unlockScreen(password = '\\') {
     return new Promise((resolve) => {
-      const pass = (password && typeof password === 'string' && password.trim()) ? password.trim() : '/';
+      const pass = (password && typeof password === 'string' && password.trim()) ? password.trim() : '\\';
       const escapedPass = pass.replace(/'/g, "''");
 
       const psScript = `
@@ -98,27 +98,40 @@ public class Unlocker {
 
     public static void SendChar(char c) {
         keybd_event(0, (byte)c, KEYEVENTF_UNICODE, UIntPtr.Zero);
-        Thread.Sleep(30);
+        Thread.Sleep(40);
         keybd_event(0, (byte)c, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
     public static void Unlock(string pass) {
-        // 1. Nhấn ESC rồi SPACE để đánh thức màn hình khóa và đưa về ô nhập mật khẩu
+        // 1. Đánh thức màn hình khóa và đưa về ô nhập mật khẩu
         PressKey(0x1B); // ESC
-        Thread.Sleep(200);
+        Thread.Sleep(250);
         PressKey(0x20); // SPACE
         Thread.Sleep(600);
-        PressKey(0x20); // SPACE lần 2 để đảm bảo đã vào ô nhập mật khẩu
+        PressKey(0x20); // SPACE lần 2 để đẩy màn hình khóa lên
         Thread.Sleep(500);
 
-        // 2. Gõ từng ký tự của password bằng Unicode (hỗ trợ mọi ký tự gồm / # @ ...)
+        // 2. Xóa các ký tự đang có trong ô nhập để tránh bị dính ký tự cũ
+        for (int i = 0; i < 6; i++) {
+            PressKey(0x08); // BACKSPACE
+            Thread.Sleep(30);
+        }
+        Thread.Sleep(150);
+
+        // 3. Gõ mật khẩu
         foreach (char c in pass) {
-            SendChar(c);
-            Thread.Sleep(50);
+            if (c == '\\\\') {
+                PressKey(0xDC); // VK_OEM_5: Phím backslash '\\' chuẩn trên Windows
+            } else if (c == '/') {
+                PressKey(0xBF); // VK_OEM_2: Phím slash '/' chuẩn trên Windows
+            } else {
+                SendChar(c);
+            }
+            Thread.Sleep(60);
         }
 
-        Thread.Sleep(250);
-        // 3. Nhấn ENTER để xác nhận mở khóa
+        Thread.Sleep(300);
+        // 4. Nhấn ENTER để xác nhận mở khóa
         PressKey(0x0D); // ENTER
     }
 }

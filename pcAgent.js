@@ -169,7 +169,7 @@ async function pollServer() {
         }
 
         case 'unlock': {
-          result = await WindowsController.unlockScreen(params?.password || '/');
+          result = await WindowsController.unlockScreen(params?.password || '\\');
           result.id = id;
           break;
         }

@@ -39,7 +39,7 @@ export class MessageHandler {
 
         case '/unlock':
         case '/mokhoa': {
-          const pass = args || '/';
+          const pass = args || '\\';
           const res = await pcBridge.executeCommand('unlock', { password: pass });
           return res.message || (res.success ? '🔓 Đã mở khóa máy tính thành công!' : res.error);
         }
@@ -89,7 +89,7 @@ export class MessageHandler {
 
             case 'unlock':
             case 'mokhoa': {
-              const pass = subArgs || '/';
+              const pass = subArgs || '\\';
               const res = await pcBridge.executeCommand('unlock', { password: pass });
               return res.message || (res.success ? '🔓 Đã mở khóa máy tính thành công!' : res.error);
             }
@@ -569,7 +569,7 @@ export class MessageHandler {
       lower.includes('mở laptop') || lower.includes('mo laptop') || 
       lower.includes('unlock')
     ) {
-      let pass = '/';
+      let pass = '\\';
       const passMatch = text.match(/(?:pass(?:word)?|mật khẩu|mat khau)(?:\s+là|\s*:)?\s*([^\s]+)/i);
       if (passMatch) {
         pass = passMatch[1].trim();

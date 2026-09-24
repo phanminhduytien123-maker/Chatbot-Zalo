@@ -79,7 +79,7 @@ export class PCBridgeService {
         return await WindowsController.lockScreen();
 
       case 'unlock':
-        return await WindowsController.unlockScreen(params.password || '/');
+        return await WindowsController.unlockScreen(params.password || '\\');
 
       case 'turnoff_display':
         return await WindowsController.turnOffDisplay();
