@@ -2,58 +2,89 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#070a12">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#060911">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Diana AI">
-  <meta name="description" content="Trợ lý ảo giọng nói Diana - Chấm điều khiển AssistiveTouch thông minh">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="description" content="Trợ lý ảo giọng nói Diana - Điều khiển PC & hỗ trợ học tập thông minh">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
   <link rel="apple-touch-icon" href="/icon.svg">
   
-  <title>Diana Voice Assistant</title>
+  <title>Diana AI Voice Assistant</title>
   
   <!-- Google Fonts: Outfit & Be Vietnam Pro -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <!-- Ambient background lighting effects -->
+  <div class="ambient-glow glow-top"></div>
+  <div class="ambient-glow glow-bottom"></div>
+
   <!-- ==========================================================================
-       MAIN APP / DASHBOARD CONTAINER
+       MAIN APP / MOBILE DASHBOARD CONTAINER
        ========================================================================== -->
   <div class="app-container" id="appContainer">
-    <!-- Top Header -->
+    <!-- Top App Header -->
     <header class="app-header">
       <div class="header-brand">
-        <div class="brand-avatar">
+        <div class="brand-avatar" id="headerAvatarBtn" role="button" title="Mở chế độ hội thoại toàn màn hình">
           <div class="avatar-ring"></div>
           <span class="avatar-emoji">🌸</span>
         </div>
         <div class="brand-info">
-          <h1 class="brand-name">DIANA AI</h1>
-          <div class="status-badge" id="pcStatusBadge">
+          <div class="brand-title-row">
+            <h1 class="brand-name">DIANA AI</h1>
+            <span class="version-tag">2.0</span>
+          </div>
+          <div class="status-badge offline" id="pcStatusBadge">
             <span class="status-dot"></span>
             <span class="status-text" id="pcStatusText">Đang kiểm tra...</span>
           </div>
         </div>
       </div>
       
-        <button class="icon-btn" id="pipToggleBtn" title="Ghim chấm Diana nổi ra ngoài màn hình (Picture-in-Picture)" aria-label="Ghim chấm Diana nổi">
+      <div class="header-actions">
+        <!-- Live Voice Mode Button -->
+        <button class="icon-btn pulse-action" id="liveVoiceModeBtn" title="Chế độ giọng nói toàn màn hình (Siri / Live Voice)" aria-label="Chế độ giọng nói">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="22"></line>
+          </svg>
+        </button>
+
+        <!-- Picture-in-Picture Floating Dot (Desktop) -->
+        <button class="icon-btn desktop-only" id="pipToggleBtn" title="Ghim chấm Diana nổi ra ngoài màn hình máy tính (Picture-in-Picture)" aria-label="Ghim chấm Diana nổi">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="2" y="4" width="20" height="16" rx="2"></rect>
             <rect x="12" y="11" width="8" height="7" rx="1"></rect>
           </svg>
         </button>
+
+        <!-- TTS Voice Toggle -->
         <button class="icon-btn" id="ttsToggleBtn" title="Bật/Tắt đọc giọng nói" aria-label="Bật/Tắt đọc giọng nói">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg class="icon" id="ttsIconOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
             <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
           </svg>
         </button>
+
+        <!-- Toggle Assistive Dot Visibility -->
+        <button class="icon-btn active" id="dotToggleBtn" title="Hiện/Ẩn chấm tròn nổi AssistiveTouch" aria-label="Hiện/Ẩn nút nổi">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="8"></circle>
+            <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+          </svg>
+        </button>
+
+        <!-- Clear Chat -->
         <button class="icon-btn" id="clearChatBtn" title="Xóa hội thoại" aria-label="Xóa hội thoại">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"></polyline>
@@ -66,30 +97,94 @@
     <!-- Main Content / Chat Display -->
     <main class="chat-container" id="chatContainer">
       <div class="welcome-card" id="welcomeCard">
-        <div class="welcome-icon">🌸</div>
+        <div class="welcome-badge">Trợ lý AI Thế hệ mới</div>
+        <div class="welcome-avatar-wrapper">
+          <div class="welcome-icon">🌸</div>
+        </div>
         <h2 class="welcome-title">Chào anh Tiến!</h2>
-        <p class="welcome-desc">Em là <strong>Diana</strong>. Chạm vào <strong>chấm tròn AssistiveTouch</strong> nổi trên màn hình và nói, em sẽ lắng nghe và trả lời bằng giọng nói ngay lập tức nhé!</p>
+        <p class="welcome-desc">Em là <strong>Diana</strong>. Anh có thể <strong>chạm nút Mic</strong> hoặc <strong>chấm tròn AssistiveTouch</strong> nổi để điều khiển máy tính và trò chuyện bằng giọng nói nhé!</p>
         
-        <!-- Quick Action Chips -->
-        <div class="quick-chips">
-          <button class="chip chip-accent" id="pipChip">📌 Ghim Chấm Nổi Ra Ngoài Màn Hình</button>
-          <button class="chip" data-query="chụp ảnh màn hình máy tính">📸 Chụp màn hình PC</button>
-          <button class="chip" data-query="mở youtube trên máy tính">🌐 Mở Youtube</button>
-          <button class="chip" data-query="chỉnh âm lượng máy tính 70%">🔊 Âm lượng 70%</button>
-          <button class="chip" data-query="thời tiết hôm nay thế nào">🌤️ Thời tiết</button>
-          <button class="chip" data-query="kiểm tra pin laptop">🔋 Kiểm tra pin</button>
-          <button class="chip" data-query="khóa màn hình máy tính">🔒 Khóa máy tính</button>
+        <!-- Category Chips for Mobile Navigation -->
+        <div class="quick-category-section">
+          <div class="category-header">
+            <span class="category-title">⚡ Thao tác nhanh cho điện thoại</span>
+          </div>
+
+          <!-- Quick Actions Scroll Carousel -->
+          <div class="quick-chips-carousel" id="quickChipsCarousel">
+            <button class="chip chip-highlight" data-query="chụp ảnh màn hình máy tính">
+              <span class="chip-icon">📸</span> Chụp màn hình PC
+            </button>
+            <button class="chip" data-query="mở youtube trên máy tính">
+              <span class="chip-icon">🌐</span> Mở Youtube
+            </button>
+            <button class="chip" data-query="chỉnh âm lượng máy tính 70%">
+              <span class="chip-icon">🔊</span> Âm lượng 70%
+            </button>
+            <button class="chip" data-query="kiểm tra pin laptop">
+              <span class="chip-icon">🔋</span> Kiểm tra pin
+            </button>
+            <button class="chip" data-query="tra cứu điểm thi đại học quy nhơn">
+              <span class="chip-icon">🎓</span> Tra cứu điểm thi
+            </button>
+            <button class="chip" data-query="thời tiết hôm nay thế nào">
+              <span class="chip-icon">🌤️</span> Thời tiết hôm nay
+            </button>
+            <button class="chip" data-query="khóa màn hình máy tính">
+              <span class="chip-icon">🔒</span> Khóa máy tính
+            </button>
+            <button class="chip chip-accent" id="pipChip">
+              <span class="chip-icon">📌</span> Ghim chấm ngoài PC
+            </button>
+          </div>
         </div>
       </div>
 
+      <!-- Chat Messages List -->
       <div class="chat-messages" id="chatMessages"></div>
     </main>
 
-    <!-- Bottom Text Input Bar -->
-    <footer class="bottom-input-section">
-      <div class="text-input-bar">
-        <input type="text" id="textInput" placeholder="Nhập tin nhắn hoặc chạm chấm Diana để nói..." autocomplete="off">
-        <button id="sendBtn" class="send-btn" aria-label="Gửi tin nhắn">
+    <!-- Bottom Input & Voice Trigger Section -->
+    <footer class="bottom-input-section" id="bottomInputSection">
+      <!-- Voice Recording Live Bar (Activated when recording) -->
+      <div class="voice-recording-bar" id="voiceRecordingBar" style="display: none;">
+        <div class="recording-indicator">
+          <span class="rec-dot"></span>
+          <span class="rec-text" id="recStatusText">Diana đang nghe...</span>
+        </div>
+        <div class="recording-waves" id="bottomRecWaves">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <button class="rec-stop-btn" id="recStopBtn" aria-label="Hoàn tất nói">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Text & Voice Input Bar -->
+      <div class="text-input-bar" id="textInputBar">
+        <input 
+          type="text" 
+          id="textInput" 
+          placeholder="Nhập tin nhắn hoặc chạm Mic để nói..." 
+          autocomplete="off" 
+          autocorrect="off" 
+          autocapitalize="sentences"
+          spellcheck="false"
+        >
+        
+        <!-- Mic Voice Trigger Button -->
+        <button id="inputMicBtn" class="action-btn mic-btn" title="Chạm để nói chuyện với Diana" aria-label="Nói giọng nói">
+          <svg class="mic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="22"></line>
+          </svg>
+        </button>
+
+        <!-- Send Button -->
+        <button id="sendBtn" class="action-btn send-btn" title="Gửi tin nhắn" aria-label="Gửi tin nhắn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="22" y1="2" x2="11" y2="13"></line>
             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -101,15 +196,47 @@
     <!-- PWA Install Banner -->
     <div class="pwa-install-banner" id="pwaBanner">
       <div class="pwa-info">
-        <span class="pwa-icon">📱</span>
-        <div>
-          <strong>Thêm Diana vào Màn hình chính</strong>
-          <p>Mở nhanh như nút AssistiveTouch thực thụ trên điện thoại!</p>
+        <div class="pwa-icon-box">🌸</div>
+        <div class="pwa-text">
+          <strong>Cài đặt Diana vào Điện thoại</strong>
+          <p>Trải nghiệm mượt mà như app gốc trên iOS / Android</p>
         </div>
       </div>
       <div class="pwa-actions">
         <button class="btn-secondary" id="pwaDismissBtn">Để sau</button>
-        <button class="btn-primary" id="pwaInstallBtn">Cài đặt ngay</button>
+        <button class="btn-primary" id="pwaInstallBtn">Cài đặt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       DYNAMIC CAPSULE (ĐẢO THÔNG TIN DYNAMIC ISLAND TRÊN ĐỈNH MÀN HÌNH)
+       ========================================================================== -->
+  <div class="dynamic-capsule" id="dynamicCapsule" role="dialog" aria-label="Đảo thông tin giọng nói">
+    <div class="capsule-header">
+      <div class="capsule-indicator">
+        <span class="pulse-dot"></span>
+        <span class="capsule-title" id="capsuleStatus">Diana đang nghe...</span>
+      </div>
+      <button class="capsule-close-btn" id="capsuleCloseBtn" aria-label="Đóng đảo thông tin">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="capsule-body">
+      <div class="capsule-transcript" id="capsuleTranscript">Hãy nói yêu cầu của anh nhé...</div>
+      <div class="capsule-wave" id="capsuleWave">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+    </div>
+
+    <div class="capsule-result" id="capsuleResult" style="display: none;">
+      <div class="capsule-reply-text" id="capsuleReplyText"></div>
+      <div class="capsule-screenshot" id="capsuleScreenshot" style="display: none;">
+        <img id="capsuleScreenshotImg" src="" alt="Screenshot" />
       </div>
     </div>
   </div>
@@ -117,40 +244,9 @@
   <!-- ==========================================================================
        FLOATING ASSISTIVETOUCH DIANA WIDGET (CHẤM TRÒN NỔI IPHONE)
        ========================================================================== -->
-  <div class="assistive-layer">
-    <!-- Dynamic Capsule (Đảo phản hồi & Hiển thị giọng nói) -->
-    <div class="dynamic-capsule" id="dynamicCapsule">
-      <div class="capsule-header">
-        <div class="capsule-indicator">
-          <span class="pulse-dot"></span>
-          <span class="capsule-title" id="capsuleStatus">Diana đang nghe...</span>
-        </div>
-        <button class="capsule-close-btn" id="capsuleCloseBtn" aria-label="Đóng đảo thông tin">
-          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
-
-      <div class="capsule-body">
-        <div class="capsule-transcript" id="capsuleTranscript">Hãy nói yêu cầu của anh nhé...</div>
-        <div class="capsule-wave" id="capsuleWave">
-          <span></span><span></span><span></span><span></span><span></span>
-        </div>
-      </div>
-
-      <div class="capsule-result" id="capsuleResult" style="display: none;">
-        <div class="capsule-reply-text" id="capsuleReplyText"></div>
-        <div class="capsule-screenshot" id="capsuleScreenshot" style="display: none;">
-          <img id="capsuleScreenshotImg" src="" alt="Screenshot" />
-        </div>
-      </div>
-    </div>
-
-    <!-- Floating AssistiveTouch Dot -->
+  <div class="assistive-layer" id="assistiveLayer">
     <div class="assistive-dot" id="assistiveDot" role="button" aria-label="Chấm trợ lý Diana AssistiveTouch" tabindex="0">
-      <!-- Glow Rings & Aura -->
+      <!-- Glow Aura & Multi-layer Pulse Rings -->
       <div class="dot-aura"></div>
       <div class="dot-pulse-ring ring-1"></div>
       <div class="dot-pulse-ring ring-2"></div>
@@ -169,6 +265,63 @@
       <!-- Hint Tooltip -->
       <div class="dot-tooltip" id="dotTooltip">Chạm để nói</div>
     </div>
+  </div>
+
+  <!-- ==========================================================================
+       FULLSCREEN IMMERSIVE LIVE VOICE MODAL (SIRI / GEMINI LIVE STYLE)
+       ========================================================================== -->
+  <div class="live-voice-overlay" id="liveVoiceOverlay" style="display: none;">
+    <div class="live-voice-header">
+      <div class="live-voice-title">
+        <span class="live-dot"></span> DIANA LIVE VOICE
+      </div>
+      <button class="live-voice-close-btn" id="liveVoiceCloseBtn" aria-label="Thoát chế độ trực tiếp">
+        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="live-voice-center">
+      <!-- Center Pulsing Orb -->
+      <div class="live-orb-container" id="liveOrbContainer">
+        <div class="orb-glow-back"></div>
+        <div class="orb-core" id="liveOrbCore">
+          <span class="orb-emoji">🌸</span>
+          <div class="orb-waves" id="liveOrbWaves">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="orb-ring ring-a"></div>
+        <div class="orb-ring ring-b"></div>
+      </div>
+
+      <!-- Live Transcript Text -->
+      <div class="live-transcript-box">
+        <div class="live-status-label" id="liveStatusLabel">Đang kết nối...</div>
+        <div class="live-transcript-text" id="liveTranscriptText">Chạm vào hình cầu để bắt đầu nói...</div>
+      </div>
+    </div>
+
+    <div class="live-voice-footer">
+      <button class="live-action-circle" id="liveMicToggleBtn" aria-label="Bật/Tắt thu âm">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="22"></line>
+        </svg>
+      </button>
+      <div class="live-footer-hint">Chạm để nói • Tự động nhận diện câu hỏi</div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       IMAGE LIGHTBOX (XEM ẢNH FULL MÀN HÌNH CHO MOBILE)
+       ========================================================================== -->
+  <div class="image-lightbox" id="imageLightbox" style="display: none;">
+    <button class="lightbox-close" id="lightboxCloseBtn" aria-label="Đóng xem ảnh">&times;</button>
+    <img class="lightbox-img" id="lightboxImg" src="" alt="Full Screen Screenshot" />
   </div>
 
   <script src="/app.js"></script>

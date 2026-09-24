@@ -1,6 +1,6 @@
 /**
- * DIANA AI VOICE ASSISTANT - CLIENT APPLICATION
- * iPhone AssistiveTouch Floating Widget & Hybrid Realtime Speech Recognition
+ * DIANA AI VOICE ASSISTANT - CLIENT APPLICATION 2.0
+ * Mobile-First Ultra Responsive Experience, AssistiveTouch Physics & Live Voice UI
  */
 
 class DianaVoiceApp {
@@ -8,6 +8,7 @@ class DianaVoiceApp {
     this.isRecording = false;
     this.isSpeaking = false;
     this.ttsEnabled = localStorage.getItem('diana_tts') !== 'false';
+    this.dotEnabled = localStorage.getItem('diana_dot_visible') !== 'false';
     this.deferredPrompt = null;
     
     // Speech Recognition Engines
@@ -26,17 +27,19 @@ class DianaVoiceApp {
     this.silenceTimer = null;
     this.synth = window.speechSynthesis || null;
 
-    // Drag & Touch Tracking for AssistiveTouch Dot
+    // Drag & Touch Physics for AssistiveTouch Dot
     this.isDragging = false;
     this.dragStartX = 0;
     this.dragStartY = 0;
     this.initialLeft = 0;
     this.initialTop = 0;
     this.hasMoved = false;
-    this.idleTimer = null;
     this.capsuleAutoCloseTimer = null;
+    this.capsuleTouchStartY = 0;
 
     // DOM Elements
+    this.appContainer = document.getElementById('appContainer');
+    this.assistiveLayer = document.getElementById('assistiveLayer');
     this.assistiveDot = document.getElementById('assistiveDot');
     this.dynamicCapsule = document.getElementById('dynamicCapsule');
     this.capsuleStatus = document.getElementById('capsuleStatus');
@@ -53,27 +56,95 @@ class DianaVoiceApp {
     this.welcomeCard = document.getElementById('welcomeCard');
     this.textInput = document.getElementById('textInput');
     this.sendBtn = document.getElementById('sendBtn');
+    this.inputMicBtn = document.getElementById('inputMicBtn');
+    this.voiceRecordingBar = document.getElementById('voiceRecordingBar');
+    this.recStopBtn = document.getElementById('recStopBtn');
+    this.recStatusText = document.getElementById('recStatusText');
+    
     this.pcStatusBadge = document.getElementById('pcStatusBadge');
     this.pcStatusText = document.getElementById('pcStatusText');
+    this.headerAvatarBtn = document.getElementById('headerAvatarBtn');
+    this.liveVoiceModeBtn = document.getElementById('liveVoiceModeBtn');
     this.ttsToggleBtn = document.getElementById('ttsToggleBtn');
+    this.dotToggleBtn = document.getElementById('dotToggleBtn');
+    this.pipToggleBtn = document.getElementById('pipToggleBtn');
+    this.pipChip = document.getElementById('pipChip');
     this.clearChatBtn = document.getElementById('clearChatBtn');
+    
+    // Live Voice Overlay Elements
+    this.liveVoiceOverlay = document.getElementById('liveVoiceOverlay');
+    this.liveVoiceCloseBtn = document.getElementById('liveVoiceCloseBtn');
+    this.liveOrbContainer = document.getElementById('liveOrbContainer');
+    this.liveOrbCore = document.getElementById('liveOrbCore');
+    this.liveOrbWaves = document.getElementById('liveOrbWaves');
+    this.liveMicToggleBtn = document.getElementById('liveMicToggleBtn');
+    this.liveStatusLabel = document.getElementById('liveStatusLabel');
+    this.liveTranscriptText = document.getElementById('liveTranscriptText');
+
+    // Lightbox Elements
+    this.imageLightbox = document.getElementById('imageLightbox');
+    this.lightboxImg = document.getElementById('lightboxImg');
+    this.lightboxCloseBtn = document.getElementById('lightboxCloseBtn');
+
+    // PWA Elements
     this.pwaBanner = document.getElementById('pwaBanner');
     this.pwaInstallBtn = document.getElementById('pwaInstallBtn');
     this.pwaDismissBtn = document.getElementById('pwaDismissBtn');
+
+    // Wave bar node lists
     this.dotWaveBars = document.querySelectorAll('#dotWaveBars span');
     this.capsuleWaveBars = document.querySelectorAll('#capsuleWave span');
+    this.bottomRecWaves = document.querySelectorAll('#bottomRecWaves span');
+    this.liveOrbWaveBars = document.querySelectorAll('#liveOrbWaves span');
 
     this.init();
   }
 
   init() {
+    this.initDynamicViewport();
     this.initSpeechRecognition();
     this.initAssistiveDotPhysics();
     this.setupEventListeners();
+    this.setupQuickChips();
     this.setupPWA();
     this.updateTTSButtonState();
+    this.updateDotVisibilityState();
     this.checkPCStatus();
     setInterval(() => this.checkPCStatus(), 8000);
+  }
+
+  /**
+   * Tính toán chiều cao màn hình chuẩn xác cho trình duyệt Mobile (iOS Safari & Chrome Android)
+   */
+  initDynamicViewport() {
+    const updateAppHeight = () => {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+      if (window.visualViewport) {
+        // Hỗ trợ khi bàn phím ảo hiển thị
+        const vvHeight = window.visualViewport.height;
+        if (this.appContainer && window.innerWidth <= 640) {
+          this.appContainer.style.height = `${vvHeight}px`;
+        }
+      }
+    };
+
+    window.addEventListener('resize', updateAppHeight);
+    window.addEventListener('orientationchange', () => setTimeout(updateAppHeight, 200));
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', updateAppHeight);
+      window.visualViewport.addEventListener('scroll', updateAppHeight);
+    }
+    updateAppHeight();
+  }
+
+  /**
+   * Rung phản hồi haptic xúc giác trên điện thoại
+   */
+  haptic(ms = 35) {
+    if ('vibrate' in navigator) {
+      try { navigator.vibrate(ms); } catch (_) {}
+    }
   }
 
   /**
@@ -92,8 +163,9 @@ class DianaVoiceApp {
         this.recognition.onstart = () => {
           this.isRecording = true;
           this.finalTranscript = '';
-          this.setDotState('listening');
+          this.updateRecordingUI(true);
           this.showCapsule('listening', 'Diana đang nghe...', 'Hãy nói yêu cầu của anh nhé!');
+          this.updateLiveOverlayState('listening', 'Đang lắng nghe...', 'Em đang nghe anh nói...');
         };
 
         this.recognition.onresult = (event) => {
@@ -111,24 +183,25 @@ class DianaVoiceApp {
 
           if (interimText) {
             this.capsuleTranscript.innerHTML = `<span class="interim-text">"${interimText}"</span>`;
+            if (this.liveTranscriptText) this.liveTranscriptText.textContent = `"${interimText}"`;
           }
 
           if (finalResult) {
             this.finalTranscript = finalResult.trim();
             this.capsuleTranscript.innerHTML = `<strong>"${this.finalTranscript}"</strong>`;
+            if (this.liveTranscriptText) this.liveTranscriptText.textContent = `"${this.finalTranscript}"`;
           }
         };
 
         this.recognition.onerror = (event) => {
           console.warn('[Web Speech API Notice]:', event.error);
           if (event.error === 'no-speech') {
-            this.setDotState('idle');
-            this.capsuleTranscript.textContent = 'Chạm vào chấm Diana để nói lại nhé...';
-            this.scheduleCapsuleClose(3000);
+            this.updateRecordingUI(false);
+            this.capsuleTranscript.textContent = 'Chạm vào Mic để nói lại nhé...';
+            this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói...');
+            this.scheduleCapsuleClose(2500);
           } else {
-            // Khi gặp lỗi quyền (đặc biệt là Xiaomi Mi AI Speech Engine) hoặc lỗi mạng:
-            // Tự động chuyển thẳng sang MediaRecorder + Gemini 2.0 Flash STT ngay lập tức mà không hiện popup cảnh báo!
-            console.log(`WebSpeech lỗi (${event.error}), tự động chuyển sang Direct MediaRecorder + Gemini 2.0...`);
+            console.log(`WebSpeech (${event.error}), tự động chuyển sang MediaRecorder + Gemini 2.0...`);
             this.useFallbackRecorder = true;
             this.startMediaRecorder();
           }
@@ -136,6 +209,7 @@ class DianaVoiceApp {
 
         this.recognition.onend = () => {
           this.isRecording = false;
+          this.updateRecordingUI(false);
 
           if (this.finalTranscript && this.finalTranscript.trim().length > 0) {
             const query = this.finalTranscript.trim();
@@ -144,7 +218,7 @@ class DianaVoiceApp {
           } else {
             if (!this.useFallbackRecorder) {
               this.setDotState('idle');
-              this.scheduleCapsuleClose(2500);
+              this.scheduleCapsuleClose(2000);
             }
           }
         };
@@ -169,17 +243,23 @@ class DianaVoiceApp {
     const savedX = localStorage.getItem('diana_dot_x');
     const savedY = localStorage.getItem('diana_dot_y');
     if (savedX && savedY) {
-      this.assistiveDot.style.left = `${savedX}px`;
-      this.assistiveDot.style.top = `${savedY}px`;
-      this.assistiveDot.style.right = 'auto';
-      this.assistiveDot.style.bottom = 'auto';
+      const x = parseInt(savedX, 10);
+      const y = parseInt(savedY, 10);
+      if (!isNaN(x) && !isNaN(y) && x < window.innerWidth && y < window.innerHeight) {
+        this.assistiveDot.style.left = `${x}px`;
+        this.assistiveDot.style.top = `${y}px`;
+        this.assistiveDot.style.right = 'auto';
+        this.assistiveDot.style.bottom = 'auto';
+      }
     }
 
     const onPointerDown = (e) => {
       this.isDragging = true;
       this.hasMoved = false;
-      this.dragStartX = e.clientX || (e.touches && e.touches[0].clientX);
-      this.dragStartY = e.clientY || (e.touches && e.touches[0].clientY);
+      const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+      const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+      this.dragStartX = clientX;
+      this.dragStartY = clientY;
 
       const rect = this.assistiveDot.getBoundingClientRect();
       this.initialLeft = rect.left;
@@ -197,18 +277,17 @@ class DianaVoiceApp {
       const deltaX = currentX - this.dragStartX;
       const deltaY = currentY - this.dragStartY;
 
-      if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+      if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
         this.hasMoved = true;
       }
 
       let newLeft = this.initialLeft + deltaX;
       let newTop = this.initialTop + deltaY;
 
-      // Giới hạn trong khung nhìn màn hình
       const winW = window.innerWidth;
       const winH = window.innerHeight;
-      newLeft = Math.max(10, Math.min(winW - 68, newLeft));
-      newTop = Math.max(60, Math.min(winH - 75, newTop));
+      newLeft = Math.max(8, Math.min(winW - 66, newLeft));
+      newTop = Math.max(50, Math.min(winH - 75, newTop));
 
       this.assistiveDot.style.left = `${newLeft}px`;
       this.assistiveDot.style.top = `${newTop}px`;
@@ -222,7 +301,7 @@ class DianaVoiceApp {
       this.assistiveDot.classList.remove('dragging');
 
       if (!this.hasMoved) {
-        // Đây là thao tác chạm (Tap / Click)
+        this.haptic(40);
         this.toggleRecording();
         return;
       }
@@ -240,24 +319,24 @@ class DianaVoiceApp {
       localStorage.setItem('diana_dot_y', rect.top);
 
       setTimeout(() => {
-        this.assistiveDot.style.transition = '';
+        if (this.assistiveDot) this.assistiveDot.style.transition = '';
       }, 350);
     };
 
-    // Hỗ trợ cả Touch Mobile và Chuột Máy Tính
     this.assistiveDot.addEventListener('mousedown', onPointerDown);
     window.addEventListener('mousemove', onPointerMove);
     window.addEventListener('mouseup', onPointerUp);
 
     this.assistiveDot.addEventListener('touchstart', onPointerDown, { passive: true });
-    window.addEventListener('touchmove', onPointerMove, { passive: false });
+    window.addEventListener('touchmove', onPointerMove, { passive: true });
     window.addEventListener('touchend', onPointerUp);
   }
 
   /**
-   * Bật/Tắt thu âm khi chạm vào chấm Diana
+   * Bật/Tắt thu âm
    */
   async toggleRecording() {
+    this.haptic(40);
     if (this.isRecording) {
       this.stopRecording();
     } else {
@@ -269,7 +348,6 @@ class DianaVoiceApp {
    * Bắt đầu nhận diện giọng nói
    */
   async startRecording() {
-    // Dừng âm thanh đọc TTS nếu đang phát
     if (this.synth && this.synth.speaking) {
       this.synth.cancel();
     }
@@ -287,7 +365,7 @@ class DianaVoiceApp {
   }
 
   /**
-   * Ghi âm trực tiếp bằng MediaRecorder + Gemini 2.0 Flash STT (Dự phòng)
+   * Ghi âm bằng MediaRecorder + Gemini 2.0 Flash STT
    */
   async startMediaRecorder() {
     try {
@@ -321,15 +399,18 @@ class DianaVoiceApp {
 
       this.mediaRecorder.onstop = async () => {
         this.isRecording = false;
+        this.updateRecordingUI(false);
         this.setDotState('thinking');
         this.showCapsule('thinking', 'Diana đang xử lý...', '⚡ Đang lắng nghe & suy nghĩ...');
+        this.updateLiveOverlayState('thinking', 'Đang xử lý...', 'Diana đang suy nghĩ và thực thi...');
 
         const audioBlob = new Blob(this.audioChunks, { type: mimeType });
-        if (audioBlob.size > 1500) {
+        if (audioBlob.size > 1200) {
           await this.sendAudioToServer(audioBlob, mimeType);
         } else {
           this.setDotState('idle');
-          this.capsuleTranscript.textContent = 'Chạm vào chấm Diana để nói lại nhé...';
+          this.capsuleTranscript.textContent = 'Chạm vào Mic để nói lại nhé...';
+          this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói...');
           this.scheduleCapsuleClose(2000);
         }
 
@@ -347,16 +428,18 @@ class DianaVoiceApp {
 
       this.mediaRecorder.start(250);
       this.isRecording = true;
-      this.setDotState('listening');
+      this.updateRecordingUI(true);
       this.showCapsule('listening', 'Diana đang nghe...', '🎙️ Đang nghe anh nói... (Chạm lại khi nói xong)');
+      this.updateLiveOverlayState('listening', 'Đang nghe...', 'Em đang lắng nghe...');
 
     } catch (err) {
       console.error('Lỗi truy cập Micro:', err);
       this.isRecording = false;
+      this.updateRecordingUI(false);
       this.setDotState('idle');
 
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        this.showCapsule('idle', 'Quyền Micro', '⚠️ Hãy cho phép quyền truy cập Micro trên trình duyệt Chrome nhé!');
+        this.showCapsule('idle', 'Quyền Micro', '⚠️ Hãy cho phép quyền Micro trên trình duyệt của điện thoại nhé!');
         this.scheduleCapsuleClose(4000);
       } else {
         this.showCapsule('idle', 'Lỗi Micro', `Lỗi: ${err.message}`);
@@ -369,16 +452,13 @@ class DianaVoiceApp {
    * Dừng thu âm
    */
   stopRecording() {
+    this.haptic(30);
     if (this.hasWebSpeech && this.recognition && this.isRecording) {
-      try {
-        this.recognition.stop();
-      } catch (_) {}
+      try { this.recognition.stop(); } catch (_) {}
     }
 
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      try {
-        this.mediaRecorder.stop();
-      } catch (_) {}
+      try { this.mediaRecorder.stop(); } catch (_) {}
     }
 
     if (this.silenceTimer) {
@@ -389,6 +469,28 @@ class DianaVoiceApp {
     if (this.animFrameId) {
       cancelAnimationFrame(this.animFrameId);
       this.animFrameId = null;
+    }
+  }
+
+  /**
+   * Cập nhật giao diện khi bắt đầu/kết thúc thu âm
+   */
+  updateRecordingUI(isRecording) {
+    if (isRecording) {
+      this.setDotState('listening');
+      if (this.inputMicBtn) this.inputMicBtn.classList.add('active');
+      if (this.voiceRecordingBar) this.voiceRecordingBar.style.display = 'flex';
+      if (this.liveMicToggleBtn) this.liveMicToggleBtn.classList.add('listening');
+      if (this.liveOrbWaves) this.liveOrbWaves.style.display = 'flex';
+      const liveOrbEmoji = document.querySelector('.orb-emoji');
+      if (liveOrbEmoji) liveOrbEmoji.style.display = 'none';
+    } else {
+      if (this.inputMicBtn) this.inputMicBtn.classList.remove('active');
+      if (this.voiceRecordingBar) this.voiceRecordingBar.style.display = 'none';
+      if (this.liveMicToggleBtn) this.liveMicToggleBtn.classList.remove('listening');
+      if (this.liveOrbWaves) this.liveOrbWaves.style.display = 'none';
+      const liveOrbEmoji = document.querySelector('.orb-emoji');
+      if (liveOrbEmoji) liveOrbEmoji.style.display = 'block';
     }
   }
 
@@ -423,14 +525,21 @@ class DianaVoiceApp {
         }
         const average = sum / bufferLength;
 
-        // Cập nhật sóng âm visualizer
-        if (this.dotWaveBars && this.dotWaveBars.length > 0) {
-          const heightMultiplier = Math.min(1.0, Math.max(0.2, average / 40));
-          this.dotWaveBars.forEach((bar, idx) => {
-            const factor = (idx % 2 === 0 ? 0.8 : 1.2) * heightMultiplier;
-            bar.style.transform = `scaleY(${Math.max(0.3, Math.min(1.8, factor * 1.5))})`;
+        // Cập nhật sóng âm visualizer cho tất cả wave bars
+        const heightMultiplier = Math.min(1.0, Math.max(0.2, average / 40));
+
+        const updateBars = (nodeList) => {
+          if (!nodeList || nodeList.length === 0) return;
+          nodeList.forEach((bar, idx) => {
+            const factor = (idx % 2 === 0 ? 0.8 : 1.25) * heightMultiplier;
+            bar.style.transform = `scaleY(${Math.max(0.3, Math.min(1.9, factor * 1.6))})`;
           });
-        }
+        };
+
+        updateBars(this.dotWaveBars);
+        updateBars(this.capsuleWaveBars);
+        updateBars(this.bottomRecWaves);
+        updateBars(this.liveOrbWaveBars);
 
         if (average > 12) {
           speakingDetected = true;
@@ -438,7 +547,7 @@ class DianaVoiceApp {
         } else if (speakingDetected) {
           if (!silenceStartTime) {
             silenceStartTime = Date.now();
-          } else if (Date.now() - silenceStartTime > 2200) {
+          } else if (Date.now() - silenceStartTime > 2400) {
             this.stopRecording();
             return;
           }
@@ -485,8 +594,8 @@ class DianaVoiceApp {
 
           this.addMessage('bot', textReply, attachments);
           this.showResultInCapsule(userQuery, textReply, attachments);
+          this.updateLiveOverlayState('speaking', 'Diana đang trả lời', textReply);
 
-          // Phản hồi bằng giọng nói TTS
           if (this.ttsEnabled) {
             this.speak(textReply);
           } else {
@@ -498,6 +607,7 @@ class DianaVoiceApp {
           this.setDotState('idle');
           this.showCapsule('idle', 'Lỗi nhận diện', `⚠️ ${errText}`);
           this.addMessage('bot', `⚠️ ${errText}`);
+          this.updateLiveOverlayState('idle', 'Lỗi', errText);
           this.scheduleCapsuleClose(4000);
         }
       };
@@ -510,7 +620,7 @@ class DianaVoiceApp {
   }
 
   /**
-   * Gửi câu hỏi dạng Text (Nhập bàn phím / Web Speech Kết quả)
+   * Gửi câu hỏi dạng Text
    */
   async handleTextQuery(query) {
     if (!query || !query.trim()) return;
@@ -523,6 +633,7 @@ class DianaVoiceApp {
     this.addMessage('user', cleanQuery);
     this.setDotState('thinking');
     this.showCapsule('thinking', 'Diana đang xử lý...', `"${cleanQuery}"`);
+    this.updateLiveOverlayState('thinking', 'Đang xử lý...', `"${cleanQuery}"`);
 
     try {
       const response = await fetch('/api/voice', {
@@ -539,8 +650,8 @@ class DianaVoiceApp {
 
         this.addMessage('bot', textReply, attachments);
         this.showResultInCapsule(cleanQuery, textReply, attachments);
+        this.updateLiveOverlayState('speaking', 'Diana', textReply);
 
-        // Đọc phản hồi bằng giọng nói
         if (this.ttsEnabled) {
           this.speak(textReply);
         } else {
@@ -551,6 +662,7 @@ class DianaVoiceApp {
         const defaultReply = 'Dạ em đã thực thi xong yêu cầu của anh rồi ạ! ✨';
         this.addMessage('bot', defaultReply);
         this.showResultInCapsule(cleanQuery, defaultReply, []);
+        this.updateLiveOverlayState('idle', 'Diana', defaultReply);
         if (this.ttsEnabled) this.speak(defaultReply);
       }
     } catch (err) {
@@ -649,6 +761,7 @@ class DianaVoiceApp {
       const url = `/api/screenshot/${encodeURIComponent(fileName)}`;
       this.capsuleScreenshotImg.src = url;
       this.capsuleScreenshot.style.display = 'block';
+      this.capsuleScreenshot.onclick = () => this.openLightbox(url);
     } else {
       this.capsuleScreenshot.style.display = 'none';
     }
@@ -681,10 +794,9 @@ class DianaVoiceApp {
         const fileName = att.split(/[\\/]/).pop();
         const url = `/api/screenshot/${encodeURIComponent(fileName)}`;
         html += `
-          <div class="screenshot-preview">
-            <a href="${url}" target="_blank">
-              <img src="${url}" alt="Screenshot PC" loading="lazy" />
-            </a>
+          <div class="screenshot-preview" onclick="window.dianaApp.openLightbox('${url}')">
+            <img src="${url}" alt="Screenshot PC" loading="lazy" />
+            <div class="screenshot-tag">🔍 Chạm để phóng to</div>
           </div>
         `;
       }
@@ -697,6 +809,18 @@ class DianaVoiceApp {
     this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
   }
 
+  openLightbox(url) {
+    if (!this.imageLightbox || !this.lightboxImg) return;
+    this.lightboxImg.src = url;
+    this.imageLightbox.style.display = 'flex';
+  }
+
+  closeLightbox() {
+    if (this.imageLightbox) {
+      this.imageLightbox.style.display = 'none';
+    }
+  }
+
   formatMarkdown(text) {
     if (!text) return '';
     return text
@@ -705,7 +829,7 @@ class DianaVoiceApp {
       .replace(/>/g, '&gt;')
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/`(.*?)`/g, '<code>$1</code>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\n/g, '<br/>');
   }
 
@@ -735,6 +859,7 @@ class DianaVoiceApp {
   }
 
   toggleTTS() {
+    this.haptic(30);
     this.ttsEnabled = !this.ttsEnabled;
     localStorage.setItem('diana_tts', this.ttsEnabled);
     this.updateTTSButtonState();
@@ -746,11 +871,87 @@ class DianaVoiceApp {
   updateTTSButtonState() {
     if (this.ttsEnabled) {
       this.ttsToggleBtn.classList.remove('muted');
+      this.ttsToggleBtn.classList.add('active');
       this.ttsToggleBtn.title = 'Giọng nói: ĐANG BẬT';
     } else {
+      this.ttsToggleBtn.classList.remove('active');
       this.ttsToggleBtn.classList.add('muted');
       this.ttsToggleBtn.title = 'Giọng nói: ĐÃ TẮT';
     }
+  }
+
+  toggleDotVisibility() {
+    this.haptic(30);
+    this.dotEnabled = !this.dotEnabled;
+    localStorage.setItem('diana_dot_visible', this.dotEnabled);
+    this.updateDotVisibilityState();
+  }
+
+  updateDotVisibilityState() {
+    if (this.dotEnabled) {
+      if (this.assistiveDot) this.assistiveDot.style.display = 'block';
+      if (this.dotToggleBtn) {
+        this.dotToggleBtn.classList.add('active');
+        this.dotToggleBtn.title = 'Chấm AssistiveTouch: ĐANG BẬT';
+      }
+    } else {
+      if (this.assistiveDot) this.assistiveDot.style.display = 'none';
+      if (this.dotToggleBtn) {
+        this.dotToggleBtn.classList.remove('active');
+        this.dotToggleBtn.title = 'Chấm AssistiveTouch: ĐÃ ẨN';
+      }
+    }
+  }
+
+  /**
+   * Chế độ thoại toàn màn hình Live Voice Mode (Siri / Gemini Live)
+   */
+  openLiveVoiceMode() {
+    this.haptic(40);
+    if (this.liveVoiceOverlay) {
+      this.liveVoiceOverlay.style.display = 'flex';
+      this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói chuyện cùng Diana nhé!');
+    }
+  }
+
+  closeLiveVoiceMode() {
+    this.haptic(30);
+    if (this.liveVoiceOverlay) {
+      this.liveVoiceOverlay.style.display = 'none';
+    }
+    if (this.isRecording) {
+      this.stopRecording();
+    }
+  }
+
+  updateLiveOverlayState(state, statusLabel, text) {
+    if (!this.liveVoiceOverlay) return;
+    if (this.liveStatusLabel) this.liveStatusLabel.textContent = statusLabel;
+    if (this.liveTranscriptText) this.liveTranscriptText.textContent = text;
+
+    if (this.liveOrbCore) {
+      if (state === 'listening') {
+        this.liveOrbCore.style.transform = 'scale(1.1)';
+      } else if (state === 'thinking') {
+        this.liveOrbCore.style.transform = 'scale(0.95)';
+      } else {
+        this.liveOrbCore.style.transform = 'scale(1)';
+      }
+    }
+  }
+
+  setupQuickChips() {
+    const chips = document.querySelectorAll('.chip[data-query]');
+    chips.forEach((chip) => {
+      chip.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.haptic(30);
+        const query = chip.getAttribute('data-query');
+        if (query) {
+          this.handleTextQuery(query);
+        }
+      });
+    });
   }
 
   setupPWA() {
@@ -787,7 +988,7 @@ class DianaVoiceApp {
   }
 
   setupEventListeners() {
-    // Đóng Dynamic Capsule
+    // Dynamic Capsule close button
     if (this.capsuleCloseBtn) {
       this.capsuleCloseBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -795,47 +996,113 @@ class DianaVoiceApp {
       });
     }
 
-    // Nút gửi text
-    this.sendBtn.addEventListener('click', () => {
-      const q = this.textInput.value;
-      if (q.trim()) {
-        this.handleTextQuery(q);
-        this.textInput.value = '';
-      }
-    });
+    // Dynamic Capsule swipe-up to dismiss on mobile touch
+    if (this.dynamicCapsule) {
+      this.dynamicCapsule.addEventListener('touchstart', (e) => {
+        this.capsuleTouchStartY = e.touches[0].clientY;
+      }, { passive: true });
 
-    this.textInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      this.dynamicCapsule.addEventListener('touchend', (e) => {
+        const deltaY = e.changedTouches[0].clientY - this.capsuleTouchStartY;
+        if (deltaY < -30) { // Vuốt lên
+          this.hideCapsule();
+        }
+      }, { passive: true });
+    }
+
+    // Nút Mic ở thanh chat dưới đáy
+    if (this.inputMicBtn) {
+      this.inputMicBtn.addEventListener('click', () => {
+        this.toggleRecording();
+      });
+    }
+
+    // Nút dừng thu âm trên thanh ghi âm trực tiếp
+    if (this.recStopBtn) {
+      this.recStopBtn.addEventListener('click', () => {
+        this.stopRecording();
+      });
+    }
+
+    // Nút gửi text
+    if (this.sendBtn) {
+      this.sendBtn.addEventListener('click', () => {
         const q = this.textInput.value;
         if (q.trim()) {
           this.handleTextQuery(q);
           this.textInput.value = '';
         }
-      }
-    });
+      });
+    }
 
-    // PiP Floating Dot Toggle
-    this.pipToggleBtn = document.getElementById('pipToggleBtn');
-    this.pipChip = document.getElementById('pipChip');
+    if (this.textInput) {
+      this.textInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const q = this.textInput.value;
+          if (q.trim()) {
+            this.handleTextQuery(q);
+            this.textInput.value = '';
+          }
+        }
+      });
+    }
+
+    // Live Voice Mode triggers
+    if (this.liveVoiceModeBtn) {
+      this.liveVoiceModeBtn.addEventListener('click', () => this.openLiveVoiceMode());
+    }
+    if (this.headerAvatarBtn) {
+      this.headerAvatarBtn.addEventListener('click', () => this.openLiveVoiceMode());
+    }
+    if (this.liveVoiceCloseBtn) {
+      this.liveVoiceCloseBtn.addEventListener('click', () => this.closeLiveVoiceMode());
+    }
+    if (this.liveOrbContainer) {
+      this.liveOrbContainer.addEventListener('click', () => this.toggleRecording());
+    }
+    if (this.liveMicToggleBtn) {
+      this.liveMicToggleBtn.addEventListener('click', () => this.toggleRecording());
+    }
+
+    // Lightbox close
+    if (this.lightboxCloseBtn) {
+      this.lightboxCloseBtn.addEventListener('click', () => this.closeLightbox());
+    }
+    if (this.imageLightbox) {
+      this.imageLightbox.addEventListener('click', (e) => {
+        if (e.target === this.imageLightbox) this.closeLightbox();
+      });
+    }
+
+    // Header actions
+    if (this.ttsToggleBtn) {
+      this.ttsToggleBtn.addEventListener('click', () => this.toggleTTS());
+    }
+    if (this.dotToggleBtn) {
+      this.dotToggleBtn.addEventListener('click', () => this.toggleDotVisibility());
+    }
+    if (this.clearChatBtn) {
+      this.clearChatBtn.addEventListener('click', () => {
+        this.haptic(30);
+        this.chatMessages.innerHTML = '';
+        if (this.welcomeCard) this.welcomeCard.style.display = 'block';
+      });
+    }
+
+    // PiP Floating Dot Toggle (Desktop)
     if (this.pipToggleBtn) {
       this.pipToggleBtn.addEventListener('click', () => this.togglePiPMode());
     }
     if (this.pipChip) {
       this.pipChip.addEventListener('click', () => this.togglePiPMode());
     }
-
-    // Header actions
-    this.ttsToggleBtn.addEventListener('click', () => this.toggleTTS());
-    this.clearChatBtn.addEventListener('click', () => {
-      this.chatMessages.innerHTML = '';
-      if (this.welcomeCard) this.welcomeCard.style.display = 'block';
-    });
   }
 
   /**
-   * Bật Chấm Nổi ra ngoài màn hình qua Document Picture-in-Picture API
+   * Bật Chấm Nổi ra ngoài màn hình qua Document Picture-in-Picture API (Desktop)
    */
   async togglePiPMode() {
+    this.haptic(30);
     if ('documentPictureInPicture' in window) {
       try {
         const pipWindow = await window.documentPictureInPicture.requestWindow({
@@ -843,7 +1110,6 @@ class DianaVoiceApp {
           height: 240,
         });
 
-        // Copy toàn bộ CSS sang cửa sổ PiP
         [...document.styleSheets].forEach((styleSheet) => {
           try {
             const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
@@ -860,7 +1126,6 @@ class DianaVoiceApp {
           }
         });
 
-        // Gắn nút AssistiveTouch nổi bên trong PiP
         const pipContainer = document.createElement('div');
         pipContainer.innerHTML = `
           <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #060911; user-select: none;">
@@ -898,11 +1163,11 @@ class DianaVoiceApp {
 
       } catch (err) {
         console.warn('Lỗi mở Picture-in-Picture:', err);
-        this.showCapsule('idle', 'Ghim Màn Hình', '💡 Để mở chấm tròn nổi trên Windows, anh hãy mở file Chay_Diana_AssistiveTouch_Desktop.bat nhé!');
+        this.showCapsule('idle', 'Ghim Màn Hình', '💡 Ghim màn hình ngoài chỉ hỗ trợ trên trình duyệt máy tính (Chrome Desktop).');
         this.scheduleCapsuleClose(5000);
       }
     } else {
-      this.showCapsule('idle', 'Ghim Màn Hình', '💡 Để mở chấm tròn nổi trên Windows, anh hãy mở file Chay_Diana_AssistiveTouch_Desktop.bat nhé!');
+      this.showCapsule('idle', 'Ghim Màn Hình', '💡 Ghim màn hình ngoài chỉ hỗ trợ trên trình duyệt máy tính (Chrome Desktop).');
       this.scheduleCapsuleClose(5000);
     }
   }
