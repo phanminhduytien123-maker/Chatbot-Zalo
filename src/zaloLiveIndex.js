@@ -55,6 +55,8 @@ const server = http.createServer(async (req, res) => {
         const audioBase64 = data.audio;
         const mimeType = data.mimeType || 'audio/webm';
 
+        console.log(`[Voice Audio] Nhận audio ${mimeType}, size: ${audioBase64 ? audioBase64.length : 0} chars`);
+
         if (!audioBase64) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ error: 'Dữ liệu âm thanh rỗng.' }));
@@ -62,23 +64,27 @@ const server = http.createServer(async (req, res) => {
 
         // Nhận diện giọng nói qua Gemini AI Multimodal Audio
         const transcribedQuery = await aiAssistant.transcribeAudio(audioBase64, mimeType);
-        if (!transcribedQuery) {
+        console.log(`[Voice Audio] Kết quả STT: "${transcribedQuery}"`);
+
+        if (!transcribedQuery || !transcribedQuery.trim()) {
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
           return res.end(JSON.stringify({
             success: false,
-            error: 'Không nhận diện được giọng nói. Anh vui lòng nói lại nhé!'
+            error: 'Không nhận diện được giọng nói. Anh vui lòng nói to và rõ hơn nhé!'
           }));
         }
 
+        const normalizedQuery = VoiceNormalizer.normalize(transcribedQuery);
         // Xử lý câu lệnh
-        const reply = await MessageHandler.handleIncomingMessage(transcribedQuery);
+        const reply = await MessageHandler.handleIncomingMessage(normalizedQuery);
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         return res.end(JSON.stringify({
           success: true,
-          query: transcribedQuery,
+          query: normalizedQuery,
           reply
         }));
       } catch (err) {
+        console.error('[Voice Audio Error]:', err);
         res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error: err.message, stack: err.stack }));
       }

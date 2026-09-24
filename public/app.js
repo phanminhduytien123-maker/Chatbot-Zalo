@@ -148,7 +148,7 @@ class DianaVoiceApp {
   }
 
   /**
-   * Khởi tạo Bộ nhận diện giọng nói Web Speech API (Google vi-VN)
+   * Khởi tạo Bộ nhận diện giọng nói Web Speech API (Google vi-VN) - Dùng làm phụ đề trực tiếp
    */
   initSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -161,12 +161,8 @@ class DianaVoiceApp {
         this.recognition.maxAlternatives = 1;
 
         this.recognition.onstart = () => {
-          this.isRecording = true;
           this.finalTranscript = '';
           this.lastInterim = '';
-          this.updateRecordingUI(true);
-          this.showCapsule('listening', 'Diana đang nghe...', 'Hãy nói yêu cầu của anh nhé!');
-          this.updateLiveOverlayState('listening', 'Đang lắng nghe...', 'Em đang nghe anh nói...');
         };
 
         this.recognition.onresult = (event) => {
@@ -197,34 +193,10 @@ class DianaVoiceApp {
 
         this.recognition.onerror = (event) => {
           console.warn('[Web Speech API Notice]:', event.error);
-          if (event.error === 'no-speech') {
-            this.updateRecordingUI(false);
-            this.capsuleTranscript.textContent = 'Chạm vào Mic để nói lại nhé...';
-            this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói...');
-            this.scheduleCapsuleClose(2500);
-          } else {
-            console.log(`WebSpeech (${event.error}), tự động chuyển sang Direct MediaRecorder + Gemini...`);
-            this.useFallbackRecorder = true;
-            this.startMediaRecorder();
-          }
         };
 
         this.recognition.onend = () => {
-          this.isRecording = false;
-          this.updateRecordingUI(false);
-
-          const recognizedQuery = (this.finalTranscript || this.lastInterim || '').trim();
-          this.finalTranscript = '';
-          this.lastInterim = '';
-
-          if (recognizedQuery.length > 0) {
-            this.handleTextQuery(recognizedQuery);
-          } else {
-            if (!this.useFallbackRecorder) {
-              this.setDotState('idle');
-              this.scheduleCapsuleClose(2000);
-            }
-          }
+          // Xử lý bởi mediaRecorder.onstop
         };
 
         this.hasWebSpeech = true;
@@ -356,20 +328,21 @@ class DianaVoiceApp {
       this.synth.cancel();
     }
 
-    if (this.hasWebSpeech && !this.useFallbackRecorder) {
-      try {
-        this.recognition.start();
-        return;
-      } catch (err) {
-        console.warn('Không thể khởi chạy Web Speech:', err);
-      }
-    }
-
+    // Luôn ghi âm trực tiếp qua MediaRecorder + Gemini 3.5 Transcribe
     await this.startMediaRecorder();
+
+    // Chạy song song WebSpeech (nếu có) để hiển thị phụ đề thời gian thực
+    if (this.hasWebSpeech && this.recognition) {
+      try {
+        this.finalTranscript = '';
+        this.lastInterim = '';
+        this.recognition.start();
+      } catch (_) {}
+    }
   }
 
   /**
-   * Ghi âm bằng MediaRecorder + Gemini STT
+   * Ghi âm bằng MediaRecorder + Gemini STT (Tương thích 100% Xiaomi HyperOS, iPhone iOS & Android)
    */
   async startMediaRecorder() {
     try {
@@ -417,9 +390,19 @@ class DianaVoiceApp {
         this.showCapsule('thinking', 'Diana đang xử lý...', '⚡ Đang lắng nghe & suy nghĩ...');
         this.updateLiveOverlayState('thinking', 'Đang xử lý...', 'Diana đang suy nghĩ và thực thi...');
 
+        if (this.recognition) {
+          try { this.recognition.stop(); } catch (_) {}
+        }
+
         const audioBlob = new Blob(this.audioChunks, { type: actualMime });
-        if (audioBlob.size > 200) {
+        const webSpeechText = (this.finalTranscript || '').trim();
+
+        if (webSpeechText.length > 5) {
+          this.handleTextQuery(webSpeechText);
+        } else if (audioBlob.size > 200) {
           await this.sendAudioToServer(audioBlob, actualMime);
+        } else if (webSpeechText.length > 0) {
+          this.handleTextQuery(webSpeechText);
         } else {
           this.setDotState('idle');
           this.capsuleTranscript.textContent = 'Chạm vào Mic để nói lại nhé...';
@@ -439,7 +422,7 @@ class DianaVoiceApp {
 
       this.setupAudioAnalyser(this.audioStream);
 
-      this.mediaRecorder.start(250);
+      this.mediaRecorder.start(150);
       this.isRecording = true;
       this.updateRecordingUI(true);
       this.showCapsule('listening', 'Diana đang nghe...', '🎙️ Đang nghe anh nói... (Chạm lại khi nói xong)');
