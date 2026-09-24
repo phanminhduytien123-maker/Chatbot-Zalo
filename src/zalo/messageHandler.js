@@ -44,6 +44,19 @@ export class MessageHandler {
           return res.message || (res.success ? '🔓 Đã mở khóa máy tính thành công!' : res.error);
         }
 
+        case '/off':
+        case '/tatmanhinh': {
+          const res = await pcBridge.executeCommand('turnoff_display');
+          return res.message || res.error;
+        }
+
+        case '/on':
+        case '/batmanhinh': {
+          const res = await pcBridge.executeCommand('wake_display');
+          return res.message || res.error;
+        }
+
+
 
         case '/screenshot':
         case '/chupmanhinh': {
@@ -80,6 +93,19 @@ export class MessageHandler {
               const res = await pcBridge.executeCommand('unlock', { password: pass });
               return res.message || (res.success ? '🔓 Đã mở khóa máy tính thành công!' : res.error);
             }
+
+            case 'off':
+            case 'tatmanhinh': {
+              const res = await pcBridge.executeCommand('turnoff_display');
+              return res.message || res.error;
+            }
+
+            case 'on':
+            case 'batmanhinh': {
+              const res = await pcBridge.executeCommand('wake_display');
+              return res.message || res.error;
+            }
+
 
 
             case 'screen':
@@ -495,8 +521,23 @@ export class MessageHandler {
     }
 
     // 8. Nhận diện ý định ĐIỀU KHIỂN MÁY TÍNH WINDOWS (NLP PC Commands)
-    // 8.0. UNLOCK (Mở khóa máy)
-    if (lower.includes('mở khóa') || lower.includes('mo khoa') || lower.includes('mở màn hình') || lower.includes('mo man hinh') || lower.includes('mở máy tính') || lower.includes('mo may tinh') || lower.includes('mở pc') || lower.includes('mo pc') || lower.includes('mở laptop') || lower.includes('mo laptop') || lower.includes('unlock')) {
+    // 8.0. TURN OFF / ON DISPLAY (Tắt/Bật màn hình)
+    if (lower.includes('tắt màn hình') || lower.includes('tat man hinh') || lower.includes('tắt display') || lower.includes('tat display')) {
+      const res = await pcBridge.executeCommand('turnoff_display');
+      const reply = res.message || res.error || '🖥️ Đã tắt màn hình máy tính của anh!';
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    if (lower.includes('bật màn hình') || lower.includes('bat man hinh') || lower.includes('sáng màn hình') || lower.includes('sang man hinh') || lower.includes('đánh thức màn hình') || lower.includes('danh thuc man hinh') || lower.includes('bật display')) {
+      const res = await pcBridge.executeCommand('wake_display');
+      const reply = res.message || res.error || '💡 Đã bật sáng lại màn hình máy tính của anh!';
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    // 8.1. UNLOCK (Mở khóa máy)
+    if (lower.includes('mở khóa') || lower.includes('mo khoa') || lower.includes('mở máy tính') || lower.includes('mo may tinh') || lower.includes('mở pc') || lower.includes('mo pc') || lower.includes('mở laptop') || lower.includes('mo laptop') || lower.includes('unlock')) {
       let pass = '/';
       const passMatch = text.match(/(?:pass(?:word)?|mật khẩu|mat khau)(?:\s+là|\s*:)?\s*([^\s]+)/i);
       if (passMatch) {
@@ -507,6 +548,7 @@ export class MessageHandler {
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
+
 
     // 8.1. SLEEP (Cho máy tính ngủ)
     if (lower.includes('sleep') || lower.includes('cho máy ngủ') || lower.includes('cho may ngu') || lower.includes('ngủ máy') || lower.includes('ngu may') || lower.includes('vào chế độ ngủ')) {

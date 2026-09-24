@@ -174,6 +174,19 @@ async function pollServer() {
           break;
         }
 
+        case 'turnoff_display': {
+          result = await WindowsController.turnOffDisplay();
+          result.id = id;
+          break;
+        }
+
+        case 'wake_display': {
+          result = await WindowsController.wakeDisplay();
+          result.id = id;
+          break;
+        }
+
+
 
         case 'screenshot': {
           const screen = await WindowsController.takeScreenshot();

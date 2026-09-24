@@ -140,9 +140,71 @@ Write-Output "OK"
     });
   }
 
+  /**
+   * Tắt màn hình máy tính (Màn hình đen tiết kiệm điện mà không khóa máy)
+   */
+  static turnOffDisplay() {
+    return new Promise((resolve) => {
+      const psScript = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class DisplayHelper {
+    [DllImport("user32.dll")]
+    public static extern int SendMessage(int hWnd, int hMsg, int wParam, int lParam);
+    public static void TurnOff() {
+        SendMessage(0xFFFF, 0x0112, 0xF170, 2);
+    }
+}
+'@
+[DisplayHelper]::TurnOff()
+Write-Output "OK"
+      `.trim();
+
+      const base64Script = Buffer.from(psScript, 'utf16le').toString('base64');
+      exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
+        if (error) return resolve({ success: false, error: error.message });
+        resolve({ success: true, message: '🖥️ Đã tắt màn hình máy tính (tiết kiệm điện & riêng tư)!' });
+      });
+    });
+  }
+
+  /**
+   * Bật sáng lại màn hình máy tính
+   */
+  static wakeDisplay() {
+    return new Promise((resolve) => {
+      const psScript = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class DisplayHelper {
+    [DllImport("user32.dll")]
+    public static extern int SendMessage(int hWnd, int hMsg, int wParam, int lParam);
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+    public static void Wake() {
+        SendMessage(0xFFFF, 0x0112, 0xF170, -1);
+        mouse_event(1, 0, 1, 0, 0);
+        mouse_event(1, 0, -1, 0, 0);
+    }
+}
+'@
+[DisplayHelper]::Wake()
+Write-Output "OK"
+      `.trim();
+
+      const base64Script = Buffer.from(psScript, 'utf16le').toString('base64');
+      exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
+        if (error) return resolve({ success: false, error: error.message });
+        resolve({ success: true, message: '💡 Đã đánh thức và bật sáng màn hình máy tính thành công!' });
+      });
+    });
+  }
 
   /**
    * Kiểm tra thông tin Pin của Laptop (Win32_Battery)
+
    */
   static getBatteryInfo() {
     return new Promise((resolve) => {
