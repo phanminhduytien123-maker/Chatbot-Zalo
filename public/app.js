@@ -399,7 +399,7 @@ class DianaVoiceApp {
 
         if (webSpeechText.length > 5) {
           this.handleTextQuery(webSpeechText);
-        } else if (audioBlob.size > 200) {
+        } else if (audioBlob.size > 50) {
           await this.sendAudioToServer(audioBlob, actualMime);
         } else if (webSpeechText.length > 0) {
           this.handleTextQuery(webSpeechText);
@@ -422,7 +422,7 @@ class DianaVoiceApp {
 
       this.setupAudioAnalyser(this.audioStream);
 
-      this.mediaRecorder.start(150);
+      this.mediaRecorder.start(100);
       this.isRecording = true;
       this.updateRecordingUI(true);
       this.showCapsule('listening', 'Diana đang nghe...', '🎙️ Đang nghe anh nói... (Chạm lại khi nói xong)');
