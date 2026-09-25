@@ -31,7 +31,7 @@ try {
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Diana Floating Bubble"
-    Width="300" Height="80"
+    Width="320" Height="90"
     WindowStyle="None"
     AllowsTransparency="True"
     Background="Transparent"
@@ -41,30 +41,30 @@ try {
 
     <Window.Resources>
         <Storyboard x:Key="PulseAnim" RepeatBehavior="Forever" AutoReverse="True">
-            <DoubleAnimation Storyboard.TargetName="DotScale" Storyboard.TargetProperty="ScaleX" From="1.0" To="1.16" Duration="0:0:0.5"/>
-            <DoubleAnimation Storyboard.TargetName="DotScale" Storyboard.TargetProperty="ScaleY" From="1.0" To="1.16" Duration="0:0:0.5"/>
+            <DoubleAnimation Storyboard.TargetName="DotScale" Storyboard.TargetProperty="ScaleX" From="1.0" To="1.18" Duration="0:0:0.45"/>
+            <DoubleAnimation Storyboard.TargetName="DotScale" Storyboard.TargetProperty="ScaleY" From="1.0" To="1.18" Duration="0:0:0.45"/>
         </Storyboard>
         <Storyboard x:Key="RotateAura" RepeatBehavior="Forever">
             <DoubleAnimation Storyboard.TargetName="AuraRotate" Storyboard.TargetProperty="Angle" From="0" To="360" Duration="0:0:5"/>
         </Storyboard>
     </Window.Resources>
 
-    <Canvas Name="MainCanvas" Width="300" Height="80" Background="Transparent">
+    <Canvas Name="MainCanvas" Width="320" Height="90" Background="Transparent">
         <!-- Bong bóng lời thoại phụ đề bên cạnh chấm tròn -->
-        <Border Name="SpeechBubble" Canvas.Left="0" Canvas.Top="12" MaxWidth="215" 
-                CornerRadius="14" Background="#E60B101E" BorderBrush="#9900F2FE" BorderThickness="1.5"
-                Padding="10,6" Visibility="Collapsed">
+        <Border Name="SpeechBubble" Canvas.Left="0" Canvas.Top="12" MaxWidth="235" 
+                CornerRadius="14" Background="#F00B101E" BorderBrush="#CC00F2FE" BorderThickness="1.5"
+                Padding="12,8" Visibility="Collapsed">
             <Border.Effect>
-                <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Color="#00F2FE" Opacity="0.45"/>
+                <DropShadowEffect BlurRadius="16" ShadowDepth="2" Direction="270" Color="#00F2FE" Opacity="0.5"/>
             </Border.Effect>
             <TextBlock Name="BubbleText" Text="Đang nghe..." Foreground="#F8FAFC" 
-                       FontSize="11" FontFamily="Segoe UI, Be Vietnam Pro" TextWrapping="Wrap" MaxHeight="52"/>
+                       FontSize="11.5" FontFamily="Segoe UI, Be Vietnam Pro" TextWrapping="Wrap" MaxHeight="60"/>
         </Border>
 
         <!-- Chấm tròn chính AssistiveTouch -->
-        <Grid Name="DotRoot" Canvas.Left="225" Canvas.Top="6" Width="68" Height="68" Cursor="Hand">
+        <Grid Name="DotRoot" Canvas.Left="245" Canvas.Top="10" Width="70" Height="70" Cursor="Hand">
             <!-- Vòng hào quang phát sáng xoay tròn -->
-            <Border Name="AuraRing" Width="66" Height="66" CornerRadius="33" Opacity="0.6" RenderTransformOrigin="0.5,0.5">
+            <Border Name="AuraRing" Width="68" Height="68" CornerRadius="34" Opacity="0.65" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform>
                     <RotateTransform x:Name="AuraRotate" Angle="0"/>
                 </Border.RenderTransform>
@@ -78,19 +78,19 @@ try {
             </Border>
 
             <!-- Thân chấm tròn kính mờ AssistiveTouch -->
-            <Border Name="DotBody" Width="56" Height="56" CornerRadius="28" 
-                    Background="#F0060911" BorderBrush="#FF00F2FE" BorderThickness="2"
+            <Border Name="DotBody" Width="58" Height="58" CornerRadius="29" 
+                    Background="#FA060911" BorderBrush="#FF00F2FE" BorderThickness="2.5"
                     RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform>
                     <ScaleTransform x:Name="DotScale" ScaleX="1.0" ScaleY="1.0"/>
                 </Border.RenderTransform>
                 <Border.Effect>
-                    <DropShadowEffect BlurRadius="18" ShadowDepth="0" Color="#00F2FE" Opacity="0.65"/>
+                    <DropShadowEffect BlurRadius="20" ShadowDepth="0" Color="#00F2FE" Opacity="0.7"/>
                 </Border.Effect>
 
                 <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <TextBlock Name="DotEmoji" Text="🌸" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    <TextBlock Name="DotStatus" Text="🎙️" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                    <TextBlock Name="DotEmoji" Text="🌸" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <TextBlock Name="DotStatus" Text="🎙️" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
                 </Grid>
             </Border>
         </Grid>
@@ -104,9 +104,10 @@ $window = [System.Windows.Markup.XamlReader]::Load($reader)
 # Vị trí khởi đầu ở mép phải màn hình máy tính
 $screenWidth = [System.Windows.SystemParameters]::PrimaryScreenWidth
 $screenHeight = [System.Windows.SystemParameters]::PrimaryScreenHeight
-$window.Left = $screenWidth - 305
-$window.Top = ($screenHeight / 2) - 40
+$window.Left = $screenWidth - 325
+$window.Top = ($screenHeight / 2) - 45
 
+$mainCanvas = $window.FindName("MainCanvas")
 $dotRoot = $window.FindName("DotRoot")
 $dotBody = $window.FindName("DotBody")
 $dotEmoji = $window.FindName("DotEmoji")
@@ -117,7 +118,8 @@ $bubbleText = $window.FindName("BubbleText")
 $pulseAnim = $window.Resources["PulseAnim"]
 $rotateAura = $window.Resources["RotateAura"]
 
-$script:isDragging = $false
+$script:isMouseDown = $false
+$script:hasMoved = $false
 $script:dragStart = [System.Windows.Point]::new(0, 0)
 $script:isRecording = $false
 $script:tempAudioPath = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "diana_voice_record.wav")
@@ -126,7 +128,7 @@ $script:bubbleTimer = $null
 
 $rotateAura.Begin($auraRing, $true)
 
-function ShowBubbleMsg($msg, $durationSec = 6) {
+function ShowBubbleMsg($msg, $durationSec = 7) {
     $bubbleText.Text = $msg
     $speechBubble.Visibility = [System.Windows.Visibility]::Visible
     if ($script:bubbleTimer) { $script:bubbleTimer.Stop() }
@@ -163,32 +165,45 @@ function PlayDianaVoice($text) {
     } catch {}
 }
 
-# Sự kiện Kéo thả & Snap mép màn hình
-$dotRoot.Add_MouseLeftButtonDown({
-    $script:isDragging = $true
+function SnapToEdge {
+    $midX = [System.Windows.SystemParameters]::PrimaryScreenWidth / 2
+    if ($window.Left -lt $midX) {
+        $window.Left = 10
+        [System.Windows.Controls.Canvas]::SetLeft($speechBubble, 80)
+        [System.Windows.Controls.Canvas]::SetLeft($dotRoot, 5)
+    } else {
+        $window.Left = [System.Windows.SystemParameters]::PrimaryScreenWidth - 325
+        [System.Windows.Controls.Canvas]::SetLeft($speechBubble, 0)
+        [System.Windows.Controls.Canvas]::SetLeft($dotRoot, 245)
+    }
+}
+
+# --- CƠ CHẾ CLICK & KÉO THẢ CHUẨN XÁC 100% ---
+$dotRoot.Add_PreviewMouseLeftButtonDown({
+    $script:isMouseDown = $true
+    $script:hasMoved = $false
     $script:dragStart = [System.Windows.Forms.Cursor]::Position
-    $window.DragMove()
 })
 
-$dotRoot.Add_MouseLeftButtonUp({
-    $script:isDragging = $false
-    $currentPos = [System.Windows.Forms.Cursor]::Position
-    $dist = [Math]::Sqrt([Math]::Pow($currentPos.X - $script:dragStart.X, 2) + [Math]::Pow($currentPos.Y - $script:dragStart.Y, 2))
-
-    if ($dist -lt 6) {
-        ToggleVoice
-    } else {
-        $midX = [System.Windows.SystemParameters]::PrimaryScreenWidth / 2
-        if ($window.Left -lt $midX) {
-            $window.Left = 10
-            [System.Windows.Controls.Canvas]::SetLeft($speechBubble, 75)
-            [System.Windows.Controls.Canvas]::SetLeft($dotRoot, 5)
-        } else {
-            $window.Left = [System.Windows.SystemParameters]::PrimaryScreenWidth - 305
-            [System.Windows.Controls.Canvas]::SetLeft($speechBubble, 0)
-            [System.Windows.Controls.Canvas]::SetLeft($dotRoot, 225)
+$dotRoot.Add_PreviewMouseMove({
+    if ($script:isMouseDown -and -not $script:hasMoved) {
+        $cur = [System.Windows.Forms.Cursor]::Position
+        $d = [Math]::Sqrt([Math]::Pow($cur.X - $script:dragStart.X, 2) + [Math]::Pow($cur.Y - $script:dragStart.Y, 2))
+        if ($d -gt 6) {
+            $script:hasMoved = $true
+            $window.DragMove()
+            $script:isMouseDown = $false
+            SnapToEdge
         }
     }
+})
+
+$dotRoot.Add_PreviewMouseLeftButtonUp({
+    if ($script:isMouseDown -and -not $script:hasMoved) {
+        $script:isMouseDown = $false
+        ToggleVoice
+    }
+    $script:isMouseDown = $false
 })
 
 function ToggleVoice {
@@ -216,7 +231,7 @@ function ToggleVoice {
         $dotStatus.Visibility = [System.Windows.Visibility]::Collapsed
         $pulseAnim.Stop($dotBody)
 
-        ShowBubbleMsg "⚡ Diana đang suy nghĩ..." 10
+        ShowBubbleMsg "⚡ Diana đang xử lý..." 12
 
         try {
             [WinAudioRecorder]::mciSendString("stop recsound", "", 0, 0) | Out-Null
@@ -251,7 +266,7 @@ function ToggleVoice {
                         } elseif ($res -and $res.error) {
                             ShowBubbleMsg "💡 $($res.error)" 5
                         } else {
-                            ShowBubbleMsg "🌸 Dạ em đã nhận được rồi ạ!" 4
+                            ShowBubbleMsg "🌸 Dạ em đã hoàn tất rồi ạ!" 4
                             PlayDianaVoice "Dạ em đã nhận được yêu cầu rồi ạ!"
                         }
                     } catch {
