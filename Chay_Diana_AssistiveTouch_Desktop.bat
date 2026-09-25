@@ -13,4 +13,4 @@ echo 👉 Nhấp chuột phải vào chấm để đóng khi không cần dùng 
 echo ========================================================
 echo.
 
-powershell -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File "%~dp0scripts\diana_assistive_dot.ps1"
+powershell -ExecutionPolicy Bypass -NoProfile -Sta -WindowStyle Hidden -File "%~dp0scripts\diana_assistive_dot.ps1"
