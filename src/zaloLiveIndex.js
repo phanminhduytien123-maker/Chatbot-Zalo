@@ -12,6 +12,7 @@ import { scheduler } from './services/scheduler.js';
 import { MessageHandler } from './zalo/messageHandler.js';
 import { pcBridge } from './pc/pcBridge.js';
 import VoiceNormalizer from './services/voiceNormalizer.js';
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -298,6 +299,18 @@ async function callMiniMaxTTS(text, voiceId, apiKey) {
   throw new Error(data?.base_resp?.status_msg || 'Lỗi từ MiniMax API');
 }
 
+async function callEdgeNeuralTTS(text, voiceName = 'vi-VN-HoaiMyNeural') {
+  const tts = new MsEdgeTTS();
+  await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+  const { audioStream } = tts.toStream(text);
+  const chunks = [];
+  return new Promise((resolve, reject) => {
+    audioStream.on('data', (chunk) => chunks.push(chunk));
+    audioStream.on('end', () => resolve(Buffer.concat(chunks)));
+    audioStream.on('error', reject);
+  });
+}
+
 async function streamTTS(text, res, voice = 'diana_female', apiKey = '') {
   if (!text || !text.trim()) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -311,7 +324,7 @@ async function streamTTS(text, res, voice = 'diana_female', apiKey = '') {
     .trim();
 
   // 1. Thử gọi MiniMax Neural TTS nếu chọn giọng moss_audio hoặc typhoeus
-  if (voice.startsWith('moss_audio_') || voice === 'typhoeus' || apiKey || process.env.MINIMAX_API_KEY) {
+  if (voice.startsWith('moss_audio_') || voice === 'typhoeus' || (apiKey && voice !== 'google_female')) {
     try {
       const voiceId = voice.startsWith('moss_audio_') ? voice : 'moss_audio_881639b8-b831-11f1-80cc-aac30e71d302';
       const miniMaxBuffer = await callMiniMaxTTS(cleanText, voiceId, apiKey);
@@ -322,11 +335,29 @@ async function streamTTS(text, res, voice = 'diana_female', apiKey = '') {
       });
       return res.end(miniMaxBuffer);
     } catch (err) {
-      console.warn('[MiniMax TTS Fallback to Google]:', err.message);
+      console.warn('[MiniMax TTS Fallback]:', err.message);
     }
   }
 
-  // 2. Fallback sang Google TTS tiêu chuẩn
+  // 2. Microsoft Edge Neural Voice (Giọng Nữ Hoài My truyền cảm tự nhiên / Giọng Nam Nam Minh)
+  if (voice === 'diana_female' || voice === 'viet_male' || !voice) {
+    try {
+      const edgeVoice = voice === 'viet_male' ? 'vi-VN-NamMinhNeural' : 'vi-VN-HoaiMyNeural';
+      const edgeBuffer = await callEdgeNeuralTTS(cleanText, edgeVoice);
+      if (edgeBuffer && edgeBuffer.length > 500) {
+        res.writeHead(200, {
+          'Content-Type': 'audio/mpeg',
+          'Content-Length': edgeBuffer.length,
+          'Cache-Control': 'public, max-age=86400'
+        });
+        return res.end(edgeBuffer);
+      }
+    } catch (err) {
+      console.warn('[Edge Neural TTS Fallback to Google]:', err.message);
+    }
+  }
+
+  // 3. Fallback sang Google TTS tiêu chuẩn
   const chunks = [];
   let remaining = cleanText;
   while (remaining.length > 0) {
