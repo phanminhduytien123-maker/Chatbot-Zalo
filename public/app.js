@@ -350,10 +350,12 @@ class DianaVoiceApp {
   initDynamicViewport() {
     const updateAppHeight = () => {
       document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
-      if (window.visualViewport) {
-        const vvHeight = window.visualViewport.height;
-        if (this.appContainer && window.innerWidth <= 640) {
+      if (this.appContainer) {
+        if (window.innerWidth <= 640) {
+          const vvHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
           this.appContainer.style.height = `${vvHeight}px`;
+        } else {
+          this.appContainer.style.height = '';
         }
       }
     };
@@ -1193,6 +1195,7 @@ class DianaVoiceApp {
       return;
     }
 
+    try {
       const voiceParam = encodeURIComponent(this.voiceSettings?.voicePreset || 'diana_female');
       const apiKeyParam = this.voiceSettings?.minimaxApiKey ? `&apiKey=${encodeURIComponent(this.voiceSettings.minimaxApiKey)}` : '';
       const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}&voice=${voiceParam}${apiKeyParam}`;
