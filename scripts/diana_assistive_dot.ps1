@@ -148,7 +148,7 @@ function PlayDianaVoice($text) {
         $cleanText = [System.Text.RegularExpressions.Regex]::Replace($cleanText, '[\uD800-\uDBFF][\uDC00-\uDFFF]', '')
         
         $encoded = [Uri]::EscapeDataString($cleanText.Substring(0, [Math]::Min(350, $cleanText.Length)))
-        $ttsUrl = "$serverUrl/api/tts?text=$encoded&voice=diana_female"
+        $ttsUrl = "$serverUrl/api/tts?text=$encoded&voice=moss_audio_881639b8-b831-11f1-80cc-aac30e71d302"
 
         $ttsClient = New-Object System.Net.WebClient
         $ttsClient.Add_DownloadFileCompleted({
