@@ -260,7 +260,13 @@ async function pollServer() {
 
         case 'air_gesture':
         case 'start_air_gesture': {
-          result = await WindowsController.startAirGestureDetector(params?.timeout || 45, params?.sessionData);
+          result = await WindowsController.startAirGestureDetector(params?.timeout || 86400, params?.sessionData);
+          result.id = id;
+          break;
+        }
+
+        case 'stop_air_gesture': {
+          result = WindowsController.stopAirGestureDetector();
           result.id = id;
           break;
         }

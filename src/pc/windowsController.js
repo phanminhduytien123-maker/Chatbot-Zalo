@@ -635,15 +635,15 @@ Write-Output "OK"
             [DllImport("kernel32.dll")]
             public static extern uint GetCurrentThreadId();
 
-            public const int SW_RESTORE = 9;
-            public const int SW_SHOWNORMAL = 1;
+            public const int SW_MAXIMIZE = 3;
+            public const int SW_SHOW = 5;
             public const byte VK_MENU = 0x12;
             public const uint KEYEVENTF_KEYUP = 0x0002;
 
             public static void ForceForeground(IntPtr hWnd) {
                 if (hWnd == IntPtr.Zero) return;
-                ShowWindowAsync(hWnd, SW_RESTORE);
-                ShowWindowAsync(hWnd, SW_SHOWNORMAL);
+                ShowWindowAsync(hWnd, SW_MAXIMIZE);
+                ShowWindowAsync(hWnd, SW_SHOW);
 
                 keybd_event(VK_MENU, 0, 0, 0);
                 SetForegroundWindow(hWnd);
@@ -677,15 +677,15 @@ Write-Output "OK"
           }
       }
 
-      # 2. Khởi chạy ứng dụng hoặc URL
+      # 2. Khởi chạy ứng dụng hoặc URL toàn màn hình (Maximized)
       if ($isUrl) {
           $chromePath = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
           $edgePath = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
           if (Test-Path $chromePath) {
-              Start-Process $chromePath -ArgumentList "--new-window", "$targetPath"
+              Start-Process $chromePath -ArgumentList "--new-window", "--start-maximized", "$targetPath"
               Write-Output "LAUNCHED_CHROME"
           } elseif (Test-Path $edgePath) {
-              Start-Process $edgePath -ArgumentList "--new-window", "$targetPath"
+              Start-Process $edgePath -ArgumentList "--new-window", "--start-maximized", "$targetPath"
               Write-Output "LAUNCHED_EDGE"
           } else {
               Start-Process "$targetPath"
@@ -702,7 +702,7 @@ Write-Output "OK"
                   $psi.FileName = $targetPath
                   if ($argStr) { $psi.Arguments = $argStr }
                   $psi.UseShellExecute = $true
-                  $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+                  $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Maximized
                   [System.Diagnostics.Process]::Start($psi) | Out-Null
                   Write-Output "LAUNCHED_PSI"
               } catch {
@@ -711,18 +711,11 @@ Write-Output "OK"
           }
       }
 
-      # 3. Kích hoạt và kéo cửa sổ ứng dụng hoặc trình duyệt lên vị trí nổi bật (Foreground)
-      Start-Sleep -Milliseconds 600
-      if ($isUrl) {
-          $browserProcs = Get-Process chrome, msedge, brave, coccoc, firefox -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
-          foreach ($bp in $browserProcs) {
-              [Win32Gui]::ForceForeground($bp.MainWindowHandle)
-          }
-      } else {
-          $appProcs = Get-Process $baseName, WINWORD, EXCEL, POWERPNT, notepad, mspaint -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
-          foreach ($ap in $appProcs) {
-              [Win32Gui]::ForceForeground($ap.MainWindowHandle)
-          }
+      # 3. Kéo cửa sổ vừa mở lên Foreground toàn màn hình mà không ảnh hưởng app khác
+      Start-Sleep -Milliseconds 500
+      $fgWnd = [Win32Gui]::GetForegroundWindow()
+      if ($fgWnd -ne [IntPtr]::Zero) {
+          [Win32Gui]::ForceForeground($fgWnd)
       }
     `;
 
