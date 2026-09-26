@@ -592,12 +592,12 @@ export class MessageHandler {
       lower.includes('wake display') || lower.includes('bật màn') || lower.includes('mở màn')
     ) {
       const res = await pcBridge.executeCommand('wake_display');
-      const reply = res.message || (res.success ? '💡 Dạ em đã đánh thức và bật sáng màn hình máy tính cho anh rồi ạ! ✨' : res.error);
+      const reply = res.message || (res.success ? '💡 Dạ em đã bật sáng màn hình máy tính cho anh rồi ạ! ✨' : res.error);
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
 
-    // 8.0b. TURNOFF DISPLAY (Tắt màn hình / Làm tối màn hình - Tiết kiệm điện)
+    // 8.0b. TURNOFF DISPLAY (Tắt màn hình / Làm tối màn hình)
     if (
       (lower.includes('tắt màn hình') || lower.includes('tat man hinh') || 
        lower.includes('làm tối màn hình') || lower.includes('lam toi man hinh') || 
@@ -607,7 +607,7 @@ export class MessageHandler {
       !lower.includes('khóa') && !lower.includes('khoa')
     ) {
       const res = await pcBridge.executeCommand('turnoff_display');
-      const reply = res.message || (res.success ? '🖥️ Dạ em đã tắt màn hình máy tính cho anh rồi ạ! Khi nào cần mở lại, anh chỉ cần nói "bật màn hình" hoặc "mở màn hình" là được nhé! 🌸' : res.error);
+      const reply = res.message || (res.success ? '🖥️ Dạ em đã tắt màn hình máy tính cho anh rồi ạ! 🌸' : res.error);
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }

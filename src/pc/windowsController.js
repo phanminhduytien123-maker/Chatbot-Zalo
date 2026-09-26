@@ -124,7 +124,7 @@ Write-Output "OK"
     if (serviceRes.success) {
       return {
         success: true,
-        message: `🔓 Đã mở khóa máy tính thành công với mật khẩu "${pass}" qua dịch vụ SYSTEM (TeamViewer Mode)! ✨`
+        message: `🔓 Đã mở khóa máy tính thành công!`
       };
     }
 
@@ -147,7 +147,7 @@ Write-Output "OK"
     if (taskResult) {
       return {
         success: true,
-        message: `🔓 Đã kích hoạt tác vụ mở khóa đặc quyền SYSTEM với mật khẩu "${pass}" thành công! ✨`
+        message: `🔓 Đã mở khóa máy tính thành công!`
       };
     }
 
@@ -300,7 +300,7 @@ Write-Output "OK"
       const base64Script = Buffer.from(psScript, 'utf16le').toString('base64');
       exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
         if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: '🖥️ Đã tắt màn hình máy tính (tiết kiệm điện & riêng tư)!' });
+        resolve({ success: true, message: '🖥️ Đã tắt màn hình máy tính!' });
       });
     });
   }
@@ -337,7 +337,7 @@ Write-Output "OK"
       const base64Script = Buffer.from(psScript, 'utf16le').toString('base64');
       exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
         if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: '💡 Đã đánh thức và bật sáng màn hình máy tính thành công!' });
+        resolve({ success: true, message: '💡 Đã bật sáng màn hình máy tính!' });
       });
     });
   }
@@ -426,7 +426,7 @@ Write-Output "OK"
 
       exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
         if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: '🔇/🔊 Đã chuyển đổi trạng thái tắt/bật tiếng (Mute toggle)!' });
+        resolve({ success: true, message: '🔇/🔊 Đã chuyển đổi trạng thái tắt/bật âm thanh loa!' });
       });
     });
   }
@@ -936,9 +936,9 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
       exec(`shutdown /s /t ${seconds}`, (error) => {
         if (error) return resolve({ success: false, error: error.message });
         if (seconds === 0) {
-          resolve({ success: true, message: '⚡ Đang tiến hành tắt máy tính ngay lập tức...' });
+          resolve({ success: true, message: '⚡ Đang tiến hành tắt máy tính...' });
         } else {
-          resolve({ success: true, message: `⏱️ Đã đặt lịch tắt máy tính sau ${minutes} phút nữa (Gõ /pc cancel để hủy).` });
+          resolve({ success: true, message: `⏱️ Đã đặt lịch tắt máy tính sau ${minutes} phút nữa!` });
         }
       });
     });
@@ -951,7 +951,7 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
     return new Promise((resolve) => {
       exec('shutdown /a', (error) => {
         if (error) return resolve({ success: false, message: '⚠️ Hiện tại không có lịch tắt máy nào đang chờ.' });
-        resolve({ success: true, message: '✅ Đã hủy lệnh tắt máy tính thành công!' });
+        resolve({ success: true, message: '✅ Đã hủy lệnh tắt máy tính!' });
       });
     });
   }
@@ -963,7 +963,7 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
     return new Promise((resolve) => {
       exec('rundll32.exe powrprof.dll,SetSuspendState 0,1,0', (error) => {
         if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: '💤 Đã cho máy tính vào chế độ Ngủ (Sleep) thành công!' });
+        resolve({ success: true, message: '💤 Đã cho máy tính vào chế độ Ngủ!' });
       });
     });
   }
