@@ -1039,35 +1039,23 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
       child.stdout.on('data', (data) => {
         const text = data.toString();
         console.log(`[AirGesture PC Stdout]: ${text.trim()}`);
-        if (text.includes('DROP_DETECTED')) {
+        if (text.includes('DROP_DETECTED') && !dropDetected) {
           dropDetected = true;
           WindowsController.airGestureStatus = 'COMPLETED';
           
           const currentSession = WindowsController.activeAirSession || sessionData;
           const currentSessionId = currentSession?.id || sessionId;
           const finalUrl = `https://diana-h73u.onrender.com/?air_sync=1&session_id=${encodeURIComponent(currentSessionId)}`;
-          console.log(`[AirGesture PC] 🚀 Cử chỉ Mở Bàn Tay phát hiện! Mở link: ${finalUrl}`);
+          console.log(`[AirGesture PC] 🚀 Cử chỉ Mở Bàn Tay phát hiện! Trình duyệt đã mở link: ${finalUrl}`);
           
-          // Mở trực tiếp trình duyệt với cờ --new-window để phá vỡ Efficiency Mode của Windows 11
-          const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-          const edgePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-          
-          if (fs.existsSync(chromePath)) {
-            spawn(chromePath, ['--new-window', finalUrl], { detached: true, stdio: 'ignore' }).unref();
-          } else if (fs.existsSync(edgePath)) {
-            spawn(edgePath, ['--new-window', finalUrl], { detached: true, stdio: 'ignore' }).unref();
-          } else {
-            exec(`powershell.exe -NoProfile -Command "Start-Process '${finalUrl}'"`);
-          }
-          
-          WindowsController.openAppOrUrl(finalUrl);
+          // Hiển thị thông báo Toast duy nhất
           WindowsController.showToastNotification('✨ Diana Air Gesture', 'Đã tiếp nhận phiên trò chuyện từ điện thoại!');
 
           setTimeout(() => {
             if (WindowsController.airGestureStatus === 'COMPLETED') {
               WindowsController.airGestureStatus = 'IDLE';
             }
-          }, 15000);
+          }, 10000);
         }
       });
 

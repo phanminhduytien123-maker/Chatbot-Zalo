@@ -264,16 +264,7 @@ const server = http.createServer(async (req, res) => {
           activeTopic: sessionPayload.activeTopic || ''
         };
 
-        console.log(`[Air Gesture] ✊ Đã nhận dữ liệu Grab phiên chat từ điện thoại (${latestAirGrabSession.messages.length} tin nhắn)`);
-
-        // Đồng bộ lên máy chủ Render để web online cũng có dữ liệu phiên chat
-        try {
-          fetch('https://diana-h73u.onrender.com/api/air-gesture/grab', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session: latestAirGrabSession })
-          }).catch(() => {});
-        } catch (_) {}
+        console.log(`[AirGesture] ✊ Đã nhận dữ liệu Grab phiên chat từ điện thoại (${latestAirGrabSession.messages.length} tin nhắn)`);
 
         // Gửi lệnh đánh thức nhận diện cử chỉ Mở Bàn Tay qua Webcam PC
         pcBridge.executeCommand('start_air_gesture', {

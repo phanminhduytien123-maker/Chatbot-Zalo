@@ -44,6 +44,14 @@ export class PCBridgeService {
       };
     }
 
+    if (action === 'start_air_gesture' || action === 'air_gesture') {
+      const existingCmd = this.pendingCommands.find(c => c.action === 'start_air_gesture' || c.action === 'air_gesture');
+      if (existingCmd) {
+        if (params.sessionData) existingCmd.params.sessionData = params.sessionData;
+        return { success: true, message: 'Webcam đã được xếp hàng chờ xử lý.' };
+      }
+    }
+
     const commandId = `cmd_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const cmdObject = {
       id: commandId,

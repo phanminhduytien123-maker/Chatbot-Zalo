@@ -78,8 +78,8 @@ def draw_hand_skeleton(frame, landmarks):
 
 def launch_browser_native(url):
     """
-    Mở trình duyệt ở chế độ Cửa sổ mới nổi trên cùng (--new-window),
-    tránh hoàn toàn hiện tượng Windows 11 đưa tab mới vào Background / Efficiency Mode.
+    Mở DUY NHẤT 1 tab/cửa sổ trình duyệt nổi lên trên cùng,
+    không chạy lặp lại các lệnh mở trình duyệt khác.
     """
     import subprocess
     browser_executables = [
@@ -110,15 +110,19 @@ def launch_browser_native(url):
         except Exception:
             pass
 
-    try:
-        webbrowser.open(url, new=1, autoraise=True)
-    except Exception:
-        pass
+    if not launched:
+        try:
+            webbrowser.open(url, new=1, autoraise=True)
+            launched = True
+        except Exception:
+            pass
 
-    try:
-        os.system(f'start "" "{url}"')
-    except Exception:
-        pass
+    if not launched:
+        try:
+            os.system(f'start "" "{url}"')
+            launched = True
+        except Exception:
+            pass
 
     # Kích hoạt cửa sổ trình duyệt nổi lên trên cùng (TopMost / Foreground)
     def bring_browser_to_front():
