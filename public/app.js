@@ -1478,35 +1478,42 @@ class DianaVoiceApp {
         lastNode = compressor;
 
       } else if (fxMode === 'spatial') {
-        // === SPATIAL 3D: Vang không gian tương lai, hiệu ứng hologram stereo ambience ===
+        // === SPATIAL 3D: Âm trường 3D không gian mở (Haas Micro-Spatial Widening - Hiện đại & Tinh tế) ===
         const presenceEQ = this.audioCtx.createBiquadFilter();
         presenceEQ.type = 'peaking';
         presenceEQ.frequency.setValueAtTime(3200, this.audioCtx.currentTime);
-        presenceEQ.gain.setValueAtTime(4.0, this.audioCtx.currentTime);
+        presenceEQ.gain.setValueAtTime(2.5, this.audioCtx.currentTime);
 
+        const airSparkle = this.audioCtx.createBiquadFilter();
+        airSparkle.type = 'highshelf';
+        airSparkle.frequency.setValueAtTime(7000, this.audioCtx.currentTime);
+        airSparkle.gain.setValueAtTime(2.0, this.audioCtx.currentTime);
+
+        // Sử dụng vi độ trễ Haas 18ms tạo độ mở không gian 3D, loại bỏ hoàn toàn tiếng vọng cõi âm
         const delay = this.audioCtx.createDelay();
-        delay.delayTime.setValueAtTime(0.075, this.audioCtx.currentTime);
+        delay.delayTime.setValueAtTime(0.018, this.audioCtx.currentTime); // 18ms Haas effect
 
         const feedback = this.audioCtx.createGain();
-        feedback.gain.setValueAtTime(0.35, this.audioCtx.currentTime);
+        feedback.gain.setValueAtTime(0.06, this.audioCtx.currentTime); // Phản hồi cực nhẹ 6%
 
         const dampFilter = this.audioCtx.createBiquadFilter();
         dampFilter.type = 'lowpass';
-        dampFilter.frequency.setValueAtTime(3200, this.audioCtx.currentTime);
+        dampFilter.frequency.setValueAtTime(4500, this.audioCtx.currentTime);
 
         delay.connect(dampFilter);
         dampFilter.connect(feedback);
         feedback.connect(delay);
 
         const dryGain = this.audioCtx.createGain();
-        dryGain.gain.setValueAtTime(0.85, this.audioCtx.currentTime);
+        dryGain.gain.setValueAtTime(1.0, this.audioCtx.currentTime); // Giọng chính rõ nét 100%
 
         const wetGain = this.audioCtx.createGain();
-        wetGain.gain.setValueAtTime(0.45, this.audioCtx.currentTime);
+        wetGain.gain.setValueAtTime(0.18, this.audioCtx.currentTime); // Không gian phụ nhẹ nhàng 18%
 
         lastNode.connect(presenceEQ);
-        presenceEQ.connect(dryGain);
-        presenceEQ.connect(delay);
+        presenceEQ.connect(airSparkle);
+        airSparkle.connect(dryGain);
+        airSparkle.connect(delay);
         delay.connect(wetGain);
 
         const merger = this.audioCtx.createGain();
