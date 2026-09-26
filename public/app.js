@@ -79,6 +79,8 @@ class DianaVoiceApp {
     this.autoVadToggleBtn = document.getElementById('autoVadToggleBtn');
     this.autoVadBadgeDot = document.getElementById('autoVadBadgeDot');
     this.autoVadChip = document.getElementById('autoVadChip');
+    this.screenshotHeaderBtn = document.getElementById('screenshotHeaderBtn');
+    this.lockPcHeaderBtn = document.getElementById('lockPcHeaderBtn');
     this.ttsToggleBtn = document.getElementById('ttsToggleBtn');
     this.dotToggleBtn = document.getElementById('dotToggleBtn');
     this.pipToggleBtn = document.getElementById('pipToggleBtn');
@@ -1676,6 +1678,18 @@ class DianaVoiceApp {
     }
 
     // Header actions
+    if (this.screenshotHeaderBtn) {
+      this.screenshotHeaderBtn.addEventListener('click', () => {
+        this.haptic(35);
+        this.handleTextQuery('chụp ảnh màn hình máy tính');
+      });
+    }
+    if (this.lockPcHeaderBtn) {
+      this.lockPcHeaderBtn.addEventListener('click', () => {
+        this.haptic(35);
+        this.handleTextQuery('khóa màn hình máy tính');
+      });
+    }
     if (this.ttsToggleBtn) {
       this.ttsToggleBtn.addEventListener('click', () => this.toggleTTS());
     }
