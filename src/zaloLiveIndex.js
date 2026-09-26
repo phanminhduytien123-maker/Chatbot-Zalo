@@ -355,8 +355,8 @@ async function streamTTS(text, res, voice = 'diana_female', apiKey = '', pitch =
     cleanText = cleanText.replace(/([.?!])\s+/g, '$1... ');
   }
 
-  // 1. Thử gọi MiniMax Neural TTS nếu chọn giọng moss_audio hoặc typhoeus
-  if (voice.startsWith('moss_audio_') || voice === 'typhoeus' || (apiKey && voice !== 'google_female')) {
+  // 1. Thử gọi MiniMax Neural TTS nếu chọn giọng moss_audio hoặc typhoeus VÀ có API Key
+  if ((voice.startsWith('moss_audio_') || voice === 'typhoeus') && (apiKey || process.env.MINIMAX_API_KEY)) {
     try {
       const voiceId = voice.startsWith('moss_audio_') ? voice : 'moss_audio_881639b8-b831-11f1-80cc-aac30e71d302';
       const miniMaxBuffer = await callMiniMaxTTS(cleanText, voiceId, apiKey, pitch, speed, volume);
@@ -367,15 +367,29 @@ async function streamTTS(text, res, voice = 'diana_female', apiKey = '', pitch =
       });
       return res.end(miniMaxBuffer);
     } catch (err) {
-      console.warn('[MiniMax TTS Fallback]:', err.message);
+      console.warn('[MiniMax TTS Fallback to Edge Neural]:', err.message);
     }
   }
 
-  // 2. Microsoft Edge Neural Voice (Giọng Nữ Hoài My truyền cảm tự nhiên / Giọng Nam Nam Minh)
-  if (voice === 'diana_female' || voice === 'viet_male' || !voice) {
+  // 2. Microsoft Edge Neural Voice (Diana Nữ Hoài My / Nam Minh Quân / Typhoeus Hunter Neural)
+  if (voice === 'diana_female' || voice === 'viet_male' || voice.startsWith('moss_audio_') || voice === 'typhoeus' || !voice) {
     try {
-      const edgeVoice = voice === 'viet_male' ? 'vi-VN-NamMinhNeural' : 'vi-VN-HoaiMyNeural';
-      const edgeBuffer = await callEdgeNeuralTTS(cleanText, edgeVoice, pitch, speed, volume);
+      let edgeVoice = 'vi-VN-HoaiMyNeural';
+      let effPitch = pitch;
+      let effSpeed = speed;
+      let effVol = volume;
+
+      if (voice === 'viet_male') {
+        edgeVoice = 'vi-VN-NamMinhNeural';
+      } else if (voice.startsWith('moss_audio_') || voice === 'typhoeus') {
+        // Hồ sơ âm thanh Typhoeus Hunter: Giọng nam trầm, dứt khoát, âm hưởng chiến binh
+        edgeVoice = 'vi-VN-NamMinhNeural';
+        effPitch = (parseFloat(pitch) || 1.0) * 0.88; // Trầm sâu hơn ~12%
+        effSpeed = (parseFloat(speed) || 1.0) * 1.05;
+        effVol = (parseFloat(volume) || 1.0) * 1.15;
+      }
+
+      const edgeBuffer = await callEdgeNeuralTTS(cleanText, edgeVoice, effPitch, effSpeed, effVol);
       if (edgeBuffer && edgeBuffer.length > 500) {
         res.writeHead(200, {
           'Content-Type': 'audio/mpeg',
