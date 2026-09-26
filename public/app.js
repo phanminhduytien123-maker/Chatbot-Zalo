@@ -900,6 +900,13 @@ class DianaVoiceApp {
     this.showCapsule('thinking', 'Diana đang xử lý...', `"${cleanQuery}"`);
     this.updateLiveOverlayState('thinking', 'Đang xử lý...', `"${cleanQuery}"`);
 
+    // Check if this is a native mobile command on Android (Alarm, Call, Flashlight, App, Volume)
+    if (await this.handleNativeMobileActions(cleanQuery)) {
+      this.setDotState('idle');
+      this.scheduleCapsuleClose(4000);
+      return;
+    }
+
     try {
       const response = await fetch('/api/voice', {
         method: 'POST',
@@ -942,6 +949,114 @@ class DianaVoiceApp {
       this.showCapsule('idle', 'Lỗi kết nối', '⚠️ Không thể kết nối máy chủ.');
       this.scheduleCapsuleClose(3000);
     }
+  }
+
+  /**
+   * Xử lý các lệnh trực tiếp trên điện thoại Android qua DianaNative Plugin
+   */
+  async handleNativeMobileActions(query) {
+    if (!window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.DianaNative) {
+      return false;
+    }
+    const native = window.Capacitor.Plugins.DianaNative;
+    const lower = query.toLowerCase();
+
+    // 1. Đặt báo thức điện thoại
+    const alarmMatch = lower.match(/(?:đặt|hẹn|bật)\s*báo\s*thức\s*(?:lúc|vào)?\s*(\d{1,2})(?::|h| giờ|\s+)?(\d{1,2})?/i);
+    if (alarmMatch) {
+      let hour = parseInt(alarmMatch[1], 10);
+      let min = alarmMatch[2] ? parseInt(alarmMatch[2], 10) : 0;
+      if (lower.includes('chiều') || lower.includes('tối')) {
+        if (hour < 12) hour += 12;
+      }
+      try {
+        const res = await native.setAlarm({ hour, minutes: min, title: "Báo thức Diana", skipUi: true });
+        const reply = res.message || `Dạ em đã đặt báo thức trên điện thoại lúc ${hour} giờ ${min < 10 ? '0' + min : min} phút cho anh rồi nhé! ⏰`;
+        this.addMessage('bot', reply);
+        this.showResultInCapsule(query, reply);
+        if (this.ttsEnabled) this.speak(reply);
+        return true;
+      } catch (err) {
+        console.warn('Lỗi Native setAlarm:', err);
+      }
+    }
+
+    // 2. Gọi điện thoại
+    const callMatch = lower.match(/(?:gọi|gọi điện|call)\s*(?:cho|tới|đến)?\s*(?:số)?\s*(\+?\d[\d\s.-]{7,15})/i);
+    if (callMatch) {
+      const phone = callMatch[1].replace(/[\s.-]/g, '');
+      try {
+        await native.makePhoneCall({ phoneNumber: phone });
+        const reply = `Dạ em đang thực hiện cuộc gọi đến số ${phone} cho anh rồi ạ! 📞`;
+        this.addMessage('bot', reply);
+        this.showResultInCapsule(query, reply);
+        if (this.ttsEnabled) this.speak(reply);
+        return true;
+      } catch (err) {
+        console.warn('Lỗi Native call:', err);
+      }
+    }
+
+    // 3. Đèn pin
+    if (lower.includes('bật đèn pin') || lower.includes('mở đèn pin')) {
+      try {
+        await native.toggleFlashlight({ enable: true });
+        const reply = 'Dạ em đã bật đèn pin điện thoại rồi ạ! 🔦';
+        this.addMessage('bot', reply);
+        this.showResultInCapsule(query, reply);
+        if (this.ttsEnabled) this.speak(reply);
+        return true;
+      } catch (_) {}
+    } else if (lower.includes('tắt đèn pin')) {
+      try {
+        await native.toggleFlashlight({ enable: false });
+        const reply = 'Dạ em đã tắt đèn pin rồi ạ! ✨';
+        this.addMessage('bot', reply);
+        this.showResultInCapsule(query, reply);
+        if (this.ttsEnabled) this.speak(reply);
+        return true;
+      } catch (_) {}
+    }
+
+    // 4. Mở App trên điện thoại
+    const apps = {
+      'youtube': 'com.google.android.youtube',
+      'zalo': 'com.zing.zalo',
+      'facebook': 'com.facebook.katana',
+      'messenger': 'com.facebook.orca',
+      'spotify': 'com.spotify.music',
+      'tiktok': 'com.zhiliaoapp.musically',
+      'maps': 'com.google.android.apps.maps',
+      'bản đồ': 'com.google.android.apps.maps'
+    };
+    for (const [key, pkg] of Object.entries(apps)) {
+      if (lower.includes('mở ' + key) || lower.includes('bật ' + key)) {
+        try {
+          await native.openApp({ packageName: pkg });
+          const reply = `Dạ em đã mở ứng dụng ${key.toUpperCase()} trên điện thoại cho anh rồi ạ! 🚀`;
+          this.addMessage('bot', reply);
+          this.showResultInCapsule(query, reply);
+          if (this.ttsEnabled) this.speak(reply);
+          return true;
+        } catch (_) {}
+      }
+    }
+
+    // 5. Chỉnh âm lượng điện thoại
+    const volMatch = lower.match(/(?:chỉnh|tăng|giảm|đặt)\s*âm\s*lượng\s*(?:lên|xuống|ở|mức)?\s*(\d{1,3})%/i);
+    if (volMatch) {
+      const pct = Math.min(100, Math.max(0, parseInt(volMatch[1], 10)));
+      try {
+        await native.setVolume({ percent: pct });
+        const reply = `Dạ em đã chỉnh âm lượng điện thoại về ${pct}% rồi ạ! 🔊`;
+        this.addMessage('bot', reply);
+        this.showResultInCapsule(query, reply);
+        if (this.ttsEnabled) this.speak(reply);
+        return true;
+      } catch (_) {}
+    }
+
+    return false;
   }
 
   /**

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Trợ lý Diana</string>
+    <string name="title_activity_main">Trợ lý Diana</string>
+    <string name="package_name">com.diana.voiceassistant</string>
+    <string name="custom_url_scheme">com.diana.voiceassistant</string>
+</resources>

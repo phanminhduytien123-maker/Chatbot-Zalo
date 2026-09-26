@@ -32,7 +32,10 @@ data/.unlock_pass
 # OS & PID Files
 .DS_Store
 Thumbs.db
-*.pid
-.pc_agent.pid
+# Android build files
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
 
 
