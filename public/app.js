@@ -162,6 +162,8 @@ class DianaVoiceApp {
     setInterval(() => this.checkPCStatus(), 8000);
     setTimeout(() => this.syncZaloFriends(false), 2000);
     setTimeout(() => this.checkAirSyncOnLoad(), 500);
+    // Preload MediaPipe Hands ngay khi app khởi động để giảm delay camera khi dùng Air Gesture
+    setTimeout(() => this.preloadAirGestureModel(), 2000);
 
     if (this.autoVadEnabled) {
       setTimeout(() => this.startAutoVadLoop(), 1200);
@@ -2973,15 +2975,16 @@ class DianaVoiceApp {
           this.haptic([100, 50, 150]);
           if (this.airGestureToast) {
             if (this.airToastIcon) this.airToastIcon.textContent = '✨';
-            if (this.airToastTitle) this.airToastTitle.textContent = '✨ ĐÃ TRUYỀN PHIÊN SANG PC!';
+            if (this.airToastTitle) this.airToastTitle.textContent = '✨ ĐÃ TRUYỀN SANG PC!';
             if (this.airToastDesc) this.airToastDesc.textContent = 'Trình duyệt máy tính đang mở và tiếp tục phiên chat!';
           }
+          // Tắt UI nhanh hơn - 1.5 giây thay vì 3.5 giây
           setTimeout(() => {
             this.stopAirGestureTracking(false);
-          }, 3500);
+          }, 1500);
         }
       } catch (_) {}
-    }, 1200);
+    }, 800);
 
     try {
       // Dừng stream cũ trước nếu có
@@ -3006,7 +3009,7 @@ class DianaVoiceApp {
         await video.play().catch(() => {});
       }
 
-      // 2. Khởi tạo MediaPipe Hands nếu chưa có
+      // 2. Khởi tạo MediaPipe Hands nếu chưa có (tận dụng preload nếu có)
       if (!this.airHandsDetector && window.Hands) {
         const hands = new window.Hands({
           locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -3018,7 +3021,11 @@ class DianaVoiceApp {
           minTrackingConfidence: 0.40
         });
         hands.onResults((results) => this.onAirGestureHandResults(results));
+        await hands.initialize().catch(() => {});
         this.airHandsDetector = hands;
+      } else if (this.airHandsDetector) {
+        // Cập nhật callback mới (phòng trường hợp bị ghi đè)
+        this.airHandsDetector.onResults((results) => this.onAirGestureHandResults(results));
       }
 
       // 3. Vòng lặp quét frame trực tiếp trên video (Cực nhạy, không delay)
@@ -3192,6 +3199,29 @@ class DianaVoiceApp {
     if (this.airGestureVideo) {
       this.airGestureVideo.srcObject = null;
     }
+  }
+
+  /**
+   * Preload mô hình MediaPipe Hands trong nền khi app khởi động
+   * để loại bỏ delay khi bật camera lần đầu.
+   */
+  async preloadAirGestureModel() {
+    if (this.airHandsDetector || !window.Hands) return;
+    try {
+      const hands = new window.Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 0,
+        minDetectionConfidence: 0.40,
+        minTrackingConfidence: 0.40
+      });
+      hands.onResults(() => {});
+      await hands.initialize();
+      this.airHandsDetector = hands;
+      console.log('[Air Gesture] ✅ MediaPipe Hands đã preload xong - camera sẽ bật tức thì!');
+    } catch (_) {}
   }
 
   /**
