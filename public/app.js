@@ -109,9 +109,13 @@ class DianaVoiceApp {
     this.bottomRecWaves = document.querySelectorAll('#bottomRecWaves span');
     // Voice Settings Configuration
     const defaultVoiceSettings = {
-      voicePreset: 'diana_female', // 'diana_female' | 'viet_male' | 'google_female' | 'device_system'
+      voicePreset: 'diana_female', // 'diana_female' | 'viet_male' | 'google_female' | 'moss_audio_...' | 'device_system'
+      emotionPreset: 'gentle', // 'gentle' | 'cheerful' | 'calm' | 'formal' | 'hunter' | 'custom'
       speed: 1.0,
       pitch: 1.0,
+      volume: 100, // 50 to 150 %
+      audioFx: 'studio', // 'studio' | 'bass' | 'spatial' | 'none'
+      cadence: 'normal', // 'normal' | 'short' | 'relaxed'
       systemVoiceURI: ''
     };
     try {
@@ -130,10 +134,16 @@ class DianaVoiceApp {
     this.minimaxApiKeyInput = document.getElementById('minimaxApiKeyInput');
     this.systemVoiceGroup = document.getElementById('systemVoiceGroup');
     this.systemVoiceSelect = document.getElementById('systemVoiceSelect');
+    this.emotionPresetChips = document.querySelectorAll('#emotionPresetChips .preset-chip');
+    this.voiceVolumeRange = document.getElementById('voiceVolumeRange');
+    this.volumeValueBadge = document.getElementById('volumeValueBadge');
     this.voiceSpeedRange = document.getElementById('voiceSpeedRange');
     this.speedValueBadge = document.getElementById('speedValueBadge');
     this.voicePitchRange = document.getElementById('voicePitchRange');
     this.pitchValueBadge = document.getElementById('pitchValueBadge');
+    this.voiceCadenceSelect = document.getElementById('voiceCadenceSelect');
+    this.cadenceValueBadge = document.getElementById('cadenceValueBadge');
+    this.fxCards = document.querySelectorAll('#fxOptionsGrid .fx-card');
     this.testVoiceBtn = document.getElementById('testVoiceBtn');
     this.saveVoiceBtn = document.getElementById('saveVoiceBtn');
     this.liveOrbWaveBars = document.querySelectorAll('#liveOrbWaves span');
@@ -189,6 +199,7 @@ class DianaVoiceApp {
       });
     }
 
+    // 1. Voice Engine Preset Radio Cards
     const radioCards = document.querySelectorAll('input[name="voicePreset"]');
     radioCards.forEach(radio => {
       radio.addEventListener('change', (e) => {
@@ -205,28 +216,83 @@ class DianaVoiceApp {
       });
     });
 
+    // 2. Emotion Preset Chips
+    this.emotionPresetChips = document.querySelectorAll('#emotionPresetChips .preset-chip');
+    this.emotionPresetChips.forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.preventDefault();
+        const preset = chip.dataset.preset;
+        this.applyEmotionPreset(preset, chip);
+      });
+    });
+
+    // 3. Volume & Boost Range
+    if (this.voiceVolumeRange) {
+      this.voiceVolumeRange.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        this.voiceSettings.volume = val;
+        let label = `${val}%`;
+        if (val < 90) label += ' (Nhỏ)';
+        else if (val >= 90 && val <= 110) label += ' (Chuẩn)';
+        else label += ' (Khuếch đại)';
+        if (this.volumeValueBadge) this.volumeValueBadge.textContent = label;
+        this.markCustomPreset();
+      });
+    }
+
+    // 4. Speed Range
     if (this.voiceSpeedRange) {
       this.voiceSpeedRange.addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
         this.voiceSettings.speed = val;
         let label = `${val.toFixed(2)}x`;
-        if (val <= 0.85) label += ' (Chậm)';
+        if (val <= 0.8) label += ' (Chậm)';
         else if (val >= 0.95 && val <= 1.05) label += ' (Chuẩn)';
-        else if (val > 1.05 && val <= 1.25) label += ' (Nhanh)';
+        else if (val > 1.05 && val <= 1.35) label += ' (Nhanh)';
         else label += ' (Rất nhanh)';
         if (this.speedValueBadge) this.speedValueBadge.textContent = label;
+        this.markCustomPreset();
       });
     }
 
+    // 5. Pitch Range
     if (this.voicePitchRange) {
       this.voicePitchRange.addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
         this.voiceSettings.pitch = val;
         let label = `${val.toFixed(2)}`;
-        if (val <= 0.9) label += ' (Trầm ấm)';
+        if (val <= 0.8) label += ' (Trầm sâu)';
+        else if (val <= 0.95) label += ' (Trầm ấm)';
         else if (val >= 0.95 && val <= 1.05) label += ' (Tự nhiên)';
-        else label += ' (Trong trẻo)';
+        else if (val <= 1.25) label += ' (Trong trẻo)';
+        else label += ' (Rất cao)';
         if (this.pitchValueBadge) this.pitchValueBadge.textContent = label;
+        this.markCustomPreset();
+      });
+    }
+
+    // 6. DSP Audio FX Cards
+    this.fxCards = document.querySelectorAll('#fxOptionsGrid .fx-card');
+    this.fxCards.forEach(card => {
+      card.addEventListener('click', (e) => {
+        e.preventDefault();
+        const fx = card.dataset.fx || 'none';
+        this.voiceSettings.audioFx = fx;
+        this.fxCards.forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        this.markCustomPreset();
+      });
+    });
+
+    // 7. Cadence / Pause Selector
+    if (this.voiceCadenceSelect) {
+      this.voiceCadenceSelect.addEventListener('change', (e) => {
+        this.voiceSettings.cadence = e.target.value;
+        if (this.cadenceValueBadge) {
+          const textMap = { normal: 'Tự nhiên', short: 'Nhanh gọn', relaxed: 'Khoan thai' };
+          this.cadenceValueBadge.textContent = textMap[e.target.value] || 'Tự nhiên';
+        }
+        this.markCustomPreset();
       });
     }
 
@@ -271,6 +337,58 @@ class DianaVoiceApp {
     });
   }
 
+  applyEmotionPreset(preset, chipElement) {
+    this.haptic(25);
+    this.voiceSettings.emotionPreset = preset;
+
+    const chips = document.querySelectorAll('#emotionPresetChips .preset-chip');
+    chips.forEach(c => c.classList.remove('active'));
+    if (chipElement) chipElement.classList.add('active');
+
+    if (preset === 'gentle') {
+      this.voiceSettings.pitch = 1.15;
+      this.voiceSettings.speed = 0.95;
+      this.voiceSettings.volume = 105;
+      this.voiceSettings.audioFx = 'studio';
+      this.voiceSettings.cadence = 'relaxed';
+    } else if (preset === 'cheerful') {
+      this.voiceSettings.pitch = 1.25;
+      this.voiceSettings.speed = 1.10;
+      this.voiceSettings.volume = 110;
+      this.voiceSettings.audioFx = 'none';
+      this.voiceSettings.cadence = 'short';
+    } else if (preset === 'calm') {
+      this.voiceSettings.pitch = 0.85;
+      this.voiceSettings.speed = 0.90;
+      this.voiceSettings.volume = 95;
+      this.voiceSettings.audioFx = 'bass';
+      this.voiceSettings.cadence = 'relaxed';
+    } else if (preset === 'formal') {
+      this.voiceSettings.pitch = 1.00;
+      this.voiceSettings.speed = 1.00;
+      this.voiceSettings.volume = 100;
+      this.voiceSettings.audioFx = 'studio';
+      this.voiceSettings.cadence = 'normal';
+    } else if (preset === 'hunter') {
+      this.voiceSettings.pitch = 0.90;
+      this.voiceSettings.speed = 1.05;
+      this.voiceSettings.volume = 115;
+      this.voiceSettings.audioFx = 'spatial';
+      this.voiceSettings.cadence = 'normal';
+    }
+
+    this.syncVoiceSettingsToUI();
+  }
+
+  markCustomPreset() {
+    this.voiceSettings.emotionPreset = 'custom';
+    const chips = document.querySelectorAll('#emotionPresetChips .preset-chip');
+    chips.forEach(c => {
+      if (c.dataset.preset === 'custom') c.classList.add('active');
+      else c.classList.remove('active');
+    });
+  }
+
   syncVoiceSettingsToUI() {
     const radio = document.querySelector(`input[name="voicePreset"][value="${this.voiceSettings.voicePreset}"]`);
     if (radio) {
@@ -291,19 +409,63 @@ class DianaVoiceApp {
       this.minimaxApiKeyInput.value = this.voiceSettings.minimaxApiKey || '';
     }
 
-    if (this.voiceSpeedRange) {
-      this.voiceSpeedRange.value = this.voiceSettings.speed || 1.0;
-      if (this.speedValueBadge) this.speedValueBadge.textContent = `${(this.voiceSettings.speed || 1.0).toFixed(2)}x`;
+    // Emotion Preset Chips
+    const activeChip = document.querySelector(`#emotionPresetChips .preset-chip[data-preset="${this.voiceSettings.emotionPreset || 'gentle'}"]`);
+    if (activeChip) {
+      document.querySelectorAll('#emotionPresetChips .preset-chip').forEach(c => c.classList.remove('active'));
+      activeChip.classList.add('active');
     }
 
+    // Volume Slider & Badge
+    if (this.voiceVolumeRange) {
+      const vol = parseInt(this.voiceSettings.volume || 100, 10);
+      this.voiceVolumeRange.value = vol;
+      let label = `${vol}%`;
+      if (vol < 90) label += ' (Nhỏ)';
+      else if (vol >= 90 && vol <= 110) label += ' (Chuẩn)';
+      else label += ' (Khuếch đại)';
+      if (this.volumeValueBadge) this.volumeValueBadge.textContent = label;
+    }
+
+    // Speed Slider & Badge
+    if (this.voiceSpeedRange) {
+      const spd = parseFloat(this.voiceSettings.speed) || 1.0;
+      this.voiceSpeedRange.value = spd;
+      let label = `${spd.toFixed(2)}x`;
+      if (spd <= 0.8) label += ' (Chậm)';
+      else if (spd >= 0.95 && spd <= 1.05) label += ' (Chuẩn)';
+      else if (spd > 1.05 && spd <= 1.35) label += ' (Nhanh)';
+      else label += ' (Rất nhanh)';
+      if (this.speedValueBadge) this.speedValueBadge.textContent = label;
+    }
+
+    // Pitch Slider & Badge
     if (this.voicePitchRange) {
       const p = parseFloat(this.voiceSettings.pitch) || 1.0;
       this.voicePitchRange.value = p;
       let label = `${p.toFixed(2)}`;
-      if (p <= 0.9) label += ' (Trầm ấm)';
+      if (p <= 0.8) label += ' (Trầm sâu)';
+      else if (p <= 0.95) label += ' (Trầm ấm)';
       else if (p >= 0.95 && p <= 1.05) label += ' (Tự nhiên)';
-      else label += ' (Trong trẻo)';
+      else if (p <= 1.25) label += ' (Trong trẻo)';
+      else label += ' (Rất cao)';
       if (this.pitchValueBadge) this.pitchValueBadge.textContent = label;
+    }
+
+    // DSP Audio FX Cards
+    const activeFxCard = document.querySelector(`#fxOptionsGrid .fx-card[data-fx="${this.voiceSettings.audioFx || 'studio'}"]`);
+    if (activeFxCard) {
+      document.querySelectorAll('#fxOptionsGrid .fx-card').forEach(c => c.classList.remove('active'));
+      activeFxCard.classList.add('active');
+    }
+
+    // Cadence Select
+    if (this.voiceCadenceSelect) {
+      this.voiceCadenceSelect.value = this.voiceSettings.cadence || 'normal';
+      if (this.cadenceValueBadge) {
+        const textMap = { normal: 'Tự nhiên', short: 'Nhanh gọn', relaxed: 'Khoan thai' };
+        this.cadenceValueBadge.textContent = textMap[this.voiceSettings.cadence || 'normal'] || 'Tự nhiên';
+      }
     }
   }
 
@@ -334,15 +496,21 @@ class DianaVoiceApp {
     if (this.minimaxApiKeyInput) {
       this.voiceSettings.minimaxApiKey = this.minimaxApiKeyInput.value.trim();
     }
+    if (this.voiceVolumeRange) {
+      this.voiceSettings.volume = parseInt(this.voiceVolumeRange.value, 10) || 100;
+    }
     if (this.voicePitchRange) {
       this.voiceSettings.pitch = parseFloat(this.voicePitchRange.value) || 1.0;
     }
     if (this.voiceSpeedRange) {
       this.voiceSettings.speed = parseFloat(this.voiceSpeedRange.value) || 1.0;
     }
+    if (this.voiceCadenceSelect) {
+      this.voiceSettings.cadence = this.voiceCadenceSelect.value;
+    }
     localStorage.setItem('diana_voice_settings', JSON.stringify(this.voiceSettings));
     this.closeVoiceSettingsModal();
-    this.showCapsule('idle', 'Cài đặt Giọng nói', '💾 Đã lưu tùy chọn giọng nói thành công!');
+    this.showCapsule('idle', 'Cài đặt Giọng nói', '💾 Đã lưu đầy đủ cấu hình giọng nói thành công!');
     this.scheduleCapsuleClose(3000);
   }
 
@@ -351,11 +519,17 @@ class DianaVoiceApp {
     if (this.minimaxApiKeyInput) {
       this.voiceSettings.minimaxApiKey = this.minimaxApiKeyInput.value.trim();
     }
+    if (this.voiceVolumeRange) {
+      this.voiceSettings.volume = parseInt(this.voiceVolumeRange.value, 10) || 100;
+    }
     if (this.voicePitchRange) {
       this.voiceSettings.pitch = parseFloat(this.voicePitchRange.value) || 1.0;
     }
     if (this.voiceSpeedRange) {
       this.voiceSettings.speed = parseFloat(this.voiceSpeedRange.value) || 1.0;
+    }
+    if (this.voiceCadenceSelect) {
+      this.voiceSettings.cadence = this.voiceCadenceSelect.value;
     }
     const sampleText = 'Dạ em chào anh Tiến, em là trợ lý Diana của anh ạ! Anh thấy giọng này thế nào ạ?';
     this.speak(sampleText);
@@ -1217,9 +1391,14 @@ class DianaVoiceApp {
       const apiKeyParam = this.voiceSettings?.minimaxApiKey ? `&apiKey=${encodeURIComponent(this.voiceSettings.minimaxApiKey)}` : '';
       const pitchParam = `&pitch=${encodeURIComponent(this.voiceSettings?.pitch || 1.0)}`;
       const speedParam = `&speed=${encodeURIComponent(this.voiceSettings?.speed || 1.0)}`;
-      const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}&voice=${voiceParam}${pitchParam}${speedParam}${apiKeyParam}`;
+      const volRatio = ((parseFloat(this.voiceSettings?.volume) || 100) / 100).toFixed(2);
+      const volParam = `&volume=${encodeURIComponent(volRatio)}`;
+      const cadenceParam = `&cadence=${encodeURIComponent(this.voiceSettings?.cadence || 'normal')}`;
+      
+      const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}&voice=${voiceParam}${pitchParam}${speedParam}${volParam}${cadenceParam}${apiKeyParam}`;
       const audio = new Audio(ttsUrl);
       this.currentAudio = audio;
+      audio.volume = Math.min(1.0, Math.max(0.1, parseFloat(volRatio) || 1.0));
 
       audio.onplay = () => {
         this.isSpeaking = true;

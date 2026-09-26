@@ -122,13 +122,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 3. API: Text-to-Speech (TTS) Giọng nói tiếng Việt tự nhiên cho Diana (Hỗ trợ Pitch & Speed)
+  // 3. API: Text-to-Speech (TTS) Giọng nói tiếng Việt tự nhiên cho Diana (Hỗ trợ Pitch, Speed, Volume & Cadence)
   if (url.pathname === '/api/tts') {
     let text = url.searchParams.get('text') || '';
     let voice = url.searchParams.get('voice') || 'diana_female';
     let apiKey = url.searchParams.get('apiKey') || '';
     let pitch = parseFloat(url.searchParams.get('pitch') || '1.0');
     let speed = parseFloat(url.searchParams.get('speed') || url.searchParams.get('rate') || '1.0');
+    let volume = parseFloat(url.searchParams.get('volume') || url.searchParams.get('vol') || '1.0');
+    let cadence = url.searchParams.get('cadence') || 'normal';
 
     if (!text && req.method === 'POST') {
       let body = '';
@@ -141,7 +143,9 @@ const server = http.createServer(async (req, res) => {
           apiKey = json.apiKey || apiKey;
           pitch = parseFloat(json.pitch || pitch || '1.0');
           speed = parseFloat(json.speed || json.rate || speed || '1.0');
-          await streamTTS(text, res, voice, apiKey, pitch, speed);
+          volume = parseFloat(json.volume || json.vol || volume || '1.0');
+          cadence = json.cadence || cadence || 'normal';
+          await streamTTS(text, res, voice, apiKey, pitch, speed, volume, cadence);
         } catch (_) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Lỗi parse text' }));
@@ -149,7 +153,7 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    await streamTTS(text, res, voice, apiKey, pitch, speed);
+    await streamTTS(text, res, voice, apiKey, pitch, speed, volume, cadence);
     return;
   }
 
@@ -269,13 +273,14 @@ const server = http.createServer(async (req, res) => {
   }));
 });
 
-async function callMiniMaxTTS(text, voiceId, apiKey, pitch = 1.0, speed = 1.0) {
+async function callMiniMaxTTS(text, voiceId, apiKey, pitch = 1.0, speed = 1.0, volume = 1.0) {
   const endpoint = 'https://api.minimax.chat/v1/t2a_v2';
   const key = apiKey || process.env.MINIMAX_API_KEY;
   if (!key) throw new Error('NO_MINIMAX_KEY');
 
   const pitchVal = Math.max(-12, Math.min(12, Math.round((parseFloat(pitch) - 1.0) * 20)));
   const speedVal = Math.max(0.5, Math.min(2.0, parseFloat(speed) || 1.0));
+  const volVal = Math.max(0.5, Math.min(1.5, parseFloat(volume) || 1.0));
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -290,7 +295,7 @@ async function callMiniMaxTTS(text, voiceId, apiKey, pitch = 1.0, speed = 1.0) {
       voice_setting: {
         voice_id: voiceId || 'moss_audio_881639b8-b831-11f1-80cc-aac30e71d302',
         speed: speedVal,
-        vol: 1.0,
+        vol: volVal,
         pitch: pitchVal
       },
       audio_setting: {
@@ -309,7 +314,7 @@ async function callMiniMaxTTS(text, voiceId, apiKey, pitch = 1.0, speed = 1.0) {
   throw new Error(data?.base_resp?.status_msg || 'Lỗi từ MiniMax API');
 }
 
-async function callEdgeNeuralTTS(text, voiceName = 'vi-VN-HoaiMyNeural', pitch = 1.0, speed = 1.0) {
+async function callEdgeNeuralTTS(text, voiceName = 'vi-VN-HoaiMyNeural', pitch = 1.0, speed = 1.0, volume = 1.0) {
   const tts = new MsEdgeTTS();
   await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
 
@@ -319,7 +324,10 @@ async function callEdgeNeuralTTS(text, voiceName = 'vi-VN-HoaiMyNeural', pitch =
   const speedPercent = Math.round((parseFloat(speed) - 1.0) * 100);
   const speedStr = speedPercent >= 0 ? `+${speedPercent}%` : `${speedPercent}%`;
 
-  const { audioStream } = tts.toStream(text, { pitch: pitchStr, rate: speedStr });
+  const volumePercent = Math.round((parseFloat(volume) - 1.0) * 100);
+  const volumeStr = volumePercent >= 0 ? `+${volumePercent}%` : `${volumePercent}%`;
+
+  const { audioStream } = tts.toStream(text, { pitch: pitchStr, rate: speedStr, volume: volumeStr });
   const chunks = [];
   return new Promise((resolve, reject) => {
     audioStream.on('data', (chunk) => chunks.push(chunk));
@@ -328,23 +336,30 @@ async function callEdgeNeuralTTS(text, voiceName = 'vi-VN-HoaiMyNeural', pitch =
   });
 }
 
-async function streamTTS(text, res, voice = 'diana_female', apiKey = '', pitch = 1.0, speed = 1.0) {
+async function streamTTS(text, res, voice = 'diana_female', apiKey = '', pitch = 1.0, speed = 1.0, volume = 1.0, cadence = 'normal') {
   if (!text || !text.trim()) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Text rỗng.' }));
   }
 
-  const cleanText = text
+  let cleanText = text
     .replace(/[*_#`~]/g, '')
     .replace(/[\u{1F600}-\u{1F6FF}|[\u{1F300}-\u{1F5FF}|[\u{1F900}-\u{1F9FF}|[\u{2600}-\u{26FF}]/gu, '')
     .replace(/\n+/g, '. ')
     .trim();
 
+  // Tùy biến nhịp điệu ngắt nghỉ câu (Cadence)
+  if (cadence === 'short') {
+    cleanText = cleanText.replace(/[,;:]\s*/g, ' ').replace(/\.{2,}/g, '.');
+  } else if (cadence === 'relaxed') {
+    cleanText = cleanText.replace(/([.?!])\s+/g, '$1... ');
+  }
+
   // 1. Thử gọi MiniMax Neural TTS nếu chọn giọng moss_audio hoặc typhoeus
   if (voice.startsWith('moss_audio_') || voice === 'typhoeus' || (apiKey && voice !== 'google_female')) {
     try {
       const voiceId = voice.startsWith('moss_audio_') ? voice : 'moss_audio_881639b8-b831-11f1-80cc-aac30e71d302';
-      const miniMaxBuffer = await callMiniMaxTTS(cleanText, voiceId, apiKey, pitch, speed);
+      const miniMaxBuffer = await callMiniMaxTTS(cleanText, voiceId, apiKey, pitch, speed, volume);
       res.writeHead(200, {
         'Content-Type': 'audio/mpeg',
         'Content-Length': miniMaxBuffer.length,
@@ -360,7 +375,7 @@ async function streamTTS(text, res, voice = 'diana_female', apiKey = '', pitch =
   if (voice === 'diana_female' || voice === 'viet_male' || !voice) {
     try {
       const edgeVoice = voice === 'viet_male' ? 'vi-VN-NamMinhNeural' : 'vi-VN-HoaiMyNeural';
-      const edgeBuffer = await callEdgeNeuralTTS(cleanText, edgeVoice, pitch, speed);
+      const edgeBuffer = await callEdgeNeuralTTS(cleanText, edgeVoice, pitch, speed, volume);
       if (edgeBuffer && edgeBuffer.length > 500) {
         res.writeHead(200, {
           'Content-Type': 'audio/mpeg',

@@ -430,32 +430,119 @@
           <select class="custom-select" id="systemVoiceSelect"></select>
         </div>
 
-        <!-- 2. Speed Slider -->
+        <!-- 2. Emotion Presets (Sắc thái cảm xúc) -->
         <div class="setting-group">
-          <div class="setting-header-row">
-            <label class="setting-label" for="voiceSpeedRange">Tốc độ đọc</label>
-            <span class="setting-value-badge" id="speedValueBadge">1.0x (Chuẩn)</span>
-          </div>
-          <input type="range" id="voiceSpeedRange" min="0.75" max="1.4" step="0.05" value="1.0" class="custom-range">
-          <div class="range-markers">
-            <span>Chậm (0.75x)</span>
-            <span>Chuẩn (1.0x)</span>
-            <span>Nhanh (1.4x)</span>
+          <label class="setting-label">Sắc thái & Cảm xúc</label>
+          <div class="emotion-preset-chips" id="emotionPresetChips">
+            <button type="button" class="preset-chip active" data-preset="gentle" data-pitch="1.15" data-speed="0.95" data-vol="105" data-fx="studio" data-cadence="relaxed">
+              <span>🌸</span> Ngọt ngào
+            </button>
+            <button type="button" class="preset-chip" data-preset="cheerful" data-pitch="1.25" data-speed="1.10" data-vol="110" data-fx="none" data-cadence="short">
+              <span>⚡</span> Năng động
+            </button>
+            <button type="button" class="preset-chip" data-preset="calm" data-pitch="0.85" data-speed="0.90" data-vol="95" data-fx="bass" data-cadence="relaxed">
+              <span>🌙</span> Trầm ấm
+            </button>
+            <button type="button" class="preset-chip" data-preset="formal" data-pitch="1.00" data-speed="1.00" data-vol="100" data-fx="studio" data-cadence="normal">
+              <span>🎙️</span> Chuyên nghiệp
+            </button>
+            <button type="button" class="preset-chip" data-preset="hunter" data-pitch="0.90" data-speed="1.05" data-vol="115" data-fx="spatial" data-cadence="normal">
+              <span>🏹</span> Sắc sảo
+            </button>
+            <button type="button" class="preset-chip" data-preset="custom">
+              <span>⚙️</span> Tự do
+            </button>
           </div>
         </div>
 
-        <!-- 3. Pitch / Tone -->
+        <!-- 3. Volume & Boost Slider -->
+        <div class="setting-group">
+          <div class="setting-header-row">
+            <label class="setting-label" for="voiceVolumeRange">Âm lượng & Khuếch đại</label>
+            <span class="setting-value-badge" id="volumeValueBadge">100% (Chuẩn)</span>
+          </div>
+          <input type="range" id="voiceVolumeRange" min="50" max="150" step="5" value="100" class="custom-range">
+          <div class="range-markers">
+            <span>Nhỏ (50%)</span>
+            <span>Chuẩn (100%)</span>
+            <span>Khuếch đại (150%)</span>
+          </div>
+        </div>
+
+        <!-- 4. Speed Slider (0.5x - 2.0x) -->
+        <div class="setting-group">
+          <div class="setting-header-row">
+            <label class="setting-label" for="voiceSpeedRange">Tốc độ đọc (Speed)</label>
+            <span class="setting-value-badge" id="speedValueBadge">1.00x (Chuẩn)</span>
+          </div>
+          <input type="range" id="voiceSpeedRange" min="0.5" max="2.0" step="0.05" value="1.0" class="custom-range">
+          <div class="range-markers">
+            <span>Chậm (0.5x)</span>
+            <span>Chuẩn (1.0x)</span>
+            <span>Nhanh (2.0x)</span>
+          </div>
+        </div>
+
+        <!-- 5. Pitch Slider (0.6x - 1.5x) -->
         <div class="setting-group">
           <div class="setting-header-row">
             <label class="setting-label" for="voicePitchRange">Cao độ giọng (Pitch)</label>
-            <span class="setting-value-badge" id="pitchValueBadge">1.0 (Tự nhiên)</span>
+            <span class="setting-value-badge" id="pitchValueBadge">1.00 (Tự nhiên)</span>
           </div>
-          <input type="range" id="voicePitchRange" min="0.8" max="1.3" step="0.05" value="1.0" class="custom-range">
+          <input type="range" id="voicePitchRange" min="0.6" max="1.5" step="0.05" value="1.0" class="custom-range">
           <div class="range-markers">
-            <span>Trầm ấm</span>
-            <span>Tự nhiên</span>
-            <span>Trong trẻo</span>
+            <span>Trầm sâu (0.6x)</span>
+            <span>Tự nhiên (1.0x)</span>
+            <span>Trong trẻo (1.5x)</span>
           </div>
+        </div>
+
+        <!-- 6. DSP Audio FX Filters -->
+        <div class="setting-group">
+          <label class="setting-label">Bộ lọc hiệu ứng Studio (DSP Audio FX)</label>
+          <div class="fx-options-grid" id="fxOptionsGrid">
+            <button type="button" class="fx-card active" data-fx="studio">
+              <span class="fx-icon">🎧</span>
+              <div class="fx-meta">
+                <strong>Studio Clarity</strong>
+                <small>Lọc trong trẻo, sáng giọng</small>
+              </div>
+            </button>
+            <button type="button" class="fx-card" data-fx="bass">
+              <span class="fx-icon">🔊</span>
+              <div class="fx-meta">
+                <strong>Warm Bass</strong>
+                <small>Trầm ấm & dày dặn</small>
+              </div>
+            </button>
+            <button type="button" class="fx-card" data-fx="spatial">
+              <span class="fx-icon">🌌</span>
+              <div class="fx-meta">
+                <strong>Spatial 3D</strong>
+                <small>Vang không gian tương lai</small>
+              </div>
+            </button>
+            <button type="button" class="fx-card" data-fx="none">
+              <span class="fx-icon">🍃</span>
+              <div class="fx-meta">
+                <strong>Mộc tự nhiên</strong>
+                <small>Âm thanh gốc nguyên bản</small>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- 7. Cadence / Pause Duration -->
+        <div class="setting-group">
+          <div class="setting-header-row">
+            <label class="setting-label" for="voiceCadenceSelect">Nhịp điệu & Ngắt nghỉ câu</label>
+            <span class="setting-value-badge" id="cadenceValueBadge">Tự nhiên</span>
+          </div>
+          <select class="custom-select" id="voiceCadenceSelect">
+            <option value="normal">Tự nhiên - Ngắt nghỉ tiêu chuẩn</option>
+            <option value="short">Nhanh gọn - Liền mạch, ít ngắt nghỉ</option>
+            <option value="relaxed">Khoan thai - Ngắt nghỉ rõ ràng, truyền cảm</option>
+          </select>
         </div>
       </div>
 
