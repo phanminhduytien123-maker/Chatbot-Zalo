@@ -274,7 +274,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function callMiniMaxTTS(text, voiceId, apiKey, pitch = 1.0, speed = 1.0, volume = 1.0) {
-  const endpoint = 'https://api.minimax.chat/v1/t2a_v2';
   const key = apiKey || process.env.MINIMAX_API_KEY;
   if (!key) throw new Error('NO_MINIMAX_KEY');
 
@@ -282,36 +281,55 @@ async function callMiniMaxTTS(text, voiceId, apiKey, pitch = 1.0, speed = 1.0, v
   const speedVal = Math.max(0.5, Math.min(2.0, parseFloat(speed) || 1.0));
   const volVal = Math.max(0.5, Math.min(1.5, parseFloat(volume) || 1.0));
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'speech-02-hd',
-      text: text,
-      stream: false,
-      voice_setting: {
-        voice_id: voiceId || 'moss_audio_881639b8-b831-11f1-80cc-aac30e71d302',
-        speed: speedVal,
-        vol: volVal,
-        pitch: pitchVal
-      },
-      audio_setting: {
-        sample_rate: 32000,
-        bitrate: 128000,
-        format: 'mp3',
-        channel: 1
-      }
-    })
-  });
+  const endpoints = key.startsWith('sk-api-') 
+    ? ['https://api.minimax.io/v1/t2a_v2', 'https://api.minimaxi.chat/v1/t2a_v2', 'https://api.minimax.chat/v1/t2a_v2']
+    : ['https://api.minimax.chat/v1/t2a_v2', 'https://api.minimax.io/v1/t2a_v2', 'https://api.minimaxi.chat/v1/t2a_v2'];
 
-  const data = await response.json();
-  if (data && data.data && data.data.audio) {
-    return Buffer.from(data.data.audio, 'hex');
+  let lastErrMsg = '';
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'speech-02-hd',
+          text: text,
+          stream: false,
+          voice_setting: {
+            voice_id: voiceId || 'moss_audio_881639b8-b831-11f1-80cc-aac30e71d302',
+            speed: speedVal,
+            vol: volVal,
+            pitch: pitchVal
+          },
+          audio_setting: {
+            sample_rate: 32000,
+            bitrate: 128000,
+            format: 'mp3',
+            channel: 1
+          }
+        })
+      });
+
+      const data = await response.json();
+      if (data && data.data && data.data.audio) {
+        return Buffer.from(data.data.audio, 'hex');
+      }
+      if (data?.base_resp?.status_msg) {
+        lastErrMsg = data.base_resp.status_msg;
+        if (data.base_resp.status_code === 1008) {
+          throw new Error('MiniMax insufficient balance (tài khoản hết số dư / chưa nạp credit)');
+        }
+      }
+    } catch (err) {
+      lastErrMsg = err.message;
+      if (err.message.includes('insufficient balance')) throw err;
+    }
   }
-  throw new Error(data?.base_resp?.status_msg || 'Lỗi từ MiniMax API');
+
+  throw new Error(lastErrMsg || 'Lỗi từ MiniMax API');
 }
 
 async function callEdgeNeuralTTS(text, voiceName = 'vi-VN-HoaiMyNeural', pitch = 1.0, speed = 1.0, volume = 1.0) {
