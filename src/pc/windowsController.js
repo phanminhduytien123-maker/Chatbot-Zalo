@@ -3,7 +3,11 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import net from 'net';
+import { fileURLToPath } from 'url';
 import config from '../config/config.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 
 export class WindowsController {
@@ -279,67 +283,71 @@ Write-Output $res
   /**
    * Tắt màn hình máy tính (Màn hình đen tiết kiệm điện mà không khóa máy)
    */
-  static turnOffDisplay() {
-    return new Promise((resolve) => {
-      const psScript = `
+  static async turnOffDisplay() {
+    const psScript = `
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 public class DisplayHelper {
-    [DllImport("user32.dll")]
-    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int SendMessage(int hWnd, int Msg, int wParam, int lParam);
     public static void TurnOff() {
-        PostMessage((IntPtr)0xFFFF, 0x0112, (IntPtr)0xF170, (IntPtr)2);
+        Thread.Sleep(600);
+        SendMessage(0xFFFF, 0x0112, 0xF170, 2);
     }
 }
 '@
 [DisplayHelper]::TurnOff()
 Write-Output "OK"
-      `.trim();
+    `.trim();
 
-      const base64Script = Buffer.from(psScript, 'utf16le').toString('base64');
-      exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
-        if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: '🖥️ Đã tắt màn hình máy tính!' });
-      });
-    });
+    const res = await WindowsController.runPowerShell(psScript);
+    if (res.err || (res.stderr && !res.stdout.includes('OK'))) {
+      return { success: false, error: res.stderr || res.err?.message || 'Lỗi khi tắt màn hình máy tính' };
+    }
+    return { success: true, message: '🖥️ Đã tắt màn hình máy tính!' };
   }
 
   /**
    * Bật sáng lại màn hình máy tính
    */
-  static wakeDisplay() {
-    return new Promise((resolve) => {
-      const psScript = `
+  static async wakeDisplay() {
+    const psScript = `
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 public class DisplayHelper {
-    [DllImport("user32.dll")]
-    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int SendMessage(int hWnd, int Msg, int wParam, int lParam);
     [DllImport("user32.dll")]
     public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
     [DllImport("user32.dll")]
     public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
     public static void Wake() {
-        PostMessage((IntPtr)0xFFFF, 0x0112, (IntPtr)0xF170, (IntPtr)(-1));
-        mouse_event(1, 0, 1, 0, 0);
-        mouse_event(1, 0, -1, 0, 0);
+        SendMessage(0xFFFF, 0x0112, 0xF170, -1);
+        for (int i = 0; i < 3; i++) {
+            mouse_event(1, 2, 2, 0, 0);
+            Thread.Sleep(30);
+            mouse_event(1, -2, -2, 0, 0);
+            Thread.Sleep(30);
+        }
         keybd_event(0x1B, 0, 0, UIntPtr.Zero);
+        Thread.Sleep(30);
         keybd_event(0x1B, 0, 2, UIntPtr.Zero);
     }
 }
 '@
 [DisplayHelper]::Wake()
 Write-Output "OK"
-      `.trim();
+    `.trim();
 
-      const base64Script = Buffer.from(psScript, 'utf16le').toString('base64');
-      exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
-        if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: '💡 Đã bật sáng màn hình máy tính!' });
-      });
-    });
+    const res = await WindowsController.runPowerShell(psScript);
+    if (res.err || (res.stderr && !res.stdout.includes('OK'))) {
+      return { success: false, error: res.stderr || res.err?.message || 'Lỗi khi bật màn hình máy tính' };
+    }
+    return { success: true, message: '💡 Đã bật sáng màn hình máy tính!' };
   }
 
 
@@ -669,29 +677,44 @@ Write-Output "OK"
           }
       }
 
-      # 2. Khởi chạy thông qua Windows Shell (Shell.Application) để luôn bật ở giao diện người dùng
-      try {
-          $shell = New-Object -ComObject Shell.Application
-          $shell.ShellExecute($targetPath, $argStr, "", "open", 1)
-          Write-Output "LAUNCHED_SHELL"
-      } catch {
+      # 2. Khởi chạy ứng dụng hoặc URL
+      if ($isUrl) {
+          $chromePath = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+          $edgePath = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+          if (Test-Path $chromePath) {
+              Start-Process $chromePath -ArgumentList "--new-window", "$targetPath"
+              Write-Output "LAUNCHED_CHROME"
+          } elseif (Test-Path $edgePath) {
+              Start-Process $edgePath -ArgumentList "--new-window", "$targetPath"
+              Write-Output "LAUNCHED_EDGE"
+          } else {
+              Start-Process "$targetPath"
+              Write-Output "LAUNCHED_DEFAULT"
+          }
+      } else {
           try {
-              $psi = New-Object System.Diagnostics.ProcessStartInfo
-              $psi.FileName = $targetPath
-              if ($argStr) { $psi.Arguments = $argStr }
-              $psi.UseShellExecute = $true
-              $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
-              [System.Diagnostics.Process]::Start($psi) | Out-Null
-              Write-Output "LAUNCHED_PSI"
+              $shell = New-Object -ComObject Shell.Application
+              $shell.ShellExecute($targetPath, $argStr, "", "open", 1)
+              Write-Output "LAUNCHED_SHELL"
           } catch {
-              Write-Output "ERR:$($_.Exception.Message)"
+              try {
+                  $psi = New-Object System.Diagnostics.ProcessStartInfo
+                  $psi.FileName = $targetPath
+                  if ($argStr) { $psi.Arguments = $argStr }
+                  $psi.UseShellExecute = $true
+                  $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+                  [System.Diagnostics.Process]::Start($psi) | Out-Null
+                  Write-Output "LAUNCHED_PSI"
+              } catch {
+                  Write-Output "ERR:$($_.Exception.Message)"
+              }
           }
       }
 
       # 3. Kích hoạt và kéo cửa sổ ứng dụng hoặc trình duyệt lên vị trí nổi bật (Foreground)
       Start-Sleep -Milliseconds 600
       if ($isUrl) {
-          $browserProcs = Get-Process chrome, msedge, brave, coccoc, firefox, iexplore -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
+          $browserProcs = Get-Process chrome, msedge, brave, coccoc, firefox -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
           foreach ($bp in $browserProcs) {
               [Win32Gui]::ForceForeground($bp.MainWindowHandle)
           }
@@ -967,6 +990,134 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
       });
     });
   }
+
+  static activeAirChild = null;
+  static activeAirSession = null;
+  static airGestureStatus = 'IDLE'; // 'IDLE' | 'LISTENING' | 'COMPLETED'
+
+  /**
+   * Khởi động bộ nhận diện cử chỉ Mở Bàn Tay qua Webcam PC có cửa sổ trực quan nổi trên cùng
+   * @param {number} timeoutSeconds Thời gian tối đa chờ cử chỉ (mặc định 86400s / 24 giờ)
+   * @param {object} sessionData Dữ liệu phiên chat cần đồng bộ
+   */
+  static startAirGestureDetector(timeoutSeconds = 86400, sessionData = null) {
+    if (sessionData) {
+      WindowsController.activeAirSession = sessionData;
+    }
+
+    // Nếu tiến trình Python nhận diện Webcam đang chạy, chỉ cần cập nhật sessionData mà không tạo thêm tiến trình
+    if (WindowsController.activeAirChild && !WindowsController.activeAirChild.killed) {
+      console.log('[AirGesture PC] Webcam đang hoạt động ở chế độ chờ sẵn, đã cập nhật session data!');
+      WindowsController.airGestureStatus = 'LISTENING';
+      return Promise.resolve({
+        success: true,
+        message: 'Webcam đang chạy và chờ cử chỉ mở bàn tay.'
+      });
+    }
+
+    return new Promise((resolve) => {
+      const scriptPath = path.resolve(__dirname, 'airGesturePC.py');
+      if (!fs.existsSync(scriptPath)) {
+        return resolve({ success: false, error: 'Không tìm thấy file airGesturePC.py' });
+      }
+
+      const activeSession = WindowsController.activeAirSession || sessionData;
+      const sessionId = activeSession?.id || `air_${Date.now()}`;
+      const targetUrl = `https://diana-h73u.onrender.com/?air_sync=1&session_id=${encodeURIComponent(sessionId)}`;
+
+      console.log(`[AirGesture PC] 📹 Đang mở cửa sổ Webcam nhận diện cử chỉ Mở Bàn Tay (Timeout: ${timeoutSeconds}s)...`);
+      WindowsController.airGestureStatus = 'LISTENING';
+      
+      const child = spawn('python', [scriptPath, timeoutSeconds.toString(), targetUrl], {
+        cwd: path.resolve(__dirname, '..', '..'),
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      WindowsController.activeAirChild = child;
+      let dropDetected = false;
+
+      child.stdout.on('data', (data) => {
+        const text = data.toString();
+        console.log(`[AirGesture PC Stdout]: ${text.trim()}`);
+        if (text.includes('DROP_DETECTED')) {
+          dropDetected = true;
+          WindowsController.airGestureStatus = 'COMPLETED';
+          
+          const currentSession = WindowsController.activeAirSession || sessionData;
+          const currentSessionId = currentSession?.id || sessionId;
+          const finalUrl = `https://diana-h73u.onrender.com/?air_sync=1&session_id=${encodeURIComponent(currentSessionId)}`;
+          console.log(`[AirGesture PC] 🚀 Cử chỉ Mở Bàn Tay phát hiện! Mở link: ${finalUrl}`);
+          
+          // Mở trực tiếp trình duyệt với cờ --new-window để phá vỡ Efficiency Mode của Windows 11
+          const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+          const edgePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+          
+          if (fs.existsSync(chromePath)) {
+            spawn(chromePath, ['--new-window', finalUrl], { detached: true, stdio: 'ignore' }).unref();
+          } else if (fs.existsSync(edgePath)) {
+            spawn(edgePath, ['--new-window', finalUrl], { detached: true, stdio: 'ignore' }).unref();
+          } else {
+            exec(`powershell.exe -NoProfile -Command "Start-Process '${finalUrl}'"`);
+          }
+          
+          WindowsController.openAppOrUrl(finalUrl);
+          WindowsController.showToastNotification('✨ Diana Air Gesture', 'Đã tiếp nhận phiên trò chuyện từ điện thoại!');
+
+          setTimeout(() => {
+            if (WindowsController.airGestureStatus === 'COMPLETED') {
+              WindowsController.airGestureStatus = 'IDLE';
+            }
+          }, 15000);
+        }
+      });
+
+      child.stderr.on('data', (data) => {
+        const errText = data.toString();
+        if (!errText.includes('TF_ENABLE_ONEDNN_OPTS') && !errText.includes('TensorFlow Lite') && !errText.includes('Logging before') && !errText.includes('inference_feedback_manager')) {
+          console.warn(`[AirGesture PC Stderr]: ${errText.trim()}`);
+        }
+      });
+
+      child.on('close', (code) => {
+        WindowsController.activeAirChild = null;
+        if (!dropDetected) {
+          WindowsController.airGestureStatus = 'IDLE';
+        }
+        console.log(`[AirGesture PC] Tiến trình kết thúc với mã: ${code}, dropDetected: ${dropDetected}`);
+      });
+
+      child.on('error', (err) => {
+        WindowsController.activeAirChild = null;
+        WindowsController.airGestureStatus = 'IDLE';
+        console.error('[AirGesture PC] Lỗi khởi động Python:', err);
+      });
+
+      // Phản hồi thành công ngay lập tức để không block vòng lặp nhận lệnh
+      resolve({
+        success: true,
+        message: '📹 Đã mở cửa sổ Webcam và đang chờ cử chỉ xòe mở bàn tay trên PC!'
+      });
+    });
+  }
+
+  /**
+   * Tắt cửa sổ Webcam và dừng bộ nhận diện cử chỉ trên PC
+   */
+  static stopAirGestureDetector() {
+    WindowsController.airGestureStatus = 'IDLE';
+    if (WindowsController.activeAirChild) {
+      try {
+        WindowsController.activeAirChild.kill('SIGTERM');
+      } catch (_) {}
+      WindowsController.activeAirChild = null;
+      console.log('[AirGesture PC] ⏹️ Đã tắt Webcam máy tính theo yêu cầu.');
+      return { success: true, message: 'Đã tắt Webcam máy tính.' };
+    }
+    return { success: true, message: 'Webcam hiện không hoạt động.' };
+  }
 }
 
 export default WindowsController;
+
+
+

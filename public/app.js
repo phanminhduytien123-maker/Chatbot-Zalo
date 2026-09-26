@@ -47,6 +47,12 @@ class DianaVoiceApp {
     this.hasMoved = false;
     this.capsuleAutoCloseTimer = null;
     this.capsuleTouchStartY = 0;
+    this.pendingContactSelection = null;
+    this.zaloFriendsList = [];
+    try {
+      const savedFriends = localStorage.getItem('diana_zalo_friends');
+      if (savedFriends) this.zaloFriendsList = JSON.parse(savedFriends);
+    } catch (_) {}
 
     // DOM Elements
     this.appContainer = document.getElementById('appContainer');
@@ -83,6 +89,23 @@ class DianaVoiceApp {
     this.dotToggleBtn = document.getElementById('dotToggleBtn');
     this.pipToggleBtn = document.getElementById('pipToggleBtn');
     this.clearChatBtn = document.getElementById('clearChatBtn');
+    
+    // Air Gesture Elements (Huawei Grab & Drop Transfer - Chạy ngầm hoàn toàn, 0 UI Camera)
+    this.airGestureBtn = document.getElementById('airGestureBtn');
+    this.airGestureBadgeDot = document.getElementById('airGestureBadgeDot');
+    this.airGestureToast = document.getElementById('airGestureToast');
+    this.airToastIcon = document.getElementById('airToastIcon');
+    this.airToastTitle = document.getElementById('airToastTitle');
+    this.airToastDesc = document.getElementById('airToastDesc');
+    this.airToastCloseBtn = document.getElementById('airToastCloseBtn');
+    this.airGestureVideo = document.getElementById('airGestureVideo');
+
+    this.isAirGestureActive = false;
+    this.airHandsDetector = null;
+    this.airCameraUtils = null;
+    this.airGestureStream = null;
+    this.consecutiveGrabFrames = 0;
+    this.chatHistory = [];
     
     // Live Voice Overlay Elements
     this.liveVoiceOverlay = document.getElementById('liveVoiceOverlay');
@@ -137,6 +160,8 @@ class DianaVoiceApp {
     this.updateAutoVadButtonState();
     this.checkPCStatus();
     setInterval(() => this.checkPCStatus(), 8000);
+    setTimeout(() => this.syncZaloFriends(false), 2000);
+    setTimeout(() => this.checkAirSyncOnLoad(), 500);
 
     if (this.autoVadEnabled) {
       setTimeout(() => this.startAutoVadLoop(), 1200);
@@ -818,16 +843,40 @@ class DianaVoiceApp {
       const reader = new FileReader();
       reader.readAsDataURL(audioBlob);
       reader.onloadend = async () => {
-        const base64Audio = reader.result.split(',')[1];
+        const base64Audio = (reader.result || '').split(',')[1] || '';
+        let response = null;
+        let usedUrl = this.getServerUrl();
+        try {
+          response = await fetch(usedUrl + '/api/voice-audio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              audio: base64Audio,
+              mimeType: mimeType
+            })
+          });
+        } catch (firstErr) {
+          console.warn(`[Diana Audio] Gửi tới ${usedUrl} thất bại, thử các IP dự phòng...`, firstErr);
+          const fallbacks = ['http://192.168.100.221:3000', 'http://127.0.0.1:3000', 'http://100.105.204.3:3000'].filter(u => u !== usedUrl);
+          for (const fb of fallbacks) {
+            try {
+              response = await fetch(fb + '/api/voice-audio', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ audio: base64Audio, mimeType })
+              });
+              if (response && response.ok) {
+                this.activeServerUrl = fb;
+                localStorage.setItem('diana_server_url', fb);
+                break;
+              }
+            } catch (_) {}
+          }
+        }
 
-        const response = await fetch('/api/voice-audio', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            audio: base64Audio,
-            mimeType: mimeType
-          })
-        });
+        if (!response) {
+          throw new Error('Không thể kết nối đến máy tính PC.');
+        }
 
         const data = await response.json();
 
@@ -885,6 +934,373 @@ class DianaVoiceApp {
   }
 
   /**
+   * Chuẩn hóa bỏ dấu tiếng Việt để tìm kiếm danh bạ và nhận diện số thứ tự
+   */
+  removeVietnameseAccents(str) {
+    if (!str) return '';
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toLowerCase()
+      .trim();
+  }
+
+  /**
+   * Đồng bộ danh sách bạn bè Zalo chính thức từ máy chủ
+   */
+  async syncZaloFriends(forceRefresh = false) {
+    try {
+      const url = `${this.getServerUrl()}/api/zalo/friends${forceRefresh ? '/scan' : ''}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.friends)) {
+        this.zaloFriendsList = data.friends;
+        localStorage.setItem('diana_zalo_friends', JSON.stringify(data.friends));
+        console.log(`[Diana Friends] Đã đồng bộ ${data.friends.length} bạn bè Zalo.`);
+        return this.zaloFriendsList;
+      }
+    } catch (err) {
+      console.warn('[Diana Friends] Không thể đồng bộ bạn bè Zalo:', err);
+    }
+    return this.zaloFriendsList || [];
+  }
+
+  /**
+   * Tìm kiếm bạn bè Zalo chính thức (Ưu tiên quét bạn bè thật, không lấy số lạ)
+   */
+  async searchZaloFriends(targetName) {
+    if (!targetName) return [];
+    
+    // Nếu danh sách chưa có trong bộ nhớ, tải về ngay
+    if (!this.zaloFriendsList || this.zaloFriendsList.length === 0) {
+      await this.syncZaloFriends(false);
+    }
+
+    const removeAccents = (str) => {
+      if (!str) return '';
+      return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().trim();
+    };
+
+    const normQuery = removeAccents(targetName);
+    const queryWords = normQuery.split(/\s+/).filter(Boolean);
+
+    const scored = [];
+    const addedKeys = new Set();
+
+    // 1. Quét danh sách bạn bè Zalo chính thức từ máy chủ
+    if (Array.isArray(this.zaloFriendsList)) {
+      for (const f of this.zaloFriendsList) {
+        const name = f.displayName || f.zaloName;
+        const normName = removeAccents(name);
+        const normZaloName = removeAccents(f.zaloName);
+
+        let score = 0;
+        if (normName === normQuery || normZaloName === normQuery) {
+          score = 120;
+        } else if (normName.startsWith(normQuery) || normZaloName.startsWith(normQuery)) {
+          score = 100;
+        } else if (normName.includes(' ' + normQuery + ' ') || normName.endsWith(' ' + normQuery) || normName.startsWith(normQuery + ' ')) {
+          score = 80;
+        } else if (normName.includes(normQuery) || normZaloName.includes(normQuery)) {
+          score = 60;
+        } else {
+          let allWords = true;
+          for (const w of queryWords) {
+            if (!normName.includes(w) && !normZaloName.includes(w)) {
+              allWords = false;
+              break;
+            }
+          }
+          if (allWords && queryWords.length > 0) score = 50;
+        }
+
+        if (score > 0) {
+          const item = {
+            name: name,
+            zaloName: f.zaloName,
+            userId: f.userId,
+            phoneNumber: f.phoneNumber || '',
+            photo: f.avatar || '',
+            isZaloFriend: true,
+            score: score
+          };
+          scored.push(item);
+          addedKeys.add(f.userId);
+        }
+      }
+    }
+
+    // 2. Quét thêm từ Android Contacts Provider nếu có liên kết Zalo (zaloDataId)
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.DianaNative) {
+      try {
+        const res = await window.Capacitor.Plugins.DianaNative.searchContacts({ name: targetName, onlyZaloFriends: true });
+        if (res && res.contacts) {
+          for (const c of res.contacts) {
+            if (c.zaloDataId) {
+              const matched = scored.find(s => s.name === c.name || (c.phoneNumber && s.phoneNumber && s.phoneNumber.includes(c.phoneNumber)));
+              if (matched) {
+                matched.zaloDataId = c.zaloDataId;
+                if (!matched.photo && c.photo) matched.photo = c.photo;
+              } else {
+                scored.push({
+                  name: c.name,
+                  phoneNumber: c.phoneNumber,
+                  photo: c.photo || '',
+                  zaloDataId: c.zaloDataId,
+                  isZaloFriend: true,
+                  score: 75
+                });
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored;
+  }
+
+  /**
+   * Tạo giao diện Card danh sách toàn bộ bạn bè Zalo
+   */
+  renderZaloFriendsListCard(friends) {
+    const itemsHtml = friends.map((f, idx) => {
+      const avatarHtml = f.avatar ? `<img src="${f.avatar}" class="contact-choice-avatar-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" /><div class="contact-choice-avatar" style="display:none;">${(f.displayName || f.zaloName || 'Z').charAt(0).toUpperCase()}</div>` : `<div class="contact-choice-avatar">${(f.displayName || f.zaloName || 'Z').charAt(0).toUpperCase()}</div>`;
+      const zaloNameSub = (f.zaloName && f.zaloName !== f.displayName) ? `<div class="contact-choice-sub">Zalo: ${this.escapeHtml(f.zaloName)}</div>` : '';
+      const phoneSub = f.phoneNumber ? `<div class="contact-choice-phone">${this.escapeHtml(f.phoneNumber)}</div>` : '';
+
+      return `
+        <div class="zalo-friend-item">
+          <div class="contact-choice-badge">${idx + 1}</div>
+          ${avatarHtml}
+          <div class="contact-choice-info">
+            <div class="contact-choice-name">${this.escapeHtml(f.displayName || f.zaloName)} <span class="contact-zalo-badge">Bạn bè</span></div>
+            ${zaloNameSub}
+            ${phoneSub}
+          </div>
+          <div class="zalo-friend-actions">
+            <button class="zalo-quick-action-btn" title="Nhắn tin" onclick="event.stopPropagation(); window.dianaApp.executeContactAction({ name: '${this.escapeHtml(f.displayName || f.zaloName)}', userId: '${f.userId}', phoneNumber: '${f.phoneNumber || ''}' }, 'zalo', 'chat')">💬</button>
+            <button class="zalo-quick-action-btn" title="Gọi thoại" onclick="event.stopPropagation(); window.dianaApp.executeContactAction({ name: '${this.escapeHtml(f.displayName || f.zaloName)}', userId: '${f.userId}', phoneNumber: '${f.phoneNumber || ''}' }, 'zalo', 'call')">📞</button>
+            <button class="zalo-quick-action-btn" title="Gọi video" onclick="event.stopPropagation(); window.dianaApp.executeContactAction({ name: '${this.escapeHtml(f.displayName || f.zaloName)}', userId: '${f.userId}', phoneNumber: '${f.phoneNumber || ''}' }, 'zalo', 'video')">📹</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="zalo-friends-card">
+        <div class="contact-disambig-header">
+          <div class="contact-disambig-title">👥 Danh sách bạn bè Zalo (${friends.length} người)</div>
+          <div class="contact-disambig-sub">Chạm vào nút để Nhắn tin, Gọi thoại hoặc Gọi Video:</div>
+        </div>
+        <div class="contact-choice-list zalo-friends-scroll">
+          ${itemsHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Tạo giao diện Card danh sách liên hệ để người dùng chọn
+   */
+  renderContactChoiceCard(contacts, targetName, app, action, sim) {
+    let actionIcon = '📞';
+    let actionTitle = 'Gọi thoại';
+    if (app === 'zalo') {
+      if (action === 'chat') { actionIcon = '💬'; actionTitle = 'Nhắn tin Zalo'; }
+      else if (action === 'video') { actionIcon = '📹'; actionTitle = 'Gọi Video Zalo'; }
+      else { actionIcon = '📞'; actionTitle = 'Gọi Zalo'; }
+    } else {
+      actionIcon = '📱'; actionTitle = `Gọi SIM ${sim ? sim.toUpperCase() : ''}`.trim();
+    }
+
+    const itemsHtml = contacts.map((c, idx) => {
+      const avatarHtml = c.photo ? `<img src="${c.photo}" class="contact-choice-avatar-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" /><div class="contact-choice-avatar" style="display:none;">${(c.name || 'U').charAt(0).toUpperCase()}</div>` : `<div class="contact-choice-avatar">${(c.name || 'U').charAt(0).toUpperCase()}</div>`;
+      const zaloBadge = c.isZaloFriend ? '<span class="contact-zalo-badge">Zalo</span>' : '';
+      const phoneOrId = c.phoneNumber || (c.userId ? `ID: ${c.userId}` : '');
+      return `
+        <div class="contact-choice-item" onclick="window.dianaApp.selectContactChoice(${idx})">
+          <div class="contact-choice-badge">${idx + 1}</div>
+          ${avatarHtml}
+          <div class="contact-choice-info">
+            <div class="contact-choice-name">${this.escapeHtml(c.name)} ${zaloBadge}</div>
+            <div class="contact-choice-phone">${this.escapeHtml(phoneOrId)}</div>
+          </div>
+          <div class="contact-choice-action-btn">${actionIcon}</div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="contact-disambiguation-card">
+        <div class="contact-disambig-header">
+          <div class="contact-disambig-title">📋 ${actionTitle} cho "${this.escapeHtml(targetName)}"</div>
+          <div class="contact-disambig-sub">Nói số thứ tự (1, 2, 3...) hoặc chạm để chọn:</div>
+        </div>
+        <div class="contact-choice-list">
+          ${itemsHtml}
+        </div>
+        <button class="contact-choice-cancel-btn" onclick="window.dianaApp.cancelContactSelection()">
+          ✕ Hủy bỏ
+        </button>
+      </div>
+    `;
+  }
+
+  /**
+   * Chạm vào 1 liên hệ trong danh sách lựa chọn
+   */
+  async selectContactChoice(index) {
+    this.haptic(35);
+    if (!this.pendingContactSelection || !this.pendingContactSelection.contacts[index]) return;
+    const { app, action, sim } = this.pendingContactSelection;
+    const contact = this.pendingContactSelection.contacts[index];
+    this.pendingContactSelection = null;
+    await this.executeContactAction(contact, app, action, sim);
+  }
+
+  /**
+   * Hủy bỏ thao tác chọn liên hệ
+   */
+  cancelContactSelection() {
+    this.haptic(30);
+    this.pendingContactSelection = null;
+    const reply = 'Dạ em đã hủy chọn liên hệ rồi ạ! ✨';
+    this.addMessage('bot', reply);
+    this.showResultInCapsule('Hủy', reply);
+    if (this.ttsEnabled) this.speak(reply);
+    this.scheduleCapsuleClose(2500);
+  }
+
+  /**
+   * Thực thi hành động gọi điện thoại / nhắn tin / gọi video với liên hệ cụ thể
+   */
+  async executeContactAction(contact, app = 'zalo', action = 'call', sim = '') {
+    if (!window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.DianaNative) {
+      return false;
+    }
+    const native = window.Capacitor.Plugins.DianaNative;
+    const phone = (contact.phoneNumber || '').replace(/[\s.-]/g, '');
+
+    try {
+      const res = await native.makePhoneCall({
+        phoneNumber: phone,
+        zaloDataId: contact.zaloDataId || '',
+        userId: contact.userId || '',
+        sim: sim || '',
+        app: app || 'zalo',
+        action: action || 'call'
+      });
+
+      let reply = res.message;
+      let spokenText = '';
+      if (!reply) {
+        if (app === 'zalo') {
+          if (action === 'chat') {
+            reply = `Dạ em đã mở tin nhắn Zalo với **${contact.name}** cho anh rồi ạ! 💬`;
+            spokenText = `Dạ em đã mở tin nhắn Zalo với ${contact.name} cho anh rồi ạ!`;
+          } else if (action === 'video') {
+            reply = `Dạ em đang mở Zalo gọi Video cho **${contact.name}** cho anh rồi ạ! 📹`;
+            spokenText = `Dạ em đang mở Zalo gọi Video cho ${contact.name} cho anh rồi ạ!`;
+          } else {
+            reply = `Dạ em đang mở cuộc gọi Zalo cho **${contact.name}** cho anh rồi ạ! 📞`;
+            spokenText = `Dạ em đang mở cuộc gọi Zalo cho ${contact.name} cho anh rồi ạ!`;
+          }
+        } else {
+          const simNotice = sim ? ` bằng SIM ${sim.toUpperCase()}` : '';
+          reply = `Dạ em đang gọi cho **${contact.name}** (${phone})${simNotice} cho anh rồi ạ! 📞`;
+          spokenText = `Dạ em đang gọi cho ${contact.name}${simNotice} cho anh rồi ạ!`;
+        }
+      } else {
+        spokenText = reply.replace(/[*_#`~]/g, '');
+      }
+
+      this.addMessage('bot', reply);
+      this.showResultInCapsule(contact.name, reply);
+      if (this.ttsEnabled) this.speak(spokenText);
+      return true;
+    } catch (err) {
+      console.warn('Lỗi executeContactAction:', err);
+      const errMsg = `⚠️ Lỗi khi thực hiện: ${err.message || err}`;
+      this.addMessage('bot', errMsg);
+      this.showResultInCapsule(contact.name, errMsg);
+      if (this.ttsEnabled) this.speak('Dạ có lỗi xảy ra khi thực hiện cuộc gọi ạ.');
+      return false;
+    }
+  }
+
+  /**
+   * Xử lý lựa chọn từ người dùng khi đang chờ chọn liên hệ (bằng giọng nói hoặc gõ text)
+   */
+  async handlePendingContactChoice(query) {
+    if (!this.pendingContactSelection) return false;
+    const { contacts, app, action, sim } = this.pendingContactSelection;
+    const lower = query.toLowerCase().trim();
+
+    // 1. Ý định hủy bỏ
+    if (lower === 'hủy' || lower === 'huy' || lower === 'thôi' || lower === 'thoi' || lower === 'bỏ qua' || lower === 'cancel' || lower === 'không gọi nữa' || lower === 'dừng lại' || lower === 'không' || lower === 'khong') {
+      this.cancelContactSelection();
+      return true;
+    }
+
+    // 2. Nhận diện số thứ tự (1, 2, 3, một, hai, ba, người thứ nhất...)
+    let selectedIdx = -1;
+    const numMap = {
+      '1': 0, 'một': 0, 'mot': 0, 'nhất': 0, 'nhat': 0,
+      '2': 1, 'hai': 1,
+      '3': 2, 'ba': 2,
+      '4': 3, 'bốn': 3, 'bon': 3, 'tư': 3, 'tu': 3,
+      '5': 4, 'năm': 4, 'nam': 4
+    };
+
+    const matchNum = lower.match(/(?:số|chọn|gọi|người thứ|thứ|cái|mục)?\s*([1-5]|một|hai|ba|bốn|bon|tư|tu|năm|nam|nhất|nhat)/i);
+    if (matchNum && matchNum[1] && numMap[matchNum[1].toLowerCase()] !== undefined) {
+      selectedIdx = numMap[matchNum[1].toLowerCase()];
+    }
+
+    // 3. Khớp theo tên liên hệ trong danh sách lựa chọn
+    if (selectedIdx === -1) {
+      const normQ = this.removeVietnameseAccents(lower);
+      for (let i = 0; i < contacts.length; i++) {
+        const normC = this.removeVietnameseAccents(contacts[i].name);
+        if (normC.includes(normQ) || normQ.includes(normC)) {
+          selectedIdx = i;
+          break;
+        }
+      }
+    }
+
+    if (selectedIdx >= 0 && selectedIdx < contacts.length) {
+      const selectedContact = contacts[selectedIdx];
+      this.pendingContactSelection = null;
+      await this.executeContactAction(selectedContact, app, action, sim);
+      return true;
+    }
+
+    // Nếu người dùng ra một lệnh hoàn toàn mới (ví dụ: bật đèn pin, đặt báo thức, mở youtube)
+    if (lower.includes('báo thức') || lower.includes('đèn pin') || lower.includes('mở ') || lower.includes('bật ') || lower.includes('chụp ảnh')) {
+      this.pendingContactSelection = null;
+      return false; // Tiếp tục xử lý lệnh mới
+    }
+
+    // Nếu là một lệnh gọi mới hoàn toàn
+    if (lower.startsWith('gọi ') || lower.startsWith('nhắn ')) {
+      this.pendingContactSelection = null;
+      return false;
+    }
+
+    // Câu trả lời chưa rõ ràng: Nhắc người dùng chọn
+    const promptText = `Dạ anh muốn chọn ai trong danh sách ạ? Anh hãy nói từ 1 đến ${contacts.length} hoặc chạm vào tên liên hệ trên màn hình nhé! 😊`;
+    this.addMessage('bot', promptText);
+    this.showResultInCapsule(query, promptText);
+    if (this.ttsEnabled) this.speak(`Dạ anh hãy nói số thứ tự từ 1 đến ${contacts.length} hoặc chạm vào tên trên màn hình nhé!`);
+    return true;
+  }
+
+  /**
    * Gửi câu hỏi dạng Text
    */
   async handleTextQuery(query) {
@@ -900,7 +1316,16 @@ class DianaVoiceApp {
     this.showCapsule('thinking', 'Diana đang xử lý...', `"${cleanQuery}"`);
     this.updateLiveOverlayState('thinking', 'Đang xử lý...', `"${cleanQuery}"`);
 
-    // Check if this is a native mobile command on Android (Alarm, Call, Flashlight, App, Volume)
+    // 1. Kiểm tra xem người dùng có đang trả lời danh sách chọn liên hệ không
+    if (this.pendingContactSelection) {
+      if (await this.handlePendingContactChoice(cleanQuery)) {
+        this.setDotState('idle');
+        this.scheduleCapsuleClose(4000);
+        return;
+      }
+    }
+
+    // 2. Kiểm tra các lệnh Native trên thiết bị Android
     if (await this.handleNativeMobileActions(cleanQuery)) {
       this.setDotState('idle');
       this.scheduleCapsuleClose(4000);
@@ -908,11 +1333,37 @@ class DianaVoiceApp {
     }
 
     try {
-      const response = await fetch('/api/voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: cleanQuery })
-      });
+      let response = null;
+      let usedUrl = this.getServerUrl();
+      try {
+        response = await fetch(usedUrl + '/api/voice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: cleanQuery })
+        });
+      } catch (firstErr) {
+        console.warn(`[Diana Query] Gửi tới ${usedUrl} thất bại, đang thử các endpoint dự phòng...`, firstErr);
+        const fallbacks = ['http://192.168.100.221:3000', 'http://127.0.0.1:3000', 'http://100.105.204.3:3000'].filter(u => u !== usedUrl);
+        for (const fb of fallbacks) {
+          try {
+            response = await fetch(fb + '/api/voice', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query: cleanQuery })
+            });
+            if (response && response.ok) {
+              this.activeServerUrl = fb;
+              localStorage.setItem('diana_server_url', fb);
+              console.log(`[Diana] Đã tự phục hồi sang máy chủ PC tại: ${fb}`);
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (!response) {
+        throw new Error('Không thể kết nối tới máy chủ PC.');
+      }
 
       const data = await response.json();
 
@@ -936,19 +1387,135 @@ class DianaVoiceApp {
             }, 1000);
           }
         }
+      } else if (data && data.error) {
+        const errMsg = `⚠️ Máy tính báo lỗi: ${data.error}`;
+        this.addMessage('bot', errMsg);
+        this.showResultInCapsule(cleanQuery, errMsg, []);
+        this.updateLiveOverlayState('idle', 'Lỗi', errMsg);
+        if (this.ttsEnabled) this.speak(errMsg);
       } else {
-        const defaultReply = 'Dạ em đã thực thi xong yêu cầu của anh rồi ạ! ✨';
-        this.addMessage('bot', defaultReply);
-        this.showResultInCapsule(cleanQuery, defaultReply, []);
-        this.updateLiveOverlayState('idle', 'Diana', defaultReply);
-        if (this.ttsEnabled) this.speak(defaultReply);
+        const errMsg = '⚠️ Máy chủ PC không trả về dữ liệu.';
+        this.addMessage('bot', errMsg);
+        this.showResultInCapsule(cleanQuery, errMsg, []);
+        this.updateLiveOverlayState('idle', 'Thông báo', errMsg);
+        if (this.ttsEnabled) this.speak(errMsg);
       }
     } catch (err) {
       console.error('Lỗi khi gửi yêu cầu:', err);
       this.setDotState('idle');
-      this.showCapsule('idle', 'Lỗi kết nối', '⚠️ Không thể kết nối máy chủ.');
-      this.scheduleCapsuleClose(3000);
+      const errTxt = '⚠️ Không thể kết nối với máy tính PC. Anh kiểm tra lại xem PC đã bật server chưa nhé!';
+      this.addMessage('bot', errTxt);
+      this.showCapsule('idle', 'Mất kết nối PC', errTxt);
+      this.updateLiveOverlayState('idle', 'Lỗi kết nối', errTxt);
+      this.scheduleCapsuleClose(4000);
+      this.autoDiscoverServer();
     }
+  }
+
+  /**
+   * Phân tích ý định đặt báo thức đa dạng từ câu nói tự nhiên
+   */
+  parseAlarmIntent(query) {
+    if (!query) return null;
+    const lower = query.toLowerCase().trim();
+    const norm = this.removeVietnameseAccents(lower);
+
+    // Kiểm tra từ khóa báo thức / đánh thức
+    const isAlarmIntent = 
+      norm.includes('bao thuc') || 
+      norm.includes('chuong bao') || 
+      norm.includes('keu day') || 
+      norm.includes('goi day') || 
+      norm.includes('danh thuc') || 
+      norm.includes('thuc day') ||
+      norm.includes('hen gio day') ||
+      norm.includes('dat gio day') ||
+      norm.includes('keu toi day') ||
+      norm.includes('goi toi day') ||
+      norm.includes('keu anh day') ||
+      norm.includes('goi anh day') ||
+      ((norm.includes('dat bao') || norm.includes('cai bao') || norm.includes('hen bao')) && !norm.includes('bao cao'));
+
+    if (!isAlarmIntent) return null;
+
+    let hour = -1;
+    let minutes = 0;
+    let isRelative = false;
+
+    // 1. Thời gian tương đối (VD: "sau 30 phút nữa", "15 phút nữa", "sau 1 tiếng 30 phút")
+    const relMinMatch = lower.match(/(?:sau|trong)?\s*(\d{1,3})\s*(?:phút|p)\s*(?:nữa|nuoc)?/i);
+    const relHourMatch = lower.match(/(?:sau|trong)?\s*(\d{1,2})\s*(?:tiếng|giờ|h)\s*(?:sau|nữa)?/i);
+
+    if (lower.includes('sau') || lower.includes('nữa') || lower.includes('nuoc')) {
+      let addMinutes = 0;
+      if (relHourMatch) addMinutes += parseInt(relHourMatch[1], 10) * 60;
+      if (relMinMatch) addMinutes += parseInt(relMinMatch[1], 10);
+      if (addMinutes > 0) {
+        const now = new Date();
+        const targetTime = new Date(now.getTime() + addMinutes * 60000);
+        hour = targetTime.getHours();
+        minutes = targetTime.getMinutes();
+        isRelative = true;
+      }
+    }
+
+    if (!isRelative) {
+      // 2. Định dạng: HH:MM hoặc HH h MM hoặc HH giờ MM phút (VD: "6:30", "06:30", "6h30", "6h 30", "6 giờ 30", "6 giờ 30 phút", "6h rưỡi", "6 giờ rưỡi")
+      const timeMatch = lower.match(/(\d{1,2})\s*(?::|h| giờ| gio)\s*(\d{1,2}|rưỡi|ruoi)?/i);
+      if (timeMatch) {
+        hour = parseInt(timeMatch[1], 10);
+        if (timeMatch[2]) {
+          if (timeMatch[2] === 'rưỡi' || timeMatch[2] === 'ruoi') {
+            minutes = 30;
+          } else {
+            minutes = parseInt(timeMatch[2], 10);
+          }
+        } else {
+          if (lower.includes('rưỡi') || lower.includes('ruoi')) {
+            minutes = 30;
+          }
+        }
+      } else {
+        // Chỉ có số giờ (VD: "lúc 6", "vào 7", "6h", "6 giờ")
+        const hourOnlyMatch = lower.match(/(?:lúc|vào|đúng|tầm|luc|vao)?\s*(\d{1,2})\s*(?:h|giờ|gio)/i) ||
+                              lower.match(/(?:lúc|vào|luc|vao)\s*(\d{1,2})/i);
+        if (hourOnlyMatch) {
+          hour = parseInt(hourOnlyMatch[1], 10);
+          if (lower.includes('rưỡi') || lower.includes('ruoi')) {
+            minutes = 30;
+          }
+        }
+      }
+    }
+
+    if (hour < 0 || hour > 23 || minutes < 0 || minutes > 59) {
+      // Mặc định 7h sáng nếu người dùng chỉ nói "đặt báo thức" chung chung
+      hour = 7;
+      minutes = 0;
+    }
+
+    // Điều chỉnh AM/PM (sáng, trưa, chiều, tối, đêm)
+    if (!isRelative) {
+      if (norm.includes('chieu') || norm.includes('toi') || norm.includes('dem') || lower.includes('pm')) {
+        if (hour < 12) hour += 12;
+      } else if (norm.includes('sang') || lower.includes('am')) {
+        if (hour === 12) hour = 0;
+      } else if (norm.includes('trua')) {
+        if (hour < 11 && hour > 0) hour += 12;
+      }
+    }
+
+    // Trích xuất tên hoặc lý do báo thức
+    let title = "Báo thức Diana";
+    let cleanTitle = lower;
+    cleanTitle = cleanTitle.replace(/^(?:diana\s+)?(?:làm ơn\s+|hãy\s+|giúp\s+)?(?:đặt|hẹn|bật|cài|keu|goi|danh thuc)\s+(?:báo thức|chuông báo|gio day|toi day|anh day|day)?/i, '');
+    cleanTitle = cleanTitle.replace(/(?:điện thoại|cho tôi|cho anh|giùm anh|giúp anh|lúc|vào|sáng|chiều|tối|đêm|mai|ngay mai|\d{1,2}\s*(?::|h|giờ)\s*\d{0,2}|rưỡi|nhé|nha|ạ|đi)/gi, '');
+    cleanTitle = cleanTitle.trim();
+    if (cleanTitle.length > 2 && cleanTitle.length < 30) {
+      title = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+    }
+
+    return { hour, minutes, title };
   }
 
   /**
@@ -960,41 +1527,240 @@ class DianaVoiceApp {
     }
     const native = window.Capacitor.Plugins.DianaNative;
     const lower = query.toLowerCase();
+    const normLower = this.removeVietnameseAccents(lower);
 
-    // 1. Đặt báo thức điện thoại
-    const alarmMatch = lower.match(/(?:đặt|hẹn|bật)\s*báo\s*thức\s*(?:lúc|vào)?\s*(\d{1,2})(?::|h| giờ|\s+)?(\d{1,2})?/i);
-    if (alarmMatch) {
-      let hour = parseInt(alarmMatch[1], 10);
-      let min = alarmMatch[2] ? parseInt(alarmMatch[2], 10) : 0;
-      if (lower.includes('chiều') || lower.includes('tối')) {
-        if (hour < 12) hour += 12;
-      }
+    // 1. Đặt báo thức điện thoại (Nhận diện mọi dạng câu lệnh báo thức tự nhiên)
+    const alarmInfo = this.parseAlarmIntent(query);
+    if (alarmInfo) {
+      const { hour, minutes, title } = alarmInfo;
       try {
-        const res = await native.setAlarm({ hour, minutes: min, title: "Báo thức Diana", skipUi: true });
-        const reply = res.message || `Dạ em đã đặt báo thức trên điện thoại lúc ${hour} giờ ${min < 10 ? '0' + min : min} phút cho anh rồi nhé! ⏰`;
+        const res = await native.setAlarm({ hour, minutes, title: title || "Báo thức Diana", skipUi: true });
+        const timeStr = `${hour} giờ ${minutes < 10 ? '0' + minutes : minutes} phút`;
+        const reply = res?.message || `Dạ em đã đặt chuông báo thức trên điện thoại lúc **${timeStr}** cho anh rồi nhé! ⏰`;
         this.addMessage('bot', reply);
         this.showResultInCapsule(query, reply);
-        if (this.ttsEnabled) this.speak(reply);
+        if (this.ttsEnabled) this.speak(`Dạ em đã cài báo thức điện thoại lúc ${timeStr} cho anh rồi ạ!`);
         return true;
       } catch (err) {
         console.warn('Lỗi Native setAlarm:', err);
+        const timeStr = `${hour} giờ ${minutes < 10 ? '0' + minutes : minutes} phút`;
+        const reply = `Dạ em đã gửi lệnh đặt báo thức lúc **${timeStr}** tới ứng dụng Đồng hồ trên điện thoại của anh rồi nhé! ⏰`;
+        this.addMessage('bot', reply);
+        this.showResultInCapsule(query, reply);
+        if (this.ttsEnabled) this.speak(`Dạ em đã cài báo thức lúc ${timeStr} rồi ạ!`);
+        return true;
       }
     }
 
-    // 2. Gọi điện thoại
-    const callMatch = lower.match(/(?:gọi|gọi điện|call)\s*(?:cho|tới|đến)?\s*(?:số)?\s*(\+?\d[\d\s.-]{7,15})/i);
-    if (callMatch) {
-      const phone = callMatch[1].replace(/[\s.-]/g, '');
+    // 2. Gọi điện thoại / Nhắn tin Zalo / Gọi video / Gọi thường SIM
+    const phoneMatch = lower.match(/(?:(?:gọi|nhắn tin|nhắn|chat|call|nháy máy|goi|nhan).{0,30}?)(\+?\d[\d\s.-]{7,15})/i) || lower.match(/(\+?\d[\d\s.-]{8,15})/i);
+    
+    // A. Nếu câu lệnh có chứa số điện thoại cụ thể
+    if (phoneMatch && (/(?:gọi|nhắn|chat|call|zalo|sim|goi|nhan)/i.test(lower))) {
+      const rawPhone = phoneMatch[1] || phoneMatch[0];
+      const phone = rawPhone.replace(/[\s.-]/g, '');
+
+      const isZalo = normLower.includes('zalo');
+      const isChat = normLower.includes('nhan tin') || normLower.includes('nhan') || normLower.includes('gui tin') || normLower.includes('chat');
+      const isVideo = normLower.includes('video') || normLower.includes('hinh');
+
+      let app = isZalo ? 'zalo' : (isChat ? 'zalo' : 'phone');
+      let action = 'call';
+      if (isChat) action = 'chat';
+      else if (isVideo) {
+        action = 'video';
+        app = 'zalo';
+      }
+
+      let sim = '';
+      if (normLower.includes('vinaphone') || normLower.includes('vina')) {
+        sim = 'vinaphone';
+        app = 'phone';
+      } else if (normLower.includes('viettel')) {
+        sim = 'viettel';
+        app = 'phone';
+      } else if (normLower.includes('mobifone') || normLower.includes('mobi')) {
+        sim = 'mobifone';
+        app = 'phone';
+      } else if (normLower.includes('sim 1') || normLower.includes('sim mot') || normLower.includes('sim một')) {
+        sim = '1';
+        app = 'phone';
+      } else if (normLower.includes('sim 2') || normLower.includes('sim hai')) {
+        sim = '2';
+        app = 'phone';
+      }
+
       try {
-        await native.makePhoneCall({ phoneNumber: phone });
-        const reply = `Dạ em đang thực hiện cuộc gọi đến số ${phone} cho anh rồi ạ! 📞`;
+        const res = await native.makePhoneCall({ phoneNumber: phone, sim, app, action });
+        let reply = res.message;
+        if (!reply) {
+          if (app === 'zalo') {
+            if (action === 'chat') {
+              reply = `Dạ em đã mở tin nhắn Zalo với số ${phone} cho anh rồi ạ! 💬`;
+            } else if (action === 'video') {
+              reply = `Dạ em đang mở Zalo để gọi Video tới số ${phone} cho anh rồi ạ! 📹`;
+            } else {
+              reply = `Dạ em đang mở cuộc gọi Zalo tới số ${phone} cho anh rồi ạ! 📞`;
+            }
+          } else {
+            const simNotice = sim ? ` bằng SIM ${sim.toUpperCase()}` : '';
+            reply = `Dạ em đang gọi thường tới số ${phone}${simNotice} cho anh rồi ạ! 📞`;
+          }
+        }
         this.addMessage('bot', reply);
         this.showResultInCapsule(query, reply);
         if (this.ttsEnabled) this.speak(reply);
         return true;
       } catch (err) {
-        console.warn('Lỗi Native call:', err);
+        console.warn('Lỗi Native call/zalo:', err);
       }
+    }
+
+    // Lệnh quét / cập nhật / xem danh sách bạn bè Zalo
+    if (/(?:quét|quet|cập nhật|cap nhat|làm mới|lam moi|danh sách|danh sach|xem)\s+(?:danh bạ\s+|danh ba\s+|bạn bè\s+|ban be\s+|tất cả\s+bạn\s+|tat ca\s+ban\s+)?zalo/i.test(lower) ||
+        /(?:quét|quet|cập nhật|cap nhat|làm mới|lam moi)\s+(?:bạn bè|ban be|danh bạ|danh ba)/i.test(lower)) {
+      const loadingMsg = '🔄 Dạ em đang quét danh sách bạn bè Zalo trực tiếp từ máy chủ Zalo, anh chờ em một chút nhé...';
+      this.addMessage('bot', loadingMsg);
+      this.showResultInCapsule(query, loadingMsg);
+      if (this.ttsEnabled) this.speak('Dạ em đang quét danh sách bạn bè Zalo của anh ạ.');
+
+      const friends = await this.syncZaloFriends(true);
+      if (!friends || friends.length === 0) {
+        const reply = 'Dạ em chưa tìm thấy danh sách bạn bè Zalo nào. Anh kiểm tra lại kết nối Zalo trên PC nhé! ⚠️';
+        this.addMessage('bot', reply);
+        this.showResultInCapsule(query, reply);
+        if (this.ttsEnabled) this.speak(reply);
+        return true;
+      }
+
+      const cardHtml = this.renderZaloFriendsListCard(friends);
+      const replySpoken = `Dạ em đã quét được ${friends.length} người bạn trong tài khoản Zalo của anh rồi ạ!`;
+      this.addMessage('bot', cardHtml, [], true);
+      this.showResultInCapsule(query, cardHtml, [], true);
+      if (this.ttsEnabled) this.speak(replySpoken);
+      return true;
+    }
+
+    // B. Nếu câu lệnh gọi điện/nhắn tin bằng TÊN người trong danh bạ (ví dụ: "Gọi Zalo cho Phát", "Nhắn tin Zalo cho Phát", "Gọi video cho Phát", "Gọi thường cho Phát sim vinaphone")
+    if (/(?:gọi|nhắn\s*tin|nhắn|chat|call|nháy\s*máy|gửi\s*tin|goi|nhan\s*tin|nhan|gui\s*tin|nhay\s*may)/i.test(lower)) {
+      const isZalo = normLower.includes('zalo');
+      const isChat = (normLower.includes('nhan tin') || normLower.includes('nhắn tin') || normLower.includes('nhan') || normLower.includes('nhắn') || normLower.includes('chat') || normLower.includes('gui tin') || normLower.includes('gửi tin'));
+      const isVideo = (normLower.includes('video') || normLower.includes('mat') || normLower.includes('mặt'));
+      
+      let app = isZalo ? 'zalo' : 'phone';
+      let action = 'call';
+      if (isChat) {
+        action = 'chat';
+        if (!normLower.includes('thuong') && !normLower.includes('thường') && !normLower.includes('sim') && !normLower.includes('sms')) {
+          app = 'zalo';
+        }
+      } else if (isVideo) {
+        action = 'video';
+        app = 'zalo';
+      }
+
+      let sim = '';
+      if (normLower.includes('vinaphone') || normLower.includes('vina')) {
+        sim = 'vinaphone';
+        app = 'phone';
+      } else if (normLower.includes('viettel')) {
+        sim = 'viettel';
+        app = 'phone';
+      } else if (normLower.includes('mobifone') || normLower.includes('mobi')) {
+        sim = 'mobifone';
+        app = 'phone';
+      } else if (normLower.includes('sim 1') || normLower.includes('sim mot') || normLower.includes('sim một')) {
+        sim = '1';
+        app = 'phone';
+      } else if (normLower.includes('sim 2') || normLower.includes('sim hai')) {
+        sim = '2';
+        app = 'phone';
+      } else if (normLower.includes('thuong') || normLower.includes('thường') || normLower.includes('dien thoai') || normLower.includes('gsm')) {
+        app = 'phone';
+      }
+
+      // Trích xuất tên người cần tìm
+      let nameStr = lower;
+      nameStr = nameStr.replace(/^(?:diana\s+)?(?:làm ơn\s+|lam on\s+)?(?:hãy\s+|hay\s+)?(?:hãy giúp tôi\s+|hay giup toi\s+)?/i, '');
+      nameStr = nameStr.replace(/^(?:gọi\s+điện\s+thoại|goi\s+dien\s+thoai|gọi\s+điện|goi\s+dien|gọi\s+thường|goi\s+thuong|gọi\s+sim|goi\s+sim|gọi\s+zalo\s+video|goi\s+zalo\s+video|gọi\s+video\s+zalo|goi\s+video\s+zalo|gọi\s+video|goi\s+video|gọi\s+zalo\s+thoại|goi\s+zalo\s+thoai|gọi\s+thoại\s+zalo|goi\s+thoai\s+zalo|gọi\s+thoại|goi\s+thoai|gọi\s+qua\s+zalo|goi\s+qua\s+zalo|gọi\s+bằng\s+zalo|goi\s+bang\s+zalo|gọi\s+zalo|goi\s+zalo|gọi|goi|nhắn\s+tin\s+zalo|nhan\s+tin\s+zalo|nhắn\s+zalo|nhan\s+zalo|nhắn\s+tin|nhan\s+tin|nhắn|nhan|gửi\s+tin\s+nhắn|gui\s+tin\s+nhan|gửi\s+tin|gui\s+tin|chat\s+zalo|chat|call|nháy\s+máy|nhay\s+may)\s+/i, '');
+      nameStr = nameStr.replace(/^(?:cho|với|voi|tới|toi|đến|den)\s+/i, '');
+
+      nameStr = nameStr.replace(/\s+(?:bằng\s+sim|bang\s+sim)\s+(?:vinaphone|vina|viettel|mobifone|mobi|1|2|một|mot|hai)$/i, '');
+      nameStr = nameStr.replace(/\s+sim\s+(?:vinaphone|vina|viettel|mobifone|mobi|1|2|một|mot|hai)$/i, '');
+      nameStr = nameStr.replace(/\s+(?:bằng\s+zalo|bang\s+zalo|qua\s+zalo|trong\s+zalo|zalo)$/i, '');
+      nameStr = nameStr.replace(/\s+(?:đi|di|giúp|giup|với|voi|nhé|nhe|nha|ạ|a|nào|nao)$/i, '');
+      nameStr = nameStr.replace(/^(?:anh|chị|chi|em|bạn|ban|chú|chu|bác|bac|cô|co|dì|di)\s+/i, '');
+
+      const targetName = nameStr.trim();
+
+      if (targetName && targetName.length >= 1) {
+        try {
+          let contacts = [];
+          if (app === 'zalo') {
+            // Quét chính xác trong danh sách bạn bè Zalo chính thức & Zalo linked contacts
+            contacts = await this.searchZaloFriends(targetName);
+          } else {
+            // Quét danh bạ điện thoại chính của máy
+            const res = await native.searchContacts({ name: targetName, onlyZaloFriends: false });
+            contacts = (res && res.contacts) ? res.contacts : [];
+          }
+
+          // TH 1: Không tìm thấy liên hệ nào
+          if (contacts.length === 0) {
+            const isZaloSearch = (app === 'zalo');
+            const targetLabel = isZaloSearch ? `bạn bè nào tên là **${targetName}** trong danh sách bạn bè Zalo` : `ai tên là **${targetName}** trong danh bạ máy`;
+            const spokenLabel = isZaloSearch ? `bạn bè nào tên là ${targetName} trong danh sách bạn bè Zalo` : `ai tên là ${targetName} trong danh bạ máy`;
+            const reply = `Dạ em không tìm thấy ${targetLabel} của anh ạ! 🔍`;
+            const spokenText = `Dạ em không tìm thấy ${spokenLabel} của anh ạ!`;
+            this.addMessage('bot', reply);
+            this.showResultInCapsule(query, reply);
+            if (this.ttsEnabled) this.speak(spokenText);
+            return true;
+          }
+
+          // TH 2: Tìm thấy chính xác duy nhất 1 người -> Thực hiện ngay lập tức
+          if (contacts.length === 1) {
+            await this.executeContactAction(contacts[0], app, action, sim);
+            return true;
+          }
+
+          // TH 3: Tìm thấy nhiều hơn 1 người (Đa nghĩa) -> Hiển thị danh sách và đọc số thứ tự để người dùng chọn
+          this.pendingContactSelection = {
+            targetName,
+            app,
+            action,
+            sim,
+            contacts: contacts.slice(0, 5),
+            createdAt: Date.now()
+          };
+
+          const cardHtml = this.renderContactChoiceCard(this.pendingContactSelection.contacts, targetName, app, action, sim);
+          const actionVerb = action === 'chat' ? 'nhắn tin' : (action === 'video' ? 'gọi video' : 'gọi');
+          const appLabel = app === 'zalo' ? 'Zalo ' : '';
+          
+          let spokenPrompt = `Dạ anh muốn ${actionVerb} ${appLabel}cho ${targetName} nào trong danh sách ạ? `;
+          const listSpoken = this.pendingContactSelection.contacts.map((c, i) => `Số ${i + 1} là ${c.name}`).join(', ');
+          spokenPrompt += listSpoken + '. Anh hãy nói số thứ tự hoặc chạm vào tên nhé!';
+
+          this.addMessage('bot', cardHtml, [], true);
+          this.showResultInCapsule(query, cardHtml, [], true);
+          if (this.ttsEnabled) this.speak(spokenPrompt);
+          return true;
+        } catch (err) {
+          console.warn('Lỗi tìm kiếm danh bạ:', err);
+          const reply = `⚠️ Không thể truy cập danh bạ: ${err.message || err}`;
+          this.addMessage('bot', reply);
+          this.showResultInCapsule(query, reply);
+          if (this.ttsEnabled) this.speak('Dạ em gặp lỗi khi tìm kiếm danh bạ ạ.');
+          return true;
+        }
+      }
+    }
+
+    // 2.6 Kích hoạt chế độ Cử chỉ không chạm Air Gesture (Huawei Grab & Drop)
+    if (normLower.includes('air gesture') || normLower.includes('cu chi khong cham') || normLower.includes('truyen cu chi') || normLower.includes('bat cu chi') || (normLower.includes('truyen') && normLower.includes('may tinh')) || (normLower.includes('chum tay') && normLower.includes('may tinh'))) {
+      this.toggleAirGestureMode();
+      return true;
     }
 
     // 3. Đèn pin
@@ -1018,27 +1784,54 @@ class DianaVoiceApp {
       } catch (_) {}
     }
 
-    // 4. Mở App trên điện thoại
-    const apps = {
-      'youtube': 'com.google.android.youtube',
-      'zalo': 'com.zing.zalo',
-      'facebook': 'com.facebook.katana',
-      'messenger': 'com.facebook.orca',
-      'spotify': 'com.spotify.music',
-      'tiktok': 'com.zhiliaoapp.musically',
-      'maps': 'com.google.android.apps.maps',
-      'bản đồ': 'com.google.android.apps.maps'
-    };
-    for (const [key, pkg] of Object.entries(apps)) {
-      if (lower.includes('mở ' + key) || lower.includes('bật ' + key)) {
+    // 4. Mở BẤT KỲ ứng dụng, Game, Camera, Ghi chú, Cài đặt, Thư viện trên điện thoại
+    const openAppRegex = /^(?:diana\s+ơi\s*,?\s*|diana\s*,?\s*|em\s+ơi\s*,?\s*)?(?:làm ơn\s+|hãy\s+|giúp\s+anh\s+|nhờ\s+em\s+|cho\s+anh\s+|lam on\s+|hay\s+|giup anh\s+|nho em\s+)?(?:mở|bật|vào|chạy|khởi\s*động|chơi|open|launch|start|mo|bat|vao|chay|khoi\s*dong|choi)\s+(?:ứng\s*dụng\s+|app\s+|phần\s*mềm\s+|trò\s*chơi\s+|game\s+|ung\s*dung\s+|phan\s*mem\s+|tro\s*choi\s+)?(.+?)$/i;
+
+    const openAppMatch = lower.match(openAppRegex) || normLower.match(openAppRegex);
+    
+    const isSpecialAppAction = 
+      normLower.includes('camera') || normLower.includes('may anh') || normLower.includes('chup anh') || normLower.includes('chup hinh') || normLower.includes('quay phim') || normLower.includes('quay video') ||
+      normLower.includes('ghi chu') || normLower.includes('notes') || normLower.includes('note') || normLower.includes('so tay') ||
+      normLower.includes('bo suu tap') || normLower.includes('thu vien anh') || normLower.includes('xem anh') || normLower.includes('gallery') || normLower.includes('photos') ||
+      normLower.includes('cai dat') || normLower.includes('settings') || normLower.includes('setting') ||
+      normLower.includes('choi game') || normLower.includes('lien quan') || normLower.includes('pubg') || normLower.includes('free fire') || normLower.includes('roblox') || normLower.includes('genshin') || normLower.includes('toc chien') ||
+      normLower.includes('calculator') || normLower.includes('tin nhan') || normLower.includes('sms') || normLower.includes('messages') ||
+      normLower.includes('dong ho') || normLower.includes('clock') || normLower.includes('ban do') || normLower.includes('maps') ||
+      normLower.includes('trinh duyet') || normLower.includes('chrome') || normLower.includes('youtube') || normLower.includes('facebook') || normLower.includes('tiktok');
+
+    const isExplicitPcCommand = normLower.includes('tren may tinh') || normLower.includes('tren pc') || normLower.includes('tren laptop');
+
+    if ((openAppMatch || isSpecialAppAction) && !isExplicitPcCommand) {
+      let rawTarget = openAppMatch ? (openAppMatch[1] || openAppMatch[0]) : lower;
+      rawTarget = rawTarget.replace(/^(?:diana\s+ơi\s*,?\s*|diana\s*,?\s*|em\s+ơi\s*,?\s*)?(?:làm ơn\s+|hãy\s+|giúp\s+anh\s+|nhờ\s+em\s+|cho\s+anh\s+|lam on\s+|hay\s+|giup anh\s+|nho em\s+)?(?:mở|bật|vào|chạy|khởi\s*động|chơi|open|launch|start|mo|bat|vao|chay|khoi\s*dong|choi)\s+/i, '');
+      rawTarget = rawTarget.replace(/^(?:ứng\s*dụng\s+|app\s+|phần\s*mềm\s+|trò\s*chơi\s+|game\s+|ung\s*dung\s+|phan\s*mem\s+|tro\s*choi\s+)/i, '');
+      rawTarget = rawTarget.replace(/(?:điện thoại|trên máy|trên đt|dien thoai|tren may|tren dt|cho anh|cho tôi|giùm anh|giúp anh|cho toi|gium anh|giup anh|đi|nhé|nha|ạ|lên|ngay|liền|di|nhe|a|len|lien)$/gi, '');
+      rawTarget = rawTarget.trim();
+
+      if (!rawTarget && isSpecialAppAction) {
+        rawTarget = lower;
+      }
+
+      if (rawTarget && rawTarget.length >= 1 && 
+          !rawTarget.includes('màn hình') && !rawTarget.includes('man hinh') &&
+          !rawTarget.includes('đèn pin') && !rawTarget.includes('den pin') &&
+          !rawTarget.includes('báo thức') && !rawTarget.includes('bao thuc') &&
+          !rawTarget.includes('âm lượng') && !rawTarget.includes('am luong')) {
         try {
-          await native.openApp({ packageName: pkg });
-          const reply = `Dạ em đã mở ứng dụng ${key.toUpperCase()} trên điện thoại cho anh rồi ạ! 🚀`;
-          this.addMessage('bot', reply);
-          this.showResultInCapsule(query, reply);
-          if (this.ttsEnabled) this.speak(reply);
-          return true;
-        } catch (_) {}
+          const res = await native.openApp({ appName: rawTarget });
+          if (res && res.success) {
+            const appDisplayName = res.appName || rawTarget;
+            const reply = `Dạ em đã mở **${appDisplayName}** trên điện thoại cho anh rồi ạ! 🚀`;
+            this.addMessage('bot', reply);
+            this.showResultInCapsule(query, reply);
+            if (this.ttsEnabled) this.speak(`Dạ em đã mở ${appDisplayName} cho anh rồi ạ!`);
+            return true;
+          }
+        } catch (err) {
+          console.warn('Lỗi native.openApp:', err);
+          const found = await this.tryFuzzyOpenApp(rawTarget, query);
+          if (found) return true;
+        }
       }
     }
 
@@ -1056,6 +1849,50 @@ class DianaVoiceApp {
       } catch (_) {}
     }
 
+    return false;
+  }
+
+  /**
+   * Quét và mở ứng dụng theo thuật toán đối sánh mờ danh sách ứng dụng đã cài đặt trên máy
+   */
+  async tryFuzzyOpenApp(targetName, query) {
+    if (!window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.DianaNative) return false;
+    const native = window.Capacitor.Plugins.DianaNative;
+    try {
+      const appsRes = await native.getInstalledApps();
+      if (appsRes && Array.isArray(appsRes.apps)) {
+        const normTarget = this.removeVietnameseAccents(targetName.toLowerCase().trim());
+        let bestApp = null;
+        let maxScore = 0;
+
+        for (const app of appsRes.apps) {
+          const normName = this.removeVietnameseAccents(app.appName.toLowerCase().trim());
+          const pkg = app.packageName.toLowerCase();
+
+          let score = 0;
+          if (normName === normTarget) score = 120;
+          else if (normName.startsWith(normTarget)) score = 100;
+          else if (normName.includes(normTarget)) score = 80;
+          else if (pkg.includes(normTarget)) score = 60;
+
+          if (score > maxScore) {
+            maxScore = score;
+            bestApp = app;
+          }
+        }
+
+        if (bestApp && maxScore >= 60) {
+          const openRes = await native.openApp({ packageName: bestApp.packageName, appName: bestApp.appName });
+          if (openRes && openRes.success) {
+            const reply = `Dạ em đã mở ứng dụng **${bestApp.appName}** trên điện thoại cho anh rồi ạ! 🚀`;
+            this.addMessage('bot', reply);
+            this.showResultInCapsule(query, reply);
+            if (this.ttsEnabled) this.speak(`Dạ em đã mở ${bestApp.appName} cho anh rồi ạ!`);
+            return true;
+          }
+        }
+      }
+    } catch (_) {}
     return false;
   }
 
@@ -1325,8 +2162,8 @@ class DianaVoiceApp {
       const volRatio = ((parseFloat(this.voiceSettings?.volume) || 100) / 100).toFixed(2);
       const volParam = `&volume=${encodeURIComponent(volRatio)}`;
       const cadenceParam = `&cadence=${encodeURIComponent(this.voiceSettings?.cadence || 'normal')}`;
-      
-      const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}&voice=${voiceParam}${pitchParam}${speedParam}${volParam}${cadenceParam}${apiKeyParam}`;
+      const serverBase = this.getServerUrl();
+      const ttsUrl = `${serverBase}/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}&voice=${voiceParam}${pitchParam}${speedParam}${volParam}${cadenceParam}${apiKeyParam}`;
 
       this.playDspAudio(
         ttsUrl,
@@ -1446,17 +2283,17 @@ class DianaVoiceApp {
     this.capsuleWave.style.display = state === 'listening' ? 'flex' : 'none';
   }
 
-  showResultInCapsule(query, replyText, attachments = []) {
+  showResultInCapsule(query, replyText, attachments = [], isHtml = false) {
     this.dynamicCapsule.classList.add('active');
     this.capsuleStatus.textContent = 'Diana';
     this.capsuleTranscript.innerHTML = `<strong>"${this.escapeHtml(query)}"</strong>`;
     this.capsuleWave.style.display = 'none';
     this.capsuleResult.style.display = 'block';
-    this.capsuleReplyText.innerHTML = this.formatMarkdown(replyText);
+    this.capsuleReplyText.innerHTML = isHtml ? replyText : this.formatMarkdown(replyText);
 
     if (attachments && attachments.length > 0) {
       const fileName = attachments[0].split(/[\\/]/).pop();
-      const url = `/api/screenshot/${encodeURIComponent(fileName)}`;
+      const url = `${this.getServerUrl()}/api/screenshot/${encodeURIComponent(fileName)}`;
       this.capsuleScreenshotImg.src = url;
       this.capsuleScreenshot.style.display = 'block';
       this.capsuleScreenshot.onclick = () => this.openLightbox(url);
@@ -1478,7 +2315,7 @@ class DianaVoiceApp {
     }, delayMs);
   }
 
-  addMessage(sender, text, attachments = []) {
+  addMessage(sender, text, attachments = [], isHtml = false) {
     const item = document.createElement('div');
     item.className = `message-item ${sender}`;
 
@@ -1486,12 +2323,13 @@ class DianaVoiceApp {
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
     let avatarHtml = sender === 'bot' ? `<div class="msg-bot-avatar"><img src="/avatar.png" alt="Diana"></div>` : '';
-    let html = `<div class="message-row">${avatarHtml}<div class="message-bubble">${this.formatMarkdown(text)}`;
+    let contentHtml = isHtml ? text : this.formatMarkdown(text);
+    let html = `<div class="message-row">${avatarHtml}<div class="message-bubble">${contentHtml}`;
 
     if (attachments && attachments.length > 0) {
       for (const att of attachments) {
         const fileName = att.split(/[\\/]/).pop();
-        const url = `/api/screenshot/${encodeURIComponent(fileName)}`;
+        const url = `${this.getServerUrl()}/api/screenshot/${encodeURIComponent(fileName)}`;
         html += `
           <div class="screenshot-preview" onclick="window.dianaApp.openLightbox('${url}')">
             <img src="${url}" alt="Screenshot PC" loading="lazy" />
@@ -1506,7 +2344,20 @@ class DianaVoiceApp {
 
     this.chatMessages.appendChild(item);
     this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+
+    if (!this.chatHistory) this.chatHistory = [];
+    this.chatHistory.push({
+      sender,
+      text,
+      attachments,
+      isHtml,
+      timeStr,
+      timestamp: Date.now()
+    });
+    // Giữ tối đa 50 tin nhắn gần nhất
+    if (this.chatHistory.length > 50) this.chatHistory.shift();
   }
+
 
   openLightbox(url) {
     if (!this.imageLightbox || !this.lightboxImg) return;
@@ -1540,7 +2391,81 @@ class DianaVoiceApp {
       .replace(/>/g, '&gt;');
   }
 
+  getServerUrl() {
+    if (window.Capacitor) {
+      return this.activeServerUrl || localStorage.getItem('diana_server_url') || 'https://diana-h73u.onrender.com';
+    }
+    return '';
+  }
+
+  /**
+   * Tự động quét và kết nối với IP máy tính hoặc Cloud Server mà không cần người dùng nhập tay
+   */
+  async autoDiscoverServer() {
+    if (!window.Capacitor) return;
+
+    // Danh sách các địa chỉ IP tiềm năng của máy tính theo thứ tự ưu tiên
+    const saved = localStorage.getItem('diana_server_url');
+    const candidates = [
+      'https://diana-h73u.onrender.com', // Cloud Render Server (Luôn online 24/7 ở mọi nơi)
+      saved,
+      'http://192.168.100.221:3000',     // Wi-Fi hiện tại của PC (nếu chạy server local)
+      'http://127.0.0.1:3000',           // Localhost qua ADB Reverse
+      'http://100.105.204.3:3000',       // Tailscale VPN (Cố định vĩnh viễn ở mọi nơi, 4G, 5G, Wi-Fi)
+      'http://192.168.1.18:3000',        // Wi-Fi trước đó
+      'http://10.0.2.2:3000'
+    ].filter(Boolean);
+
+    // Loại bỏ trùng lặp
+    const uniqueCandidates = [...new Set(candidates)];
+
+    const ping = (url) => new Promise((resolve, reject) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      fetch(`${url}/api/status`, { signal: controller.signal })
+        .then(res => res.json())
+        .then(data => {
+          clearTimeout(timeoutId);
+          console.log('[Diana AutoDiscover] Connected to:', url, data);
+          resolve({ url, data });
+        })
+        .catch((err) => {
+          clearTimeout(timeoutId);
+          reject(err);
+        });
+    });
+
+    try {
+      const result = await Promise.any(uniqueCandidates.map(ping));
+      if (result && result.url) {
+        this.activeServerUrl = result.url;
+        localStorage.setItem('diana_server_url', result.url);
+        const isPCOnline = result.data?.pcOnline !== false;
+        if (this.pcStatusBadge) {
+          if (isPCOnline) {
+            this.pcStatusBadge.className = 'status-badge online';
+            this.pcStatusText.textContent = 'PC Online';
+          } else {
+            this.pcStatusBadge.className = 'status-badge offline';
+            this.pcStatusText.textContent = 'PC Offline';
+          }
+        }
+        return;
+      }
+    } catch (_) {
+      if (this.pcStatusBadge) {
+        this.pcStatusBadge.className = 'status-badge offline';
+        this.pcStatusText.textContent = 'Chưa kết nối';
+      }
+    }
+  }
+
   async checkPCStatus() {
+    if (window.Capacitor) {
+      await this.autoDiscoverServer();
+      return;
+    }
+
     try {
       const res = await fetch('/api/status');
       const data = await res.json();
@@ -1552,8 +2477,10 @@ class DianaVoiceApp {
         this.pcStatusText.textContent = 'PC Offline';
       }
     } catch (_) {
-      this.pcStatusBadge.className = 'status-badge offline';
-      this.pcStatusText.textContent = 'Chưa kết nối';
+      if (this.pcStatusBadge) {
+        this.pcStatusBadge.className = 'status-badge offline';
+        this.pcStatusText.textContent = 'Chưa kết nối';
+      }
     }
   }
 
@@ -1790,6 +2717,12 @@ class DianaVoiceApp {
     }
 
     // Header actions
+    if (this.airGestureBtn) {
+      this.airGestureBtn.addEventListener('click', () => this.toggleAirGestureMode());
+    }
+    if (this.airToastCloseBtn) {
+      this.airToastCloseBtn.addEventListener('click', () => this.stopAirGestureTracking(true));
+    }
     if (this.screenshotHeaderBtn) {
       this.screenshotHeaderBtn.addEventListener('click', () => {
         this.haptic(35);
@@ -1807,6 +2740,24 @@ class DianaVoiceApp {
         this.haptic(30);
         this.chatMessages.innerHTML = '';
         if (this.welcomeCard) this.welcomeCard.style.display = 'block';
+      });
+    }
+
+    // Click on PC Status badge to view or configure Server IP
+    if (this.pcStatusBadge) {
+      this.pcStatusBadge.style.cursor = 'pointer';
+      this.pcStatusBadge.addEventListener('click', () => {
+        const current = this.getServerUrl();
+        const newUrl = prompt('Cấu hình địa chỉ Máy tính / Server cho Diana:\n(Nhập IP máy tính, ví dụ: http://192.168.100.221:3000)', current || 'http://192.168.100.221:3000');
+        if (newUrl !== null && newUrl.trim()) {
+          let url = newUrl.trim().replace(/\/+$/, '');
+          if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            url = 'http://' + url;
+          }
+          localStorage.setItem('diana_server_url', url);
+          this.checkPCStatus();
+          alert('✅ Đã lưu địa chỉ kết nối: ' + url);
+        }
       });
     }
 
@@ -1892,8 +2843,402 @@ class DianaVoiceApp {
       this.scheduleCapsuleClose(5000);
     }
   }
+
+  // ==========================================================================
+  // HUAWEI AIR GESTURE ENGINE (GRAB & DROP SESSION TRANSFER)
+  // Chạy ngầm hoàn toàn - 0 UI Camera - Bảo mật tuyệt đối
+  // ==========================================================================
+
+  /**
+   * Kiểm tra và khôi phục phiên trò chuyện khi mở trình duyệt qua Air Gesture Drop
+   */
+  async checkAirSyncOnLoad() {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('air_sync') === '1') {
+        const sessionId = urlParams.get('session_id') || '';
+        console.log('[AirSync OnLoad] 🖐️ Phát hiện cờ air_sync! Đang lấy phiên chat để tiếp tục...');
+        
+        const candidateUrls = [
+          `${this.getServerUrl()}/api/air-gesture/latest`,
+          '/api/air-gesture/latest',
+          'http://localhost:3000/api/air-gesture/latest',
+          'http://127.0.0.1:3000/api/air-gesture/latest',
+          'http://192.168.100.221:3000/api/air-gesture/latest'
+        ];
+
+        let session = null;
+        for (const endpoint of candidateUrls) {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 2000);
+            const res = await fetch(endpoint, { signal: controller.signal });
+            clearTimeout(timer);
+            if (res.ok) {
+              const data = await res.json();
+              if (data && data.success && data.hasSession && data.session) {
+                session = data.session;
+                console.log('[AirSync OnLoad] ✅ Đã lấy được phiên chat từ:', endpoint);
+                break;
+              }
+            }
+          } catch (_) {}
+        }
+        
+        if (session) {
+          if (this.welcomeCard) this.welcomeCard.style.display = 'none';
+          
+          if (Array.isArray(session.messages) && session.messages.length > 0) {
+            this.chatMessages.innerHTML = '';
+            for (const msg of session.messages) {
+              this.addMessage(msg.sender, msg.text, msg.attachments, msg.isHtml);
+            }
+          }
+
+          // Hiển thị thông báo chào đón trên Capsule
+          this.showCapsule('idle', 'Diana Air Gesture', '✨ Đã tiếp nhận và tiếp tục phiên trò chuyện từ điện thoại thành công!');
+          this.playCyberChime('drop');
+          
+          if (this.ttsEnabled) {
+            this.speak('Dạ em đã đồng bộ phiên trò chuyện từ điện thoại sang máy tính cho anh Tiến rồi ạ!');
+          }
+          
+          this.scheduleCapsuleClose(6000);
+        }
+
+        // Xóa query param trên thanh địa chỉ một cách êm ái
+        try {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+        } catch (_) {}
+      }
+    } catch (err) {
+      console.warn('[AirSync OnLoad Error]:', err);
+    }
+  }
+
+  /**
+   * Bật/Tắt chế độ Air Gesture
+   */
+  async toggleAirGestureMode() {
+    this.haptic(40);
+    if (this.isAirGestureActive) {
+      this.stopAirGestureTracking(true);
+    } else {
+      await this.startAirGestureTracking();
+    }
+  }
+
+  /**
+   * Khởi động bộ camera ngầm và MediaPipe nhận diện cử chỉ Chụm tay (Pinch / Fist)
+   */
+  async startAirGestureTracking() {
+    if (this.isAirGestureActive) return;
+    this.isAirGestureActive = true;
+    this.consecutiveGrabFrames = 0;
+
+    if (this.airGestureBtn) this.airGestureBtn.classList.add('active');
+    if (this.airGestureBadgeDot) this.airGestureBadgeDot.style.display = 'block';
+
+    // Hiển thị Toast hướng dẫn người dùng
+    if (this.airGestureToast) {
+      this.airGestureToast.classList.remove('grabbed');
+      if (this.airToastIcon) this.airToastIcon.textContent = '🖐️';
+      if (this.airToastTitle) this.airToastTitle.textContent = 'Diana Air Gesture';
+      if (this.airToastDesc) this.airToastDesc.textContent = 'Đang kích hoạt... Hãy đưa bàn tay trước camera ĐT';
+      this.airGestureToast.style.display = 'flex';
+    }
+
+    this.playCyberChime('ready');
+
+    // Báo trước cho PC Agent qua Server để PC bật Webcam ngay lập tức
+    try {
+      fetch(`${this.getServerUrl()}/api/air-gesture/arm`, { method: 'POST' }).catch(() => {});
+    } catch (_) {}
+
+    // Bật vòng lặp kiểm tra trạng thái PC (để tự động tắt khi PC hoàn thành cử chỉ Thả)
+    if (this.airStatusPollInterval) clearInterval(this.airStatusPollInterval);
+    this.airStatusPollInterval = setInterval(async () => {
+      if (!this.isAirGestureActive && !this.airGestureToast?.classList.contains('grabbed')) {
+        clearInterval(this.airStatusPollInterval);
+        return;
+      }
+      try {
+        const res = await fetch(`${this.getServerUrl()}/api/air-gesture/status`);
+        const data = await res.json();
+        if (data && data.success && data.status === 'COMPLETED') {
+          console.log('[Air Gesture] 🎉 PC đã nhận diện Mở Bàn Tay và hoàn thành truyền phiên!');
+          clearInterval(this.airStatusPollInterval);
+          this.playCyberChime('drop');
+          this.haptic([100, 50, 150]);
+          if (this.airGestureToast) {
+            if (this.airToastIcon) this.airToastIcon.textContent = '✨';
+            if (this.airToastTitle) this.airToastTitle.textContent = '✨ ĐÃ TRUYỀN PHIÊN SANG PC!';
+            if (this.airToastDesc) this.airToastDesc.textContent = 'Trình duyệt máy tính đang mở và tiếp tục phiên chat!';
+          }
+          setTimeout(() => {
+            this.stopAirGestureTracking(false);
+          }, 3500);
+        }
+      } catch (_) {}
+    }, 1200);
+
+    try {
+      // Dừng stream cũ trước nếu có
+      this.stopCameraStreamOnly();
+
+      // 1. Mở Camera trước ở chế độ hoàn toàn ngầm (320x240 để cực nhẹ và 60 FPS)
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+          width: { ideal: 320 },
+          height: { ideal: 240 }
+        },
+        audio: false
+      });
+      this.airGestureStream = stream;
+
+      const video = this.airGestureVideo || document.getElementById('airGestureVideo');
+      if (video) {
+        video.srcObject = stream;
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('muted', 'true');
+        await video.play().catch(() => {});
+      }
+
+      // 2. Khởi tạo MediaPipe Hands nếu chưa có
+      if (!this.airHandsDetector && window.Hands) {
+        const hands = new window.Hands({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+        hands.setOptions({
+          maxNumHands: 1,
+          modelComplexity: 0,
+          minDetectionConfidence: 0.40,
+          minTrackingConfidence: 0.40
+        });
+        hands.onResults((results) => this.onAirGestureHandResults(results));
+        this.airHandsDetector = hands;
+      }
+
+      // 3. Vòng lặp quét frame trực tiếp trên video (Cực nhạy, không delay)
+      this.isProcessingAirFrame = false;
+      const processLoop = async () => {
+        if (!this.isAirGestureActive) return;
+        if (video && video.readyState >= 2 && this.airHandsDetector && !this.isProcessingAirFrame) {
+          this.isProcessingAirFrame = true;
+          try {
+            await this.airHandsDetector.send({ image: video });
+          } catch (_) {}
+          this.isProcessingAirFrame = false;
+        }
+        if (this.isAirGestureActive) {
+          if ('requestVideoFrameCallback' in video) {
+            video.requestVideoFrameCallback(processLoop);
+          } else {
+            requestAnimationFrame(processLoop);
+          }
+        }
+      };
+
+      if (video) {
+        if ('requestVideoFrameCallback' in video) {
+          video.requestVideoFrameCallback(processLoop);
+        } else {
+          requestAnimationFrame(processLoop);
+        }
+      }
+
+    } catch (err) {
+      console.warn('Lỗi kích hoạt Air Gesture:', err);
+      if (this.airGestureToast) {
+        if (this.airToastDesc) this.airToastDesc.textContent = '⚠️ Cần cấp quyền truy cập Camera để dùng cử chỉ';
+        setTimeout(() => this.stopAirGestureTracking(true), 3000);
+      }
+    }
+  }
+
+  /**
+   * Xử lý kết quả nhận diện điểm mốc bàn tay từ MediaPipe (Thuật toán đối sánh mờ Scale-Invariant cực nhạy)
+   */
+  onAirGestureHandResults(results) {
+    if (!this.isAirGestureActive) return;
+    if (!results || !results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+      this.consecutiveGrabFrames = Math.max(0, this.consecutiveGrabFrames - 1);
+      return;
+    }
+
+    const landmarks = results.multiHandLandmarks[0];
+    const wrist = landmarks[0];
+    const thumbTip = landmarks[4];
+    const indexTip = landmarks[8];
+    const middleTip = landmarks[12];
+    const ringTip = landmarks[16];
+    const pinkyTip = landmarks[20];
+    const middleMcp = landmarks[9];
+
+    // Độ dài tham chiếu của bàn tay (từ cổ tay đến khớp gốc ngón giữa)
+    const handScale = Math.hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y) || 0.2;
+
+    // 1. Khoảng cách chụm ngón cái với ngón trỏ & ngón giữa (Scale-Invariant)
+    const pinchIndexDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+    const pinchMiddleDist = Math.hypot(thumbTip.x - middleTip.x, thumbTip.y - middleTip.y);
+    const pinchRatio = Math.min(pinchIndexDist, pinchMiddleDist) / handScale;
+
+    // 2. Độ co gập của các ngón (Nắm tay / Chụm cả bàn tay)
+    const indexDist = Math.hypot(indexTip.x - wrist.x, indexTip.y - wrist.y);
+    const middleDist = Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y);
+    const ringDist = Math.hypot(ringTip.x - wrist.x, ringTip.y - wrist.y);
+    const pinkyDist = Math.hypot(pinkyTip.x - wrist.x, pinkyTip.y - wrist.y);
+    const avgTipDist = (indexDist + middleDist + ringDist + pinkyDist) / 4;
+    const avgMcpDist = Math.hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y);
+
+    const isPinch = pinchRatio < 0.60 || pinchIndexDist < 0.12 || pinchMiddleDist < 0.12;
+    const isFist = avgTipDist < avgMcpDist * 1.25;
+
+    if (isPinch || isFist) {
+      this.consecutiveGrabFrames++;
+      if (this.airToastDesc && !this.airGestureToast.classList.contains('grabbed')) {
+        this.airToastDesc.textContent = '🤏 Đang nắm tay... Giữ yên một chút!';
+      }
+      if (this.consecutiveGrabFrames >= 4) {
+        // ĐÃ BẮT ĐƯỢC CỬ CHỈ CHỤM TAY (GRAB)!
+        this.triggerAirGrabSuccess();
+      }
+    } else {
+      this.consecutiveGrabFrames = Math.max(0, this.consecutiveGrabFrames - 1);
+      if (this.airToastDesc && !this.airGestureToast.classList.contains('grabbed')) {
+        this.airToastDesc.textContent = '👀 Đã thấy bàn tay... Hãy chụm các ngón tay lại (✊)';
+      }
+    }
+  }
+
+  /**
+   * Kích hoạt thành công cử chỉ Chụm tay (Grab) - Đóng gói phiên chat và gửi lên PC
+   */
+  async triggerAirGrabSuccess() {
+    if (!this.isAirGestureActive) return;
+    this.isAirGestureActive = false; // Ngừng quét trên điện thoại sau khi đã nắm
+
+    this.haptic([80, 50, 80]);
+    this.playCyberChime('grab');
+
+    // Cập nhật Toast hiệu ứng đã nắm phiên
+    if (this.airGestureToast) {
+      this.airGestureToast.classList.add('grabbed');
+      if (this.airToastIcon) this.airToastIcon.textContent = '✊';
+      if (this.airToastTitle) this.airToastTitle.textContent = '✊ ĐÃ NẮM PHIÊN CHAT!';
+      if (this.airToastDesc) this.airToastDesc.textContent = 'Hãy đưa tay qua Webcam máy tính và MỞ BÀN TAY (🖐️) ra để thả...';
+    }
+
+    // Đóng gói phiên chat hiện tại
+    const sessionPayload = {
+      id: `air_${Date.now()}`,
+      messages: this.chatHistory || [],
+      timestamp: Date.now()
+    };
+
+    console.log('[Air Gesture] ✊ Đã chụm tay thành công! Gói session gửi máy chủ:', sessionPayload);
+
+    // Gửi lên Endpoint máy chủ để đánh thức Webcam PC
+    try {
+      await fetch(`${this.getServerUrl()}/api/air-gesture/grab`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: sessionPayload })
+      });
+    } catch (err) {
+      console.warn('[Air Gesture Grab API Error]:', err);
+    }
+
+    // Tắt camera trên điện thoại vì đã nắm xong
+    this.stopCameraStreamOnly();
+  }
+
+  /**
+   * Dừng toàn bộ Air Gesture Tracking (và gửi lệnh đóng Webcam PC nếu user chủ động tắt)
+   */
+  stopAirGestureTracking(notifyPC = true) {
+    this.isAirGestureActive = false;
+    this.stopCameraStreamOnly();
+
+    if (this.airStatusPollInterval) {
+      clearInterval(this.airStatusPollInterval);
+      this.airStatusPollInterval = null;
+    }
+
+    if (this.airGestureBtn) this.airGestureBtn.classList.remove('active');
+    if (this.airGestureBadgeDot) this.airGestureBadgeDot.style.display = 'none';
+    if (this.airGestureToast) this.airGestureToast.style.display = 'none';
+
+    if (notifyPC) {
+      try {
+        fetch(`${this.getServerUrl()}/api/air-gesture/stop`, { method: 'POST' }).catch(() => {});
+      } catch (_) {}
+    }
+  }
+
+  stopCameraStreamOnly() {
+    if (this.airCameraUtils) {
+      try { this.airCameraUtils.stop(); } catch (_) {}
+      this.airCameraUtils = null;
+    }
+    if (this.airGestureStream) {
+      try {
+        this.airGestureStream.getTracks().forEach(track => track.stop());
+      } catch (_) {}
+      this.airGestureStream = null;
+    }
+    if (this.airGestureVideo) {
+      this.airGestureVideo.srcObject = null;
+    }
+  }
+
+  /**
+   * Phát hiệu ứng âm thanh viễn tưởng (Cyberpunk Chime) bằng Web Audio API
+   */
+  playCyberChime(type = 'grab') {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === 'ready') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.15);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.2);
+      } else if (type === 'grab') {
+        // Hợp âm gom năng lượng (Cyber Grab)
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.25); // Đô cao
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        osc.start(now);
+        osc.stop(now + 0.35);
+      } else if (type === 'drop') {
+        // Hợp âm mở bung tỏa sáng (Cyber Drop / Release)
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1046.5, now);
+        osc.frequency.exponentialRampToValueAtTime(523.25, now + 0.3);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+        osc.start(now);
+        osc.stop(now + 0.45);
+      }
+    } catch (_) {}
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   window.dianaApp = new DianaVoiceApp();
 });
+

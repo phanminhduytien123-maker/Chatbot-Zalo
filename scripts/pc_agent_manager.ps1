@@ -12,13 +12,28 @@ function Get-AgentProcess {
     if (Test-Path $pidFile) {
         $savedPid = Get-Content $pidFile -ErrorAction SilentlyContinue | Out-String
         if ($savedPid) {
-            $pidNum = [int]($savedPid.Trim())
-            $proc = Get-Process -Id $pidNum -ErrorAction SilentlyContinue
-            if ($proc -and ($proc.ProcessName -eq "node")) {
-                return $proc
-            }
+            try {
+                $pidNum = [int]($savedPid.Trim())
+                $proc = Get-Process -Id $pidNum -ErrorAction SilentlyContinue
+                if ($proc -and ($proc.ProcessName -eq "node")) {
+                    return $proc
+                }
+            } catch {}
         }
     }
+    # Fallback: Tim tien trinh node dang chay pcAgent.js
+    try {
+        $procs = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue
+        foreach ($p in $procs) {
+            if ($p.CommandLine -and $p.CommandLine.Contains("pcAgent.js")) {
+                $targetProc = Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue
+                if ($targetProc) {
+                    try { Set-Content $pidFile $targetProc.Id.ToString() -Force } catch {}
+                    return $targetProc
+                }
+            }
+        }
+    } catch {}
     return $null
 }
 
@@ -87,9 +102,10 @@ elseif ($Action -eq "status") {
 }
 elseif ($Action -eq "install") {
     Write-Host "=====================================================" -ForegroundColor Cyan
-    Write-Host " CAI DAT TU DONG KHOI DONG CUNG WINDOWS" -ForegroundColor Cyan
+    Write-Host " CAI DAT TU DONG KHOI DONG CUNG WINDOWS (HYBRID)" -ForegroundColor Cyan
     Write-Host "=====================================================" -ForegroundColor Cyan
     
+    # 1. Startup folder shortcut
     $startupFolder = [Environment]::GetFolderPath('Startup')
     $shortcutPath = Join-Path $startupFolder "Diana_PC_Agent.lnk"
 
@@ -100,6 +116,19 @@ elseif ($Action -eq "install") {
     $shortcut.WorkingDirectory = $rootDir
     $shortcut.Description = "Diana Windows PC Agent Auto-Startup"
     $shortcut.Save()
+
+    # 2. Windows Task Scheduler (Chay voi quyen cao nhat, tu bat lai khi login)
+    try {
+        $taskName = "Diana_PC_Agent_AutoStart"
+        $taskAction = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$vbsPath`"" -WorkingDirectory $rootDir
+        $taskTrigger = New-ScheduledTaskTrigger -AtLogOn
+        $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Days 365)
+        $taskPrincipal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+        Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal -Force | Out-Null
+        Write-Host "[OK] Da dang ky Task Scheduler: $taskName" -ForegroundColor Green
+    } catch {
+        Write-Host "[NOTE] Task Scheduler can quyen Administrator, da dung du phong thu muc Startup." -ForegroundColor Gray
+    }
 
     Write-Host "DA CAI DAT TU KHOI DONG THANH CONG!" -ForegroundColor Green
     Write-Host "File Startup: $shortcutPath" -ForegroundColor White
@@ -128,8 +157,13 @@ elseif ($Action -eq "uninstall") {
 
     if (Test-Path $shortcutPath) {
         Remove-Item $shortcutPath -Force
-        Write-Host "Da go bo cai dat tu dong khoi dong thanh cong!" -ForegroundColor Green
-    } else {
-        Write-Host "Khong tim thay shortcut trong thu muc Startup." -ForegroundColor Yellow
+        Write-Host "Da go bo shortcut trong thu muc Startup." -ForegroundColor Green
     }
+
+    try {
+        Unregister-ScheduledTask -TaskName "Diana_PC_Agent_AutoStart" -Confirm:$false -ErrorAction SilentlyContinue
+        Write-Host "Da go bo Task Scheduler Diana_PC_Agent_AutoStart." -ForegroundColor Green
+    } catch {}
+    
+    Write-Host "Da go bo cai dat tu dong khoi dong thanh cong!" -ForegroundColor Green
 }

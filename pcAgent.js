@@ -258,6 +258,13 @@ async function pollServer() {
           break;
         }
 
+        case 'air_gesture':
+        case 'start_air_gesture': {
+          result = await WindowsController.startAirGestureDetector(params?.timeout || 45, params?.sessionData);
+          result.id = id;
+          break;
+        }
+
         default:
           result = { id, success: false, error: `Hành động "${action}" không được hỗ trợ.` };
       }

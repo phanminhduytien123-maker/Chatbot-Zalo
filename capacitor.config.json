@@ -4,7 +4,8 @@
   "webDir": "public",
   "bundledWebRuntime": false,
   "server": {
-    "androidScheme": "https",
-    "cleartext": true
+    "androidScheme": "http",
+    "cleartext": true,
+    "allowNavigation": ["*"]
   }
 }

@@ -119,6 +119,13 @@ export class PCBridgeService {
       case 'sleep':
         return await WindowsController.sleep();
 
+      case 'air_gesture':
+      case 'start_air_gesture':
+        return await WindowsController.startAirGestureDetector(params?.timeout || 600, params?.sessionData);
+
+      case 'stop_air_gesture':
+        return WindowsController.stopAirGestureDetector();
+
       default:
         return { success: false, error: `Hành động "${action}" không hợp lệ.` };
     }

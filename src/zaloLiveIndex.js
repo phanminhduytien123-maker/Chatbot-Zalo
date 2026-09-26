@@ -11,6 +11,7 @@ import { storage } from './services/storage.js';
 import { scheduler } from './services/scheduler.js';
 import { MessageHandler } from './zalo/messageHandler.js';
 import { pcBridge } from './pc/pcBridge.js';
+import WindowsController from './pc/windowsController.js';
 import VoiceNormalizer from './services/voiceNormalizer.js';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
@@ -18,6 +19,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, '..', 'public');
 const dataDir = path.resolve(__dirname, '..', 'data');
+
+// Biến lưu trữ phiên trò chuyện vừa được chụm cử chỉ (Air Gesture Grab)
+let latestAirGrabSession = null;
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -35,16 +39,30 @@ const mimeTypes = {
 // Khởi tạo HTTP Web Service & Voice Assistant Server cho Render.com
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  const host = req.headers.host || 'localhost:3000';
+  const url = new URL(req.url, `http://${host}`);
   
-  // CORS Headers
+  // CORS Headers cho Mobile Capacitor & Web Client
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     return res.end();
+  }
+
+  // 0. API: Status & Heartbeat Endpoint (Dành cho Android Capacitor AutoDiscover)
+  if (url.pathname === '/api/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({
+      success: true,
+      status: 'ONLINE',
+      pcOnline: pcBridge.isPCOnline(),
+      zaloConnected: zaloLive.isConnected,
+      platform: process.platform,
+      time: new Date().toISOString()
+    }));
   }
 
   // 1. API: Voice Assistant Audio Endpoint (Ghi âm trực tiếp - Bỏ qua Mi AI & Google STT)
@@ -174,6 +192,40 @@ const server = http.createServer(async (req, res) => {
     }));
   }
 
+  // 2.1 API: Lấy danh sách bạn bè Zalo chính thức
+  if (url.pathname === '/api/zalo/friends') {
+    const friends = await zaloLive.getFriendsList();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({
+      success: true,
+      count: friends.length,
+      friends: friends
+    }));
+  }
+
+  // 2.2 API: Quét / Làm mới danh sách bạn bè Zalo trực tiếp từ máy chủ Zalo
+  if (url.pathname === '/api/zalo/friends/scan') {
+    const friends = await zaloLive.scanAllFriends(true);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({
+      success: true,
+      count: friends.length,
+      friends: friends
+    }));
+  }
+
+  // 2.3 API: Tìm kiếm bạn bè Zalo theo tên
+  if (url.pathname === '/api/zalo/search') {
+    const q = url.searchParams.get('q') || '';
+    const contacts = await zaloLive.searchZaloFriends(q);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({
+      success: true,
+      count: contacts.length,
+      contacts: contacts
+    }));
+  }
+
   // 3. API: Phục vụ ảnh chụp màn hình máy tính (Screenshots)
   if (url.pathname.startsWith('/api/screenshot/')) {
     const fileName = path.basename(url.pathname.replace('/api/screenshot/', ''));
@@ -185,6 +237,114 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ error: 'Không tìm thấy ảnh chụp màn hình.' }));
     }
+  }
+
+  // 3.0 OPTIONS Pre-flight cho API Air Gesture
+  if (url.pathname.startsWith('/api/air-gesture/') && req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    });
+    return res.end();
+  }
+
+  // 3.1 API: Lưu phiên Grab Cử chỉ Air Gesture từ điện thoại & Bật chờ cử chỉ trên PC
+  if (url.pathname === '/api/air-gesture/grab' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const sessionPayload = data.session || data.payload || data;
+        latestAirGrabSession = {
+          id: sessionPayload.id || `air_${Date.now()}`,
+          messages: sessionPayload.messages || [],
+          timestamp: Date.now(),
+          activeTopic: sessionPayload.activeTopic || ''
+        };
+
+        console.log(`[Air Gesture] ✊ Đã nhận dữ liệu Grab phiên chat từ điện thoại (${latestAirGrabSession.messages.length} tin nhắn)`);
+
+        // Đồng bộ lên máy chủ Render để web online cũng có dữ liệu phiên chat
+        try {
+          fetch('https://diana-h73u.onrender.com/api/air-gesture/grab', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session: latestAirGrabSession })
+          }).catch(() => {});
+        } catch (_) {}
+
+        // Gửi lệnh đánh thức nhận diện cử chỉ Mở Bàn Tay qua Webcam PC
+        pcBridge.executeCommand('start_air_gesture', {
+          timeout: 86400,
+          sessionData: latestAirGrabSession
+        }).catch(err => console.warn('[Air Gesture Bridge Error]:', err.message));
+
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        return res.end(JSON.stringify({
+          success: true,
+          message: 'Đã lưu phiên grab và kích hoạt chế độ chờ cử chỉ trên PC!',
+          sessionId: latestAirGrabSession.id
+        }));
+      } catch (err) {
+        res.writeHead(400, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        return res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // 3.2 API: Lấy phiên Grab mới nhất để khôi phục trên trình duyệt PC
+  if (url.pathname === '/api/air-gesture/latest') {
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({
+      success: true,
+      hasSession: Boolean(latestAirGrabSession),
+      session: latestAirGrabSession
+    }));
+  }
+
+  // 3.3 API: Trạng thái nhận diện cử chỉ hiện tại của PC (Để điện thoại đồng bộ)
+  if (url.pathname === '/api/air-gesture/status') {
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({
+      success: true,
+      status: WindowsController.airGestureStatus || 'IDLE',
+      hasSession: Boolean(latestAirGrabSession)
+    }));
+  }
+
+  // 3.4 API: Kích hoạt chế độ Air Gesture từ xa
+  if (url.pathname === '/api/air-gesture/arm' && req.method === 'POST') {
+    pcBridge.executeCommand('start_air_gesture', { timeout: 86400 }).catch(() => {});
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({ success: true, message: 'Đã kích hoạt chế độ chờ cử chỉ trên PC.' }));
+  }
+
+  // 3.5 API: Hủy / Tắt chế độ Air Gesture và đóng Webcam PC
+  if (url.pathname === '/api/air-gesture/stop' && req.method === 'POST') {
+    pcBridge.executeCommand('stop_air_gesture').catch(() => {});
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({ success: true, message: 'Đã tắt Webcam và kết thúc cử chỉ.' }));
   }
 
   // 4. Endpoint thăm dò lệnh cho PC Agent

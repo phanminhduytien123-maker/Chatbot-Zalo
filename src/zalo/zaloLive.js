@@ -69,6 +69,7 @@ export class ZaloLiveConnector {
 
         console.log(chalk.green.bold('🎉 ĐĂNG NHẬP ZALO THÀNH CÔNG (KHÔNG CẦN QUÉT MÃ QR)!'));
         this.setupListeners();
+        this.scanAllFriends(false).catch(() => {});
         return;
       } catch (err) {
         console.log(chalk.red('⚠️ Phiên đăng nhập cũ có lỗi, tiến hành tạo mã QR mới:'), err.message);
@@ -110,6 +111,7 @@ export class ZaloLiveConnector {
       await this.resolveTargetUser();
       console.log(chalk.green.bold('\n🎉 ĐĂNG NHẬP ZALO THÀNH CÔNG! BOT ĐÃ ONLINE TRÊN ZALO!'));
       this.setupListeners();
+      this.scanAllFriends(false).catch(() => {});
     } catch (err) {
       console.error(chalk.red('❌ Lỗi khi đăng nhập QR Zalo:'), err.message);
     }
@@ -134,6 +136,130 @@ export class ZaloLiveConnector {
   }
 
   /**
+   * Quét và cập nhật toàn bộ danh sách bạn bè chính thức của tài khoản Zalo
+   */
+  async scanAllFriends(forceRefresh = true) {
+    if (!this.api) {
+      // Đọc từ file cache nếu API chưa sẵn sàng
+      return this.loadCachedFriends();
+    }
+
+    try {
+      console.log(chalk.cyan('🔄 [Zalo Live] Đang quét danh sách bạn bè Zalo từ máy chủ Zalo...'));
+      const friends = await this.api.getAllFriends();
+      if (Array.isArray(friends)) {
+        this.cachedFriends = friends.map(u => ({
+          userId: String(u.userId || u.uid || ''),
+          displayName: String(u.displayName || u.display_name || '').trim(),
+          zaloName: String(u.zaloName || u.zalo_name || '').trim(),
+          avatar: u.avatar || '',
+          phoneNumber: u.phoneNumber || '',
+          gender: u.gender,
+          isFr: u.isFr !== undefined ? u.isFr : 1
+        })).filter(f => f.userId && (f.displayName || f.zaloName));
+
+        this.lastFriendsFetch = Date.now();
+        console.log(chalk.green(`✅ [Zalo Live] Đã quét thành công ${this.cachedFriends.length} bạn bè Zalo.`));
+
+        // Lưu vào data/zaloFriends.json
+        try {
+          const friendsFile = path.join(config.paths.dataDir, 'zaloFriends.json');
+          fs.writeFileSync(friendsFile, JSON.stringify(this.cachedFriends, null, 2), 'utf8');
+        } catch (e) {
+          console.error('⚠️ Không thể ghi cache zaloFriends.json:', e.message);
+        }
+
+        return this.cachedFriends;
+      }
+    } catch (err) {
+      console.error(chalk.red('❌ Lỗi khi quét bạn bè Zalo:'), err.message);
+    }
+    return this.loadCachedFriends();
+  }
+
+  /**
+   * Đọc danh sách bạn bè Zalo từ cache
+   */
+  loadCachedFriends() {
+    if (this.cachedFriends && this.cachedFriends.length > 0) {
+      return this.cachedFriends;
+    }
+    try {
+      const friendsFile = path.join(config.paths.dataDir, 'zaloFriends.json');
+      if (fs.existsSync(friendsFile)) {
+        this.cachedFriends = JSON.parse(fs.readFileSync(friendsFile, 'utf8'));
+        return this.cachedFriends;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /**
+   * Lấy danh sách bạn bè (tự động nạp cache nếu cần)
+   */
+  async getFriendsList() {
+    if (!this.cachedFriends || this.cachedFriends.length === 0) {
+      return await this.scanAllFriends(false);
+    }
+    return this.cachedFriends;
+  }
+
+  /**
+   * Tìm kiếm bạn bè Zalo chính xác bằng tiếng Việt có dấu / không dấu
+   */
+  async searchZaloFriends(query) {
+    if (!query || !query.trim()) return [];
+    const friends = await this.getFriendsList();
+    if (!friends || friends.length === 0) return [];
+
+    const removeAccents = (str) => {
+      if (!str) return '';
+      return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().trim();
+    };
+
+    const normQuery = removeAccents(query);
+    const queryWords = normQuery.split(/\s+/).filter(Boolean);
+
+    const scored = [];
+    for (const f of friends) {
+      const name = f.displayName || f.zaloName;
+      const normName = removeAccents(name);
+      const normZaloName = removeAccents(f.zaloName);
+
+      let score = 0;
+      if (normName === normQuery || normZaloName === normQuery) {
+        score = 100;
+      } else if (normName.startsWith(normQuery) || normZaloName.startsWith(normQuery)) {
+        score = 80;
+      } else if (normName.includes(' ' + normQuery + ' ') || normName.endsWith(' ' + normQuery) || normName.startsWith(normQuery + ' ')) {
+        score = 70;
+      } else if (normName.includes(normQuery) || normZaloName.includes(normQuery)) {
+        score = 50;
+      } else {
+        let allMatch = true;
+        for (const w of queryWords) {
+          if (!normName.includes(w) && !normZaloName.includes(w)) {
+            allMatch = false;
+            break;
+          }
+        }
+        if (allMatch && queryWords.length > 0) score = 40;
+      }
+
+      if (score > 0) {
+        scored.push({
+          ...f,
+          name: name,
+          score: score
+        });
+      }
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored;
+  }
+
+  /**
    * Kiểm tra kết nối Internet thực tế bằng cách phân giải DNS đa nguồn
    */
   async checkInternet() {
@@ -153,8 +279,12 @@ export class ZaloLiveConnector {
    * Tự động kết nối lại an toàn khi gặp sự cố mạng (Đổi WiFi, rớt mạng, socket treo)
    */
   async safeReconnect(reason = 'Mất kết nối hoặc mạng gián đoạn') {
-    if (this.isReconnecting) return;
+    const now = Date.now();
+    if (this.isReconnecting || (this.lastReconnectTime && now - this.lastReconnectTime < 5000)) {
+      return;
+    }
     this.isReconnecting = true;
+    this.lastReconnectTime = now;
 
     console.log(chalk.yellow(`\n🔄 [Zalo Live Reconnect] ${reason}. Đang chuẩn bị kết nối lại...`));
 
@@ -167,7 +297,7 @@ export class ZaloLiveConnector {
       }
 
       // 2. Chờ socket cũ giải phóng hoàn toàn
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
       // 3. Kiểm tra internet trước khi thử kết nối
       const isOnline = await this.checkInternet();
@@ -196,7 +326,7 @@ export class ZaloLiveConnector {
       console.error(chalk.red(`❌ [Zalo Live] Kết nối lại thất bại (Lần ${this.reconnectAttempts}):`), err.message);
       
       // Lên lịch thử lại theo lũy thừa
-      const delay = Math.min(3000 * Math.pow(1.5, this.reconnectAttempts), 20000);
+      const delay = Math.min(5000 * Math.pow(1.5, this.reconnectAttempts), 30000);
       setTimeout(() => {
         this.isReconnecting = false;
         this.safeReconnect('Tự động thử lại theo chu kỳ');
@@ -252,8 +382,15 @@ export class ZaloLiveConnector {
 
     this.api.listener.on('closed', (code, reason) => {
       this.isConnected = false;
-      console.log(chalk.yellow(`⚠️ [Zalo Socket] Đóng kết nối (Code: ${code}, Lý do: ${reason || 'Không rõ'})`));
-      this.safeReconnect('Socket đã đóng hoàn toàn (closed)');
+      const isNormal = code === 1000;
+      const waitTime = isNormal ? 30000 : 8000;
+      if (this.scheduledReconnectTimer) clearTimeout(this.scheduledReconnectTimer);
+      this.isReconnecting = true;
+      console.log(chalk.yellow(`⚠️ [Zalo Socket] Đóng kết nối (Code: ${code}, Lý do: ${reason || 'Không rõ'}). Tự phục hồi sau ${waitTime / 1000}s...`));
+      this.scheduledReconnectTimer = setTimeout(() => {
+        this.isReconnecting = false;
+        this.safeReconnect('Socket đã đóng hoàn toàn (closed)');
+      }, waitTime);
     });
 
     this.api.listener.on('error', (err) => {
@@ -375,7 +512,7 @@ export class ZaloLiveConnector {
     });
 
     try {
-      this.api.listener.start({ retryOnClose: true });
+      this.api.listener.start({ retryOnClose: false });
       console.log(chalk.cyan.bold('\n👂 Điana đang lắng nghe tin nhắn trên Zalo.'));
     } catch (err) {
       if (!err.message?.includes('Already started')) {
