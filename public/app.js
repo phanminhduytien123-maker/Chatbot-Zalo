@@ -1478,43 +1478,58 @@ class DianaVoiceApp {
         lastNode = compressor;
 
       } else if (fxMode === 'spatial') {
-        // === SPATIAL 3D: Âm trường 3D không gian mở (Haas Micro-Spatial Widening - Hiện đại & Tinh tế) ===
+        // === SPATIAL 3D: Âm thanh vòm không gian Studio 3D chân thực (Convolution Room Reverb cao cấp) ===
         const presenceEQ = this.audioCtx.createBiquadFilter();
         presenceEQ.type = 'peaking';
         presenceEQ.frequency.setValueAtTime(3200, this.audioCtx.currentTime);
-        presenceEQ.gain.setValueAtTime(2.5, this.audioCtx.currentTime);
+        presenceEQ.gain.setValueAtTime(3.0, this.audioCtx.currentTime);
 
         const airSparkle = this.audioCtx.createBiquadFilter();
         airSparkle.type = 'highshelf';
-        airSparkle.frequency.setValueAtTime(7000, this.audioCtx.currentTime);
-        airSparkle.gain.setValueAtTime(2.0, this.audioCtx.currentTime);
+        airSparkle.frequency.setValueAtTime(7500, this.audioCtx.currentTime);
+        airSparkle.gain.setValueAtTime(2.5, this.audioCtx.currentTime);
 
-        // Sử dụng vi độ trễ Haas 18ms tạo độ mở không gian 3D, loại bỏ hoàn toàn tiếng vọng cõi âm
-        const delay = this.audioCtx.createDelay();
-        delay.delayTime.setValueAtTime(0.018, this.audioCtx.currentTime); // 18ms Haas effect
+        // Tạo xung phản xạ không gian phòng thu cao cấp (Studio Ambience Impulse)
+        const convolver = this.audioCtx.createConvolver();
+        const duration = 0.7; // Độ dài đuôi vang 0.7 giây
+        const decay = 3.2;    // Độ suy giảm mượt mà
+        const sampleRate = this.audioCtx.sampleRate;
+        const length = Math.floor(sampleRate * duration);
+        const impulse = this.audioCtx.createBuffer(2, length, sampleRate);
+        const left = impulse.getChannelData(0);
+        const right = impulse.getChannelData(1);
 
-        const feedback = this.audioCtx.createGain();
-        feedback.gain.setValueAtTime(0.06, this.audioCtx.currentTime); // Phản hồi cực nhẹ 6%
+        for (let i = 0; i < length; i++) {
+          const t = i / sampleRate;
+          const env = Math.exp(-t * decay);
+          left[i] = (Math.random() * 2 - 1) * env;
+          right[i] = (Math.random() * 2 - 1) * env;
+        }
+        convolver.buffer = impulse;
 
-        const dampFilter = this.audioCtx.createBiquadFilter();
-        dampFilter.type = 'lowpass';
-        dampFilter.frequency.setValueAtTime(4500, this.audioCtx.currentTime);
+        // Bộ lọc làm mịn và ấm đuôi vang không gian
+        const reverbDamp = this.audioCtx.createBiquadFilter();
+        reverbDamp.type = 'lowpass';
+        reverbDamp.frequency.setValueAtTime(4200, this.audioCtx.currentTime);
 
-        delay.connect(dampFilter);
-        dampFilter.connect(feedback);
-        feedback.connect(delay);
-
+        // Kênh âm thanh trực tiếp (Dry)
         const dryGain = this.audioCtx.createGain();
-        dryGain.gain.setValueAtTime(1.0, this.audioCtx.currentTime); // Giọng chính rõ nét 100%
+        dryGain.gain.setValueAtTime(1.0, this.audioCtx.currentTime);
 
+        // Kênh không gian vòm 3D (Wet) - Âm vang rõ ràng, êm ái, sang trọng
         const wetGain = this.audioCtx.createGain();
-        wetGain.gain.setValueAtTime(0.18, this.audioCtx.currentTime); // Không gian phụ nhẹ nhàng 18%
+        wetGain.gain.setValueAtTime(0.35, this.audioCtx.currentTime);
 
         lastNode.connect(presenceEQ);
         presenceEQ.connect(airSparkle);
+
+        // Nhánh trực tiếp
         airSparkle.connect(dryGain);
-        airSparkle.connect(delay);
-        delay.connect(wetGain);
+
+        // Nhánh không gian vòm 3D
+        airSparkle.connect(convolver);
+        convolver.connect(reverbDamp);
+        reverbDamp.connect(wetGain);
 
         const merger = this.audioCtx.createGain();
         dryGain.connect(merger);

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'diana-voice-v15';
+const CACHE_NAME = 'diana-voice-v16';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
