@@ -5,6 +5,8 @@ import time
 import math
 import subprocess
 import webbrowser
+import cv2
+import numpy as np
 
 # Ẩn 100% cửa sổ Terminal / Console ngay khi tiến trình khởi chạy trên Windows
 if sys.platform == 'win32':
