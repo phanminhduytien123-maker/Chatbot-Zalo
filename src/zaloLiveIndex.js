@@ -122,15 +122,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 3. API: Text-to-Speech (TTS) Giọng nói tiếng Việt tự nhiên cho Diana (Hỗ trợ Pitch, Speed, Volume & Cadence)
+  // 3. API: Text-to-Speech (TTS) Giọng nói tiếng Việt tự nhiên cho Diana (Cố định: Pitch 1.2, Speed 1.2, Volume 1.1, Cadence Relaxed)
   if (url.pathname === '/api/tts') {
     let text = url.searchParams.get('text') || '';
     let voice = url.searchParams.get('voice') || 'diana_female';
     let apiKey = url.searchParams.get('apiKey') || '';
-    let pitch = parseFloat(url.searchParams.get('pitch') || '1.0');
-    let speed = parseFloat(url.searchParams.get('speed') || url.searchParams.get('rate') || '1.0');
-    let volume = parseFloat(url.searchParams.get('volume') || url.searchParams.get('vol') || '1.0');
-    let cadence = url.searchParams.get('cadence') || 'normal';
+    let pitch = parseFloat(url.searchParams.get('pitch') || '1.20');
+    let speed = parseFloat(url.searchParams.get('speed') || url.searchParams.get('rate') || '1.20');
+    let volume = parseFloat(url.searchParams.get('volume') || url.searchParams.get('vol') || '1.10');
+    let cadence = url.searchParams.get('cadence') || 'relaxed';
 
     if (!text && req.method === 'POST') {
       let body = '';
@@ -141,10 +141,10 @@ const server = http.createServer(async (req, res) => {
           text = json.text || '';
           voice = json.voice || voice;
           apiKey = json.apiKey || apiKey;
-          pitch = parseFloat(json.pitch || pitch || '1.0');
-          speed = parseFloat(json.speed || json.rate || speed || '1.0');
-          volume = parseFloat(json.volume || json.vol || volume || '1.0');
-          cadence = json.cadence || cadence || 'normal';
+          pitch = parseFloat(json.pitch || pitch || '1.20');
+          speed = parseFloat(json.speed || json.rate || speed || '1.20');
+          volume = parseFloat(json.volume || json.vol || volume || '1.10');
+          cadence = json.cadence || cadence || 'relaxed';
           await streamTTS(text, res, voice, apiKey, pitch, speed, volume, cadence);
         } catch (_) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
