@@ -29,6 +29,8 @@ class DianaVoiceApp {
     this.silenceTimer = null;
     this.synth = window.speechSynthesis || null;
     this.currentAudio = null;
+    this.currentDspSource = null;
+    this.audioCtx = null;
 
     // VAD Tracking Parameters
     this.vadConsecutiveSpeechFrames = 0;
@@ -276,6 +278,7 @@ class DianaVoiceApp {
     this.fxCards.forEach(card => {
       card.addEventListener('click', (e) => {
         e.preventDefault();
+        this.haptic(25);
         const fx = card.dataset.fx || 'none';
         this.voiceSettings.audioFx = fx;
         this.fxCards.forEach(c => c.classList.remove('active'));
@@ -453,11 +456,14 @@ class DianaVoiceApp {
     }
 
     // DSP Audio FX Cards
-    const activeFxCard = document.querySelector(`#fxOptionsGrid .fx-card[data-fx="${this.voiceSettings.audioFx || 'studio'}"]`);
-    if (activeFxCard) {
-      document.querySelectorAll('#fxOptionsGrid .fx-card').forEach(c => c.classList.remove('active'));
-      activeFxCard.classList.add('active');
-    }
+    const currentFx = this.voiceSettings.audioFx || 'studio';
+    document.querySelectorAll('#fxOptionsGrid .fx-card').forEach(c => {
+      if (c.dataset.fx === currentFx) {
+        c.classList.add('active');
+      } else {
+        c.classList.remove('active');
+      }
+    });
 
     // Cadence Select
     if (this.voiceCadenceSelect) {
@@ -483,12 +489,7 @@ class DianaVoiceApp {
     if (this.voiceModalBackdrop) {
       this.voiceModalBackdrop.style.display = 'none';
     }
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-    }
-    if (this.synth) {
-      this.synth.cancel();
-    }
+    this.stopAudioPlayback();
   }
 
   saveVoiceSettings() {
@@ -508,9 +509,13 @@ class DianaVoiceApp {
     if (this.voiceCadenceSelect) {
       this.voiceSettings.cadence = this.voiceCadenceSelect.value;
     }
+    const activeFxCard = document.querySelector('#fxOptionsGrid .fx-card.active');
+    if (activeFxCard) {
+      this.voiceSettings.audioFx = activeFxCard.dataset.fx || 'studio';
+    }
     localStorage.setItem('diana_voice_settings', JSON.stringify(this.voiceSettings));
     this.closeVoiceSettingsModal();
-    this.showCapsule('idle', 'Cài đặt Giọng nói', '💾 Đã lưu đầy đủ cấu hình giọng nói thành công!');
+    this.showCapsule('idle', 'Cài đặt Giọng nói', '💾 Đã lưu cấu hình giọng và bộ lọc DSP thành công!');
     this.scheduleCapsuleClose(3000);
   }
 
@@ -530,6 +535,10 @@ class DianaVoiceApp {
     }
     if (this.voiceCadenceSelect) {
       this.voiceSettings.cadence = this.voiceCadenceSelect.value;
+    }
+    const activeFxCard = document.querySelector('#fxOptionsGrid .fx-card.active');
+    if (activeFxCard) {
+      this.voiceSettings.audioFx = activeFxCard.dataset.fx || 'studio';
     }
     const sampleText = 'Dạ em chào anh Tiến, em là trợ lý Diana của anh ạ! Anh thấy giọng này thế nào ạ?';
     this.speak(sampleText);
@@ -1032,13 +1041,7 @@ class DianaVoiceApp {
    * Bắt đầu nhận diện giọng nói thủ công
    */
   async startRecording() {
-    if (this.synth && this.synth.speaking) {
-      this.synth.cancel();
-    }
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio = null;
-    }
+    this.stopAudioPlayback();
 
     this.vadState = 'LISTENING';
     this.vadRecordStartTime = Date.now();
@@ -1341,7 +1344,204 @@ class DianaVoiceApp {
   }
 
   /**
-   * Phát âm văn bản tiếng Việt tự nhiên cho Diana (Cloud Natural Voice + Fallback SpeechSynthesis)
+   * Dừng toàn bộ các luồng âm thanh đang phát
+   */
+  stopAudioPlayback() {
+    if (this.currentDspSource) {
+      try { this.currentDspSource.stop(); } catch (_) {}
+      this.currentDspSource = null;
+    }
+    if (this.currentAudio) {
+      try {
+        this.currentAudio.pause();
+        this.currentAudio.currentTime = 0;
+      } catch (_) {}
+      this.currentAudio = null;
+    }
+    if (this.synth && this.synth.speaking) {
+      try { this.synth.cancel(); } catch (_) {}
+    }
+  }
+
+  /**
+   * Phát Audio qua bộ xử lý âm thanh số DSP (Web Audio API)
+   */
+  async playDspAudio(audioUrl, onPlay, onEnded, onError) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+      const audio = new Audio(audioUrl);
+      this.currentAudio = audio;
+      const vol = (parseFloat(this.voiceSettings?.volume) || 100) / 100;
+      audio.volume = Math.min(1.0, Math.max(0.1, vol));
+      audio.onplay = () => { if (onPlay) onPlay(); };
+      audio.onended = () => { this.currentAudio = null; if (onEnded) onEnded(); };
+      audio.onerror = (e) => { this.currentAudio = null; if (onError) onError(e); };
+      return audio.play().catch(onError);
+    }
+
+    try {
+      if (!this.audioCtx) {
+        this.audioCtx = new AudioContextClass();
+      }
+      if (this.audioCtx.state === 'suspended') {
+        await this.audioCtx.resume();
+      }
+
+      // 1. Tải và giải mã âm thanh
+      const response = await fetch(audioUrl);
+      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+      const arrayBuffer = await response.arrayBuffer();
+      
+      const decodedBuffer = await new Promise((resolve, reject) => {
+        this.audioCtx.decodeAudioData(arrayBuffer, resolve, reject);
+      });
+
+      this.stopAudioPlayback();
+
+      const source = this.audioCtx.createBufferSource();
+      source.buffer = decodedBuffer;
+      this.currentDspSource = source;
+
+      // 2. Thiết lập chuỗi hiệu ứng DSP Filter Chain
+      const fxMode = this.voiceSettings?.audioFx || 'studio';
+      const volRatio = Math.max(0.1, (parseFloat(this.voiceSettings?.volume) || 100) / 100);
+
+      const gainNode = this.audioCtx.createGain();
+      gainNode.gain.setValueAtTime(volRatio, this.audioCtx.currentTime);
+
+      let lastNode = source;
+
+      if (fxMode === 'studio') {
+        // === STUDIO CLARITY: Tinh lọc trong trẻo, cắt ù nền, nâng sáng dải trung-cao & nén vocal broadcast ===
+        const hpFilter = this.audioCtx.createBiquadFilter();
+        hpFilter.type = 'highpass';
+        hpFilter.frequency.setValueAtTime(95, this.audioCtx.currentTime);
+
+        const warmPeaking = this.audioCtx.createBiquadFilter();
+        warmPeaking.type = 'peaking';
+        warmPeaking.frequency.setValueAtTime(240, this.audioCtx.currentTime);
+        warmPeaking.Q.setValueAtTime(1.0, this.audioCtx.currentTime);
+        warmPeaking.gain.setValueAtTime(2.0, this.audioCtx.currentTime);
+
+        const clarityPeaking = this.audioCtx.createBiquadFilter();
+        clarityPeaking.type = 'peaking';
+        clarityPeaking.frequency.setValueAtTime(3600, this.audioCtx.currentTime);
+        clarityPeaking.Q.setValueAtTime(1.1, this.audioCtx.currentTime);
+        clarityPeaking.gain.setValueAtTime(6.0, this.audioCtx.currentTime);
+
+        const airHighShelf = this.audioCtx.createBiquadFilter();
+        airHighShelf.type = 'highshelf';
+        airHighShelf.frequency.setValueAtTime(8000, this.audioCtx.currentTime);
+        airHighShelf.gain.setValueAtTime(4.0, this.audioCtx.currentTime);
+
+        const compressor = this.audioCtx.createDynamicsCompressor();
+        compressor.threshold.setValueAtTime(-18, this.audioCtx.currentTime);
+        compressor.knee.setValueAtTime(12, this.audioCtx.currentTime);
+        compressor.ratio.setValueAtTime(3.5, this.audioCtx.currentTime);
+        compressor.attack.setValueAtTime(0.003, this.audioCtx.currentTime);
+        compressor.release.setValueAtTime(0.25, this.audioCtx.currentTime);
+
+        lastNode.connect(hpFilter);
+        hpFilter.connect(warmPeaking);
+        warmPeaking.connect(clarityPeaking);
+        clarityPeaking.connect(airHighShelf);
+        airHighShelf.connect(compressor);
+        lastNode = compressor;
+
+      } else if (fxMode === 'bass') {
+        // === WARM BASS: Trầm ấm, dày dặn, mượt mà và êm tai ===
+        const lowShelf = this.audioCtx.createBiquadFilter();
+        lowShelf.type = 'lowshelf';
+        lowShelf.frequency.setValueAtTime(220, this.audioCtx.currentTime);
+        lowShelf.gain.setValueAtTime(8.5, this.audioCtx.currentTime);
+
+        const chestPeaking = this.audioCtx.createBiquadFilter();
+        chestPeaking.type = 'peaking';
+        chestPeaking.frequency.setValueAtTime(450, this.audioCtx.currentTime);
+        chestPeaking.Q.setValueAtTime(1.2, this.audioCtx.currentTime);
+        chestPeaking.gain.setValueAtTime(3.5, this.audioCtx.currentTime);
+
+        const highDeHarsh = this.audioCtx.createBiquadFilter();
+        highDeHarsh.type = 'lowpass';
+        highDeHarsh.frequency.setValueAtTime(7500, this.audioCtx.currentTime);
+
+        const compressor = this.audioCtx.createDynamicsCompressor();
+        compressor.threshold.setValueAtTime(-15, this.audioCtx.currentTime);
+        compressor.ratio.setValueAtTime(4.0, this.audioCtx.currentTime);
+        compressor.attack.setValueAtTime(0.01, this.audioCtx.currentTime);
+        compressor.release.setValueAtTime(0.2, this.audioCtx.currentTime);
+
+        lastNode.connect(lowShelf);
+        lowShelf.connect(chestPeaking);
+        chestPeaking.connect(highDeHarsh);
+        highDeHarsh.connect(compressor);
+        lastNode = compressor;
+
+      } else if (fxMode === 'spatial') {
+        // === SPATIAL 3D: Vang không gian tương lai, hiệu ứng hologram stereo ambience ===
+        const presenceEQ = this.audioCtx.createBiquadFilter();
+        presenceEQ.type = 'peaking';
+        presenceEQ.frequency.setValueAtTime(3200, this.audioCtx.currentTime);
+        presenceEQ.gain.setValueAtTime(4.0, this.audioCtx.currentTime);
+
+        const delay = this.audioCtx.createDelay();
+        delay.delayTime.setValueAtTime(0.075, this.audioCtx.currentTime);
+
+        const feedback = this.audioCtx.createGain();
+        feedback.gain.setValueAtTime(0.35, this.audioCtx.currentTime);
+
+        const dampFilter = this.audioCtx.createBiquadFilter();
+        dampFilter.type = 'lowpass';
+        dampFilter.frequency.setValueAtTime(3200, this.audioCtx.currentTime);
+
+        delay.connect(dampFilter);
+        dampFilter.connect(feedback);
+        feedback.connect(delay);
+
+        const dryGain = this.audioCtx.createGain();
+        dryGain.gain.setValueAtTime(0.85, this.audioCtx.currentTime);
+
+        const wetGain = this.audioCtx.createGain();
+        wetGain.gain.setValueAtTime(0.45, this.audioCtx.currentTime);
+
+        lastNode.connect(presenceEQ);
+        presenceEQ.connect(dryGain);
+        presenceEQ.connect(delay);
+        delay.connect(wetGain);
+
+        const merger = this.audioCtx.createGain();
+        dryGain.connect(merger);
+        wetGain.connect(merger);
+        lastNode = merger;
+      }
+
+      // Kết nối Master Gain đến Loa ngoài
+      lastNode.connect(gainNode);
+      gainNode.connect(this.audioCtx.destination);
+
+      source.onended = () => {
+        this.currentDspSource = null;
+        if (onEnded) onEnded();
+      };
+
+      source.start(0);
+      if (onPlay) onPlay();
+
+    } catch (err) {
+      console.warn('[Web Audio DSP Engine Fallback]:', err);
+      const audio = new Audio(audioUrl);
+      this.currentAudio = audio;
+      const vol = (parseFloat(this.voiceSettings?.volume) || 100) / 100;
+      audio.volume = Math.min(1.0, Math.max(0.1, vol));
+      audio.onplay = () => { if (onPlay) onPlay(); };
+      audio.onended = () => { this.currentAudio = null; if (onEnded) onEnded(); };
+      audio.onerror = (e) => { this.currentAudio = null; if (onError) onError(e); };
+      return audio.play().catch(onError);
+    }
+  }
+
+  /**
+   * Phát âm văn bản tiếng Việt tự nhiên cho Diana (Cloud Natural Voice + Web Audio DSP + Fallback SpeechSynthesis)
    */
   speak(text) {
     if (!this.ttsEnabled) {
@@ -1366,14 +1566,7 @@ class DianaVoiceApp {
       return;
     }
 
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio.currentTime = 0;
-      this.currentAudio = null;
-    }
-    if (this.synth && this.synth.speaking) {
-      this.synth.cancel();
-    }
+    this.stopAudioPlayback();
 
     this.vadState = 'SPEAKING';
     this.isSpeaking = true;
@@ -1396,44 +1589,33 @@ class DianaVoiceApp {
       const cadenceParam = `&cadence=${encodeURIComponent(this.voiceSettings?.cadence || 'normal')}`;
       
       const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}&voice=${voiceParam}${pitchParam}${speedParam}${volParam}${cadenceParam}${apiKeyParam}`;
-      const audio = new Audio(ttsUrl);
-      this.currentAudio = audio;
-      audio.volume = Math.min(1.0, Math.max(0.1, parseFloat(volRatio) || 1.0));
 
-      audio.onplay = () => {
-        this.isSpeaking = true;
-        this.setDotState('speaking');
-        this.capsuleStatus.textContent = 'Diana đang nói...';
-      };
-
-      audio.onended = () => {
-        this.isSpeaking = false;
-        this.setDotState('idle');
-        this.currentAudio = null;
-
-        if (this.autoVadEnabled) {
-          setTimeout(() => {
-            this.vadState = 'WAITING_VOICE';
-            this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
-            this.updateLiveOverlayState('listening', 'Rảnh tay đang bật', 'Hãy nói câu hỏi của anh nhé...');
-          }, 400);
-        } else {
-          this.scheduleCapsuleClose(4000);
-          this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói...');
-        }
-      };
-
-      audio.onerror = () => {
-        console.warn('Lỗi tải TTS audio, chuyển sang SpeechSynthesis fallback...');
-        this.fallbackSpeechSynthesis(cleanText);
-      };
-
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
+      this.playDspAudio(
+        ttsUrl,
+        () => {
+          this.isSpeaking = true;
+          this.setDotState('speaking');
+          this.capsuleStatus.textContent = 'Diana đang nói...';
+        },
+        () => {
+          this.isSpeaking = false;
+          this.setDotState('idle');
+          if (this.autoVadEnabled) {
+            setTimeout(() => {
+              this.vadState = 'WAITING_VOICE';
+              this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
+              this.updateLiveOverlayState('listening', 'Rảnh tay đang bật', 'Hãy nói câu hỏi của anh nhé...');
+            }, 400);
+          } else {
+            this.scheduleCapsuleClose(4000);
+            this.updateLiveOverlayState('idle', 'Sẵn sàng', 'Chạm vào hình cầu để nói...');
+          }
+        },
+        (err) => {
+          console.warn('[DSP Engine Fallback to SpeechSynthesis]:', err);
           this.fallbackSpeechSynthesis(cleanText);
-        });
-      }
+        }
+      );
     } catch (_) {
       this.fallbackSpeechSynthesis(cleanText);
     }
@@ -1642,11 +1824,7 @@ class DianaVoiceApp {
     localStorage.setItem('diana_tts', this.ttsEnabled);
     this.updateTTSButtonState();
     if (!this.ttsEnabled) {
-      if (this.synth) this.synth.cancel();
-      if (this.currentAudio) {
-        this.currentAudio.pause();
-        this.currentAudio = null;
-      }
+      this.stopAudioPlayback();
     }
   }
 
