@@ -297,8 +297,13 @@ class DianaVoiceApp {
     }
 
     if (this.voicePitchRange) {
-      this.voicePitchRange.value = this.voiceSettings.pitch || 1.0;
-      if (this.pitchValueBadge) this.pitchValueBadge.textContent = `${(this.voiceSettings.pitch || 1.0).toFixed(2)}`;
+      const p = parseFloat(this.voiceSettings.pitch) || 1.0;
+      this.voicePitchRange.value = p;
+      let label = `${p.toFixed(2)}`;
+      if (p <= 0.9) label += ' (Trầm ấm)';
+      else if (p >= 0.95 && p <= 1.05) label += ' (Tự nhiên)';
+      else label += ' (Trong trẻo)';
+      if (this.pitchValueBadge) this.pitchValueBadge.textContent = label;
     }
   }
 
@@ -329,6 +334,12 @@ class DianaVoiceApp {
     if (this.minimaxApiKeyInput) {
       this.voiceSettings.minimaxApiKey = this.minimaxApiKeyInput.value.trim();
     }
+    if (this.voicePitchRange) {
+      this.voiceSettings.pitch = parseFloat(this.voicePitchRange.value) || 1.0;
+    }
+    if (this.voiceSpeedRange) {
+      this.voiceSettings.speed = parseFloat(this.voiceSpeedRange.value) || 1.0;
+    }
     localStorage.setItem('diana_voice_settings', JSON.stringify(this.voiceSettings));
     this.closeVoiceSettingsModal();
     this.showCapsule('idle', 'Cài đặt Giọng nói', '💾 Đã lưu tùy chọn giọng nói thành công!');
@@ -339,6 +350,12 @@ class DianaVoiceApp {
     this.haptic(30);
     if (this.minimaxApiKeyInput) {
       this.voiceSettings.minimaxApiKey = this.minimaxApiKeyInput.value.trim();
+    }
+    if (this.voicePitchRange) {
+      this.voiceSettings.pitch = parseFloat(this.voicePitchRange.value) || 1.0;
+    }
+    if (this.voiceSpeedRange) {
+      this.voiceSettings.speed = parseFloat(this.voiceSpeedRange.value) || 1.0;
     }
     const sampleText = 'Dạ em chào anh Tiến, em là trợ lý Diana của anh ạ! Anh thấy giọng này thế nào ạ?';
     this.speak(sampleText);
@@ -1198,12 +1215,11 @@ class DianaVoiceApp {
     try {
       const voiceParam = encodeURIComponent(this.voiceSettings?.voicePreset || 'diana_female');
       const apiKeyParam = this.voiceSettings?.minimaxApiKey ? `&apiKey=${encodeURIComponent(this.voiceSettings.minimaxApiKey)}` : '';
-      const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}&voice=${voiceParam}${apiKeyParam}`;
+      const pitchParam = `&pitch=${encodeURIComponent(this.voiceSettings?.pitch || 1.0)}`;
+      const speedParam = `&speed=${encodeURIComponent(this.voiceSettings?.speed || 1.0)}`;
+      const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanText.slice(0, 450))}&voice=${voiceParam}${pitchParam}${speedParam}${apiKeyParam}`;
       const audio = new Audio(ttsUrl);
       this.currentAudio = audio;
-      if (this.voiceSettings && this.voiceSettings.speed) {
-        audio.playbackRate = this.voiceSettings.speed;
-      }
 
       audio.onplay = () => {
         this.isSpeaking = true;

@@ -122,10 +122,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 3. API: Text-to-Speech (TTS) Giọng nói tiếng Việt tự nhiên cho Diana
+  // 3. API: Text-to-Speech (TTS) Giọng nói tiếng Việt tự nhiên cho Diana (Hỗ trợ Pitch & Speed)
   if (url.pathname === '/api/tts') {
     let text = url.searchParams.get('text') || '';
     let voice = url.searchParams.get('voice') || 'diana_female';
+    let apiKey = url.searchParams.get('apiKey') || '';
+    let pitch = parseFloat(url.searchParams.get('pitch') || '1.0');
+    let speed = parseFloat(url.searchParams.get('speed') || url.searchParams.get('rate') || '1.0');
+
     if (!text && req.method === 'POST') {
       let body = '';
       req.on('data', chunk => { body += chunk; });
@@ -134,7 +138,10 @@ const server = http.createServer(async (req, res) => {
           const json = JSON.parse(body || '{}');
           text = json.text || '';
           voice = json.voice || voice;
-          await streamTTS(text, res, voice);
+          apiKey = json.apiKey || apiKey;
+          pitch = parseFloat(json.pitch || pitch || '1.0');
+          speed = parseFloat(json.speed || json.rate || speed || '1.0');
+          await streamTTS(text, res, voice, apiKey, pitch, speed);
         } catch (_) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Lỗi parse text' }));
@@ -142,7 +149,7 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    await streamTTS(text, res, voice);
+    await streamTTS(text, res, voice, apiKey, pitch, speed);
     return;
   }
 
@@ -262,10 +269,13 @@ const server = http.createServer(async (req, res) => {
   }));
 });
 
-async function callMiniMaxTTS(text, voiceId, apiKey) {
+async function callMiniMaxTTS(text, voiceId, apiKey, pitch = 1.0, speed = 1.0) {
   const endpoint = 'https://api.minimax.chat/v1/t2a_v2';
   const key = apiKey || process.env.MINIMAX_API_KEY;
   if (!key) throw new Error('NO_MINIMAX_KEY');
+
+  const pitchVal = Math.max(-12, Math.min(12, Math.round((parseFloat(pitch) - 1.0) * 20)));
+  const speedVal = Math.max(0.5, Math.min(2.0, parseFloat(speed) || 1.0));
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -279,9 +289,9 @@ async function callMiniMaxTTS(text, voiceId, apiKey) {
       stream: false,
       voice_setting: {
         voice_id: voiceId || 'moss_audio_881639b8-b831-11f1-80cc-aac30e71d302',
-        speed: 1.0,
+        speed: speedVal,
         vol: 1.0,
-        pitch: 0
+        pitch: pitchVal
       },
       audio_setting: {
         sample_rate: 32000,
@@ -299,10 +309,17 @@ async function callMiniMaxTTS(text, voiceId, apiKey) {
   throw new Error(data?.base_resp?.status_msg || 'Lỗi từ MiniMax API');
 }
 
-async function callEdgeNeuralTTS(text, voiceName = 'vi-VN-HoaiMyNeural') {
+async function callEdgeNeuralTTS(text, voiceName = 'vi-VN-HoaiMyNeural', pitch = 1.0, speed = 1.0) {
   const tts = new MsEdgeTTS();
   await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-  const { audioStream } = tts.toStream(text);
+
+  const pitchPercent = Math.round((parseFloat(pitch) - 1.0) * 100);
+  const pitchStr = pitchPercent >= 0 ? `+${pitchPercent}%` : `${pitchPercent}%`;
+
+  const speedPercent = Math.round((parseFloat(speed) - 1.0) * 100);
+  const speedStr = speedPercent >= 0 ? `+${speedPercent}%` : `${speedPercent}%`;
+
+  const { audioStream } = tts.toStream(text, { pitch: pitchStr, rate: speedStr });
   const chunks = [];
   return new Promise((resolve, reject) => {
     audioStream.on('data', (chunk) => chunks.push(chunk));
@@ -311,7 +328,7 @@ async function callEdgeNeuralTTS(text, voiceName = 'vi-VN-HoaiMyNeural') {
   });
 }
 
-async function streamTTS(text, res, voice = 'diana_female', apiKey = '') {
+async function streamTTS(text, res, voice = 'diana_female', apiKey = '', pitch = 1.0, speed = 1.0) {
   if (!text || !text.trim()) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Text rỗng.' }));
@@ -327,7 +344,7 @@ async function streamTTS(text, res, voice = 'diana_female', apiKey = '') {
   if (voice.startsWith('moss_audio_') || voice === 'typhoeus' || (apiKey && voice !== 'google_female')) {
     try {
       const voiceId = voice.startsWith('moss_audio_') ? voice : 'moss_audio_881639b8-b831-11f1-80cc-aac30e71d302';
-      const miniMaxBuffer = await callMiniMaxTTS(cleanText, voiceId, apiKey);
+      const miniMaxBuffer = await callMiniMaxTTS(cleanText, voiceId, apiKey, pitch, speed);
       res.writeHead(200, {
         'Content-Type': 'audio/mpeg',
         'Content-Length': miniMaxBuffer.length,
@@ -343,7 +360,7 @@ async function streamTTS(text, res, voice = 'diana_female', apiKey = '') {
   if (voice === 'diana_female' || voice === 'viet_male' || !voice) {
     try {
       const edgeVoice = voice === 'viet_male' ? 'vi-VN-NamMinhNeural' : 'vi-VN-HoaiMyNeural';
-      const edgeBuffer = await callEdgeNeuralTTS(cleanText, edgeVoice);
+      const edgeBuffer = await callEdgeNeuralTTS(cleanText, edgeVoice, pitch, speed);
       if (edgeBuffer && edgeBuffer.length > 500) {
         res.writeHead(200, {
           'Content-Type': 'audio/mpeg',
