@@ -1,9 +1,11 @@
-const CACHE_NAME = 'diana-voice-v17';
+const CACHE_NAME = 'diana-voice-v18';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/style.css',
   '/app.js',
+  '/avatar.png',
+  '/icon.png',
   '/manifest.json',
   '/icon.svg'
 ];

@@ -1371,7 +1371,8 @@ class DianaVoiceApp {
     const now = new Date();
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-    let html = `<div class="message-bubble">${this.formatMarkdown(text)}`;
+    let avatarHtml = sender === 'bot' ? `<div class="msg-bot-avatar"><img src="/avatar.png" alt="Diana"></div>` : '';
+    let html = `<div class="message-row">${avatarHtml}<div class="message-bubble">${this.formatMarkdown(text)}`;
 
     if (attachments && attachments.length > 0) {
       for (const att of attachments) {
@@ -1386,7 +1387,7 @@ class DianaVoiceApp {
       }
     }
 
-    html += `</div><span class="message-time">${timeStr}</span>`;
+    html += `</div></div><span class="message-time">${timeStr}</span>`;
     item.innerHTML = html;
 
     this.chatMessages.appendChild(item);

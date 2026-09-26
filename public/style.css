@@ -223,6 +223,16 @@ html, body {
   to { transform: rotate(360deg); }
 }
 
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  position: relative;
+  z-index: 2;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 .avatar-emoji {
   font-size: 20px;
   position: relative;
@@ -433,7 +443,19 @@ html, body {
 }
 
 .welcome-avatar-wrapper {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: center;
+}
+
+.welcome-avatar-img {
+  width: 82px;
+  height: 82px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  border: 2.5px solid rgba(0, 242, 254, 0.65);
+  box-shadow: 0 0 30px rgba(0, 242, 254, 0.5), 0 10px 25px rgba(0, 0, 0, 0.6);
+  animation: floatIcon 3.5s ease-in-out infinite;
 }
 
 .welcome-icon {
@@ -570,6 +592,32 @@ html, body {
 
 .message-item.bot {
   align-self: flex-start;
+}
+
+.message-row {
+  display: flex;
+  gap: 9px;
+  align-items: flex-end;
+  width: 100%;
+}
+
+.msg-bot-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.4);
+  border: 1.5px solid rgba(0, 242, 254, 0.5);
+  margin-bottom: 2px;
+  background: var(--gradient-brand);
+}
+
+.msg-bot-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .message-bubble {
@@ -977,6 +1025,23 @@ html, body {
   transform: scale(1.12);
 }
 
+.assistive-dot .dot-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.dot-avatar-img {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.4));
+}
+
 .assistive-dot.listening .dot-icon {
   display: none;
 }
@@ -1327,6 +1392,16 @@ html, body {
   transform: scale(0.92);
 }
 
+.orb-avatar-img {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  filter: drop-shadow(0 0 20px rgba(0, 242, 254, 0.7));
+  pointer-events: none;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+}
+
 .orb-emoji {
   font-size: 48px;
   position: relative;
@@ -1519,8 +1594,8 @@ html, body {
 }
 
 .pwa-icon-box {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: var(--radius-sm);
   background: var(--gradient-brand);
   display: flex;
@@ -1528,6 +1603,14 @@ html, body {
   justify-content: center;
   font-size: 1.2rem;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.pwa-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
 }
 
 .pwa-text strong {
