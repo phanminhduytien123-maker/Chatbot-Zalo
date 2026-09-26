@@ -449,7 +449,7 @@ Write-Output "OK"
       const tmpFile = path.join(os.tmpdir(), `diana_ps_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.ps1`);
       try {
         fs.writeFileSync(tmpFile, script, 'utf8');
-        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tmpFile], (err, stdout, stderr) => {
+        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', tmpFile], { windowsHide: true }, (err, stdout, stderr) => {
           try { fs.unlinkSync(tmpFile); } catch (_) {}
           resolve({ err, stdout: stdout ? stdout.trim() : '', stderr: stderr ? stderr.trim() : '' });
         });
@@ -1023,7 +1023,8 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
       
       const child = spawn('python', [scriptPath, timeoutSeconds.toString(), targetUrl], {
         cwd: path.resolve(__dirname, '..', '..'),
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
       });
 
       WindowsController.activeAirChild = child;

@@ -5,8 +5,18 @@ import time
 import math
 import subprocess
 import webbrowser
-import cv2
-import numpy as np
+
+# Ẩn 100% cửa sổ Terminal / Console ngay khi tiến trình khởi chạy trên Windows
+if sys.platform == 'win32':
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+        console_hwnd = kernel32.GetConsoleWindow()
+        if console_hwnd:
+            user32.ShowWindow(console_hwnd, 0)  # 0 = SW_HIDE
+    except Exception:
+        pass
 
 try:
     if hasattr(sys.stdout, 'reconfigure'):
