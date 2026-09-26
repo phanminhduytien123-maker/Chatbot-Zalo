@@ -305,6 +305,7 @@ html, body {
 .header-actions-ribbon {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   overflow-x: auto;
   scrollbar-width: none;

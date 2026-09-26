@@ -79,16 +79,9 @@ class DianaVoiceApp {
     this.autoVadToggleBtn = document.getElementById('autoVadToggleBtn');
     this.autoVadBadgeDot = document.getElementById('autoVadBadgeDot');
     this.screenshotHeaderBtn = document.getElementById('screenshotHeaderBtn');
-    this.youtubeHeaderBtn = document.getElementById('youtubeHeaderBtn');
-    this.volumeHeaderBtn = document.getElementById('volumeHeaderBtn');
-    this.batteryHeaderBtn = document.getElementById('batteryHeaderBtn');
-    this.portalHeaderBtn = document.getElementById('portalHeaderBtn');
-    this.weatherHeaderBtn = document.getElementById('weatherHeaderBtn');
-    this.lockPcHeaderBtn = document.getElementById('lockPcHeaderBtn');
     this.ttsToggleBtn = document.getElementById('ttsToggleBtn');
     this.dotToggleBtn = document.getElementById('dotToggleBtn');
     this.pipToggleBtn = document.getElementById('pipToggleBtn');
-    this.pipChip = document.getElementById('pipChip');
     this.clearChatBtn = document.getElementById('clearChatBtn');
     
     // Live Voice Overlay Elements
@@ -1686,42 +1679,6 @@ class DianaVoiceApp {
       this.screenshotHeaderBtn.addEventListener('click', () => {
         this.haptic(35);
         this.handleTextQuery('chụp ảnh màn hình máy tính');
-      });
-    }
-    if (this.youtubeHeaderBtn) {
-      this.youtubeHeaderBtn.addEventListener('click', () => {
-        this.haptic(35);
-        this.handleTextQuery('mở youtube trên máy tính');
-      });
-    }
-    if (this.volumeHeaderBtn) {
-      this.volumeHeaderBtn.addEventListener('click', () => {
-        this.haptic(35);
-        this.handleTextQuery('chỉnh âm lượng máy tính 70%');
-      });
-    }
-    if (this.batteryHeaderBtn) {
-      this.batteryHeaderBtn.addEventListener('click', () => {
-        this.haptic(35);
-        this.handleTextQuery('kiểm tra pin laptop');
-      });
-    }
-    if (this.portalHeaderBtn) {
-      this.portalHeaderBtn.addEventListener('click', () => {
-        this.haptic(35);
-        this.handleTextQuery('tra cứu điểm thi đại học quy nhơn');
-      });
-    }
-    if (this.weatherHeaderBtn) {
-      this.weatherHeaderBtn.addEventListener('click', () => {
-        this.haptic(35);
-        this.handleTextQuery('thời tiết hôm nay thế nào');
-      });
-    }
-    if (this.lockPcHeaderBtn) {
-      this.lockPcHeaderBtn.addEventListener('click', () => {
-        this.haptic(35);
-        this.handleTextQuery('khóa màn hình máy tính');
       });
     }
     if (this.ttsToggleBtn) {
