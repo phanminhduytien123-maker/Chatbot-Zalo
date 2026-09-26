@@ -253,10 +253,10 @@ html, body {
 }
 
 .header-center-title {
-  font-family: 'Outfit', 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', 'Plus Jakarta Sans', sans-serif;
   font-size: 1.15rem;
   font-weight: 800;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
   background: var(--gradient-brand);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -477,7 +477,7 @@ html, body {
 }
 
 .welcome-title {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Be Vietnam Pro', 'Plus Jakarta Sans', sans-serif;
   font-size: 1.35rem;
   font-weight: 800;
   margin-bottom: 6px;
@@ -1195,7 +1195,7 @@ html, body {
 }
 
 .capsule-title {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Be Vietnam Pro', 'Plus Jakarta Sans', sans-serif;
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--accent-cyan);
@@ -1314,10 +1314,10 @@ html, body {
 }
 
 .live-voice-title {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Be Vietnam Pro', 'Plus Jakarta Sans', sans-serif;
   font-size: 0.9rem;
   font-weight: 800;
-  letter-spacing: 1px;
+  letter-spacing: 0.8px;
   color: var(--accent-cyan);
   display: flex;
   align-items: center;
