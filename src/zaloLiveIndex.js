@@ -65,6 +65,46 @@ const server = http.createServer(async (req, res) => {
     }));
   }
 
+  // 1.0 API: Speech-to-Text Endpoint (STT thuần - chuyển âm thanh thành văn bản chính xác 100%)
+  if (url.pathname === '/api/stt' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const audioBase64 = data.audio;
+        const mimeType = data.mimeType || 'audio/webm';
+
+        if (!audioBase64) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error: 'Dữ liệu âm thanh rỗng.' }));
+        }
+
+        const transcribedQuery = await aiAssistant.transcribeAudio(audioBase64, mimeType);
+        if (!transcribedQuery || !transcribedQuery.trim()) {
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({
+            success: false,
+            error: 'Không nhận diện được giọng nói.'
+          }));
+        }
+
+        const normalizedQuery = VoiceNormalizer.normalize(transcribedQuery);
+        console.log(`[STT Endpoint] Đã chuyển đổi âm thanh -> Text: "${normalizedQuery}"`);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({
+          success: true,
+          text: normalizedQuery
+        }));
+      } catch (err) {
+        console.error('[STT Endpoint Error]:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
   // 1. API: Voice Assistant Audio Endpoint (Ghi âm trực tiếp - Bỏ qua Mi AI & Google STT)
   if (url.pathname === '/api/voice-audio' && req.method === 'POST') {
     let body = '';

@@ -66,7 +66,7 @@ Write-Output "OK"
         if (error) {
           return resolve({ success: false, error: error.message });
         }
-        resolve({ success: true, message: '🔒 Đã khóa màn hình máy tính thành công!' });
+        resolve({ success: true, message: 'Đã hoàn thành' });
       });
     });
   }
@@ -128,7 +128,7 @@ Write-Output "OK"
     if (serviceRes.success) {
       return {
         success: true,
-        message: `🔓 Đã mở khóa máy tính thành công!`
+        message: 'Đã hoàn thành'
       };
     }
 
@@ -151,7 +151,7 @@ Write-Output "OK"
     if (taskResult) {
       return {
         success: true,
-        message: `🔓 Đã mở khóa máy tính thành công!`
+        message: 'Đã hoàn thành'
       };
     }
 
@@ -276,7 +276,7 @@ Write-Output $res
 
     return {
       success: true,
-      message: `🔓 Đã gửi lệnh đánh thức và mở khóa máy tính thành công với mật khẩu "${pass}"! ✨\n💡 Nếu máy vẫn chưa mở, anh chỉ cần chạy file "Cai_Dat_Mo_Khoa_SYSTEM.bat" (Run as admin) 1 lần duy nhất trên máy tính là được nhé! 🌸`
+      message: 'Đã hoàn thành'
     };
   }
 
@@ -306,7 +306,7 @@ Write-Output "OK"
     if (res.err || (res.stderr && !res.stdout.includes('OK'))) {
       return { success: false, error: res.stderr || res.err?.message || 'Lỗi khi tắt màn hình máy tính' };
     }
-    return { success: true, message: '🖥️ Đã tắt màn hình máy tính!' };
+    return { success: true, message: 'Đã hoàn thành' };
   }
 
   /**
@@ -347,7 +347,7 @@ Write-Output "OK"
     if (res.err || (res.stderr && !res.stdout.includes('OK'))) {
       return { success: false, error: res.stderr || res.err?.message || 'Lỗi khi bật màn hình máy tính' };
     }
-    return { success: true, message: '💡 Đã bật sáng màn hình máy tính!' };
+    return { success: true, message: 'Đã hoàn thành' };
   }
 
 
@@ -414,7 +414,7 @@ Write-Output "OK"
 
       exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
         if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: `🔊 Đã chỉnh âm lượng máy tính về: ${targetPercent}%` });
+        resolve({ success: true, message: 'Đã hoàn thành' });
       });
     });
   }
@@ -434,7 +434,7 @@ Write-Output "OK"
 
       exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
         if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: '🔇/🔊 Đã chuyển đổi trạng thái tắt/bật âm thanh loa!' });
+        resolve({ success: true, message: 'Đã hoàn thành' });
       });
     });
   }
@@ -813,13 +813,13 @@ Write-Output "OK"
 
     if (urlToOpen) {
       await WindowsController.launchInteractive(urlToOpen);
-      return { success: true, message: `🌐 Đã mở trang web "${urlToOpen}" trên trình duyệt máy tính của anh!` };
+      return { success: true, message: 'Đã hoàn thành' };
     }
 
     // 2. Nếu là đường dẫn file / folder cụ thể có tồn tại
     if (fs.existsSync(clean)) {
       await WindowsController.launchInteractive(clean);
-      return { success: true, message: `📁 Đã mở "${path.basename(clean)}" trên máy tính!` };
+      return { success: true, message: 'Đã hoàn thành' };
     }
 
     // 3. Các alias ứng dụng hệ thống & lệnh dòng lệnh (calc, notepad, paint, cmd, wt, powershell...)
@@ -859,7 +859,7 @@ Write-Output "OK"
     if (sysCmd) {
       const res = await WindowsController.launchInteractive(sysCmd);
       if (res.success) {
-        return { success: true, message: `🚀 Đã mở ứng dụng "${clean}" trên máy tính của anh!` };
+        return { success: true, message: 'Đã hoàn thành' };
       }
     }
 
@@ -870,7 +870,7 @@ Write-Output "OK"
       if (res.success) {
         return {
           success: true,
-          message: `🚀 Đã tìm thấy và mở ứng dụng "${appFound.displayName}" trên máy tính của anh thành công! ✨`
+          message: 'Đã hoàn thành'
         };
       }
     }
@@ -878,7 +878,7 @@ Write-Output "OK"
     // 5. Thử khởi chạy trực tiếp bằng launchInteractive
     const directRes = await WindowsController.launchInteractive(clean);
     if (directRes.success) {
-      return { success: true, message: `🚀 Đã khởi chạy "${clean}" trên máy tính của anh!` };
+      return { success: true, message: 'Đã hoàn thành' };
     }
 
     return {
@@ -899,7 +899,7 @@ Write-Output "OK"
 
       exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
         if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: `📋 Đã copy nội dung vào Clipboard máy tính! Anh chỉ việc bấm Ctrl + V trên máy tính để dán ạ.` });
+        resolve({ success: true, message: 'Đã hoàn thành' });
       });
     });
   }
@@ -937,7 +937,7 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 
       exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
         if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: `🔔 Đã phát thông báo lên màn hình máy tính của anh thành công!` });
+        resolve({ success: true, message: 'Đã hoàn thành' });
       });
     });
   }
@@ -951,11 +951,7 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
       const seconds = Math.max(0, Math.round(Number(minutes) * 60));
       exec(`shutdown /s /t ${seconds}`, (error) => {
         if (error) return resolve({ success: false, error: error.message });
-        if (seconds === 0) {
-          resolve({ success: true, message: '⚡ Đang tiến hành tắt máy tính...' });
-        } else {
-          resolve({ success: true, message: `⏱️ Đã đặt lịch tắt máy tính sau ${minutes} phút nữa!` });
-        }
+        resolve({ success: true, message: 'Đã hoàn thành' });
       });
     });
   }
@@ -967,7 +963,7 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
     return new Promise((resolve) => {
       exec('shutdown /a', (error) => {
         if (error) return resolve({ success: false, message: '⚠️ Hiện tại không có lịch tắt máy nào đang chờ.' });
-        resolve({ success: true, message: '✅ Đã hủy lệnh tắt máy tính!' });
+        resolve({ success: true, message: 'Đã hoàn thành' });
       });
     });
   }
@@ -979,7 +975,7 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
     return new Promise((resolve) => {
       exec('rundll32.exe powrprof.dll,SetSuspendState 0,1,0', (error) => {
         if (error) return resolve({ success: false, error: error.message });
-        resolve({ success: true, message: '💤 Đã cho máy tính vào chế độ Ngủ!' });
+        resolve({ success: true, message: 'Đã hoàn thành' });
       });
     });
   }

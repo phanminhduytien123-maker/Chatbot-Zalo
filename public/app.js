@@ -207,9 +207,18 @@ class DianaVoiceApp {
   }
 
   /**
-   * Khởi tạo Bộ nhận diện giọng nói Web Speech API (Google vi-VN) - Dùng làm phụ đề trực tiếp
+   * Khởi tạo Bộ nhận diện giọng nói Web Speech API (Chỉ dùng cho Desktop Chrome/PC)
+   * Trên Android / Xiaomi / Redmi: Hoàn toàn bỏ qua WebSpeech để loại bỏ triệt để lỗi "Mi AI Speech is required"
    */
   initSpeechRecognition() {
+    const isAndroid = /android/i.test(navigator.userAgent) || Boolean(window.Capacitor);
+    if (isAndroid) {
+      this.hasWebSpeech = false;
+      this.recognition = null;
+      console.log('[Diana Voice] Thiết bị Android/Xiaomi: Sử dụng 100% MediaRecorder + Gemini 3.8 Multimodal STT (Bỏ qua Mi AI)');
+      return;
+    }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       try {
@@ -512,7 +521,7 @@ class DianaVoiceApp {
 
         // 1. TRẠNG THÁI: ĐANG CHỜ PHÁT HIỆN GIỌNG NÓI (Không nghe gì thì im lặng chờ, không làm phiền)
         if (this.autoVadEnabled && (this.vadState === 'WAITING_VOICE' || this.vadState === 'IDLE') && !this.isRecording) {
-          if (average > 13) { // Ngưỡng bắt đầu nói
+          if (average > 8.0) { // Ngưỡng bắt đầu nói nhạy hơn cho Micro điện thoại
             this.vadConsecutiveSpeechFrames = (this.vadConsecutiveSpeechFrames || 0) + 1;
             if (this.vadConsecutiveSpeechFrames >= 2) { // Ổn định > 70ms
               this.vadConsecutiveSpeechFrames = 0;
@@ -524,18 +533,20 @@ class DianaVoiceApp {
           }
         }
 
-        // 2. TRẠNG THÁI: ĐANG THU ÂM GIỌNG NÓI (Khi dừng nói thì tự động gửi)
+        // 2. TRẠNG THÁI: ĐANG THU ÂM GIỌNG NÓI (Chỉ tự động dừng khi BẬT Chế độ Rảnh tay)
         else if (this.isRecording && this.vadState === 'LISTENING') {
-          if (average > 10.5) {
-            this.vadSilenceStartTime = null; // Vẫn đang nói, reset bộ đếm im lặng
-          } else {
-            if (!this.vadSilenceStartTime) {
-              this.vadSilenceStartTime = Date.now();
-            } else if (Date.now() - this.vadSilenceStartTime > 1150) { // Dừng nói 1.15 giây
-              const recordDuration = Date.now() - this.vadRecordStartTime;
-              if (recordDuration >= 450) { // Đã nói ít nhất 0.45s
-                this.vadSilenceStartTime = null;
-                this.stopListeningFromVADAndSend();
+          if (this.autoVadEnabled) {
+            if (average > 5.5) {
+              this.vadSilenceStartTime = null; // Vẫn đang nói, reset bộ đếm im lặng
+            } else {
+              if (!this.vadSilenceStartTime) {
+                this.vadSilenceStartTime = Date.now();
+              } else if (Date.now() - this.vadSilenceStartTime > 1800) { // Dừng nói 1.8 giây
+                const recordDuration = Date.now() - this.vadRecordStartTime;
+                if (recordDuration >= 800) { // Đã nói ít nhất 0.8s
+                  this.vadSilenceStartTime = null;
+                  this.stopListeningFromVADAndSend();
+                }
               }
             }
           }
@@ -597,12 +608,11 @@ class DianaVoiceApp {
         const audioBlob = new Blob(this.audioChunks, { type: actualMime });
         const webSpeechText = (this.finalTranscript || '').trim();
 
-        if (webSpeechText.length > 5) {
-          this.handleTextQuery(webSpeechText);
-        } else if (audioBlob.size > 50) {
-          await this.sendAudioToServer(audioBlob, actualMime);
+        // Ưu tiên gửi Audio gốc lên Cloud Gemini STT để nhận diện chuẩn xác 100% tiếng Việt
+        if (audioBlob.size > 200) {
+          await this.sendAudioToServer(audioBlob, actualMime, webSpeechText);
         } else if (webSpeechText.length > 0) {
-          this.handleTextQuery(webSpeechText);
+          await this.handleTextQuery(webSpeechText);
         } else {
           this.setDotState('idle');
           if (this.autoVadEnabled) {
@@ -675,6 +685,18 @@ class DianaVoiceApp {
     this.vadRecordStartTime = Date.now();
     await this.startMediaRecorder();
 
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+    // Giới hạn thời gian an toàn tối đa 25s cho một lần bấm thu âm thủ công
+    this.silenceTimer = setTimeout(() => {
+      if (this.isRecording && !this.autoVadEnabled) {
+        console.log('[Diana Mic] Đạt giới hạn thời gian ghi âm tối đa (25s), tự động gửi');
+        this.stopRecording();
+      }
+    }, 25000);
+
     if (this.hasWebSpeech && this.recognition) {
       try {
         this.finalTranscript = '';
@@ -694,7 +716,13 @@ class DianaVoiceApp {
         let stream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true }
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              channelCount: 1,
+              sampleRate: 48000
+            }
           });
         } catch (_) {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -742,12 +770,11 @@ class DianaVoiceApp {
         const audioBlob = new Blob(this.audioChunks, { type: actualMime });
         const webSpeechText = (this.finalTranscript || '').trim();
 
-        if (webSpeechText.length > 5) {
-          this.handleTextQuery(webSpeechText);
-        } else if (audioBlob.size > 50) {
-          await this.sendAudioToServer(audioBlob, actualMime);
+        // Ưu tiên gửi Audio gốc lên Cloud Gemini STT để nhận diện chuẩn xác 100% tiếng Việt
+        if (audioBlob.size > 200) {
+          await this.sendAudioToServer(audioBlob, actualMime, webSpeechText);
         } else if (webSpeechText.length > 0) {
-          this.handleTextQuery(webSpeechText);
+          await this.handleTextQuery(webSpeechText);
         } else {
           this.setDotState('idle');
           if (this.autoVadEnabled) {
@@ -834,9 +861,9 @@ class DianaVoiceApp {
   }
 
   /**
-   * Gửi file âm thanh lên Gemini Multimodal Endpoint
+   * Gửi file âm thanh lên Gemini Multimodal Endpoint với cơ chế tự phục hồi và đối ứng Native
    */
-  async sendAudioToServer(audioBlob, mimeType) {
+  async sendAudioToServer(audioBlob, mimeType, fallbackText = '') {
     if (this.welcomeCard) {
       this.welcomeCard.style.display = 'none';
     }
@@ -846,92 +873,140 @@ class DianaVoiceApp {
       reader.readAsDataURL(audioBlob);
       reader.onloadend = async () => {
         const base64Audio = (reader.result || '').split(',')[1] || '';
-        let response = null;
-        let usedUrl = this.getServerUrl();
-        try {
-          response = await fetch(usedUrl + '/api/voice-audio', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              audio: base64Audio,
-              mimeType: mimeType
-            })
-          });
-        } catch (firstErr) {
-          console.warn(`[Diana Audio] Gửi tới ${usedUrl} thất bại, thử các IP dự phòng...`, firstErr);
-          const fallbacks = ['http://192.168.100.221:3000', 'http://127.0.0.1:3000', 'http://100.105.204.3:3000'].filter(u => u !== usedUrl);
-          for (const fb of fallbacks) {
-            try {
-              response = await fetch(fb + '/api/voice-audio', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ audio: base64Audio, mimeType })
-              });
-              if (response && response.ok) {
-                this.activeServerUrl = fb;
-                localStorage.setItem('diana_server_url', fb);
-                break;
-              }
-            } catch (_) {}
-          }
-        }
-
-        if (!response) {
-          throw new Error('Không thể kết nối đến máy tính PC.');
-        }
-
-        const data = await response.json();
-
-        if (data && data.success) {
-          const userQuery = data.query || 'Giọng nói';
-          this.addMessage('user', userQuery);
-
-          const textReply = typeof data.reply === 'string' ? data.reply : (data.reply.text || JSON.stringify(data.reply));
-          const attachments = data.reply.attachments || data.attachments || [];
-
-          this.addMessage('bot', textReply, attachments);
-          this.showResultInCapsule(userQuery, textReply, attachments);
-          this.updateLiveOverlayState('speaking', 'Diana đang trả lời', textReply);
-
-          if (this.ttsEnabled) {
-            this.speak(textReply);
+        if (!base64Audio) {
+          if (fallbackText) {
+            await this.handleTextQuery(fallbackText);
           } else {
-            this.setDotState('idle');
-            this.scheduleCapsuleClose(5000);
-            if (this.autoVadEnabled) {
-              setTimeout(() => {
-                this.vadState = 'WAITING_VOICE';
-                this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
-              }, 1000);
-            }
+            this.showErrorResult('Không thu được âm thanh.');
           }
-        } else {
-          const errText = data.error || 'Không nhận diện được âm thanh. Anh vui lòng thử lại nhé!';
-          this.setDotState('idle');
-          this.showCapsule('idle', 'Lỗi nhận diện', `⚠️ ${errText}`);
-          this.addMessage('bot', `⚠️ ${errText}`);
-          this.updateLiveOverlayState('idle', 'Lỗi', errText);
-          this.scheduleCapsuleClose(4000);
-
-          if (this.autoVadEnabled) {
-            setTimeout(() => {
-              this.vadState = 'WAITING_VOICE';
-              this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
-            }, 3000);
-          }
+          return;
         }
+
+        const candidateUrls = [
+          this.getServerUrl(),
+          'http://192.168.100.221:3000',
+          'https://diana-h73u.onrender.com',
+          'http://127.0.0.1:3000',
+          'http://100.105.204.3:3000'
+        ].filter(Boolean);
+        const uniqueUrls = [...new Set(candidateUrls)];
+
+        // 1. Thử gửi qua STT Endpoint thuần (/api/stt)
+        let sttResponse = null;
+        for (const targetUrl of uniqueUrls) {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            sttResponse = await fetch(`${targetUrl}/api/stt`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ audio: base64Audio, mimeType }),
+              signal: controller.signal
+            });
+            clearTimeout(timer);
+            if (sttResponse && sttResponse.ok) {
+              this.activeServerUrl = targetUrl;
+              localStorage.setItem('diana_server_url', targetUrl);
+              break;
+            }
+          } catch (_) {}
+        }
+
+        if (sttResponse && sttResponse.ok) {
+          try {
+            const data = await sttResponse.json();
+            if (data && data.success && data.text && data.text.trim()) {
+              console.log(`[Diana STT Cloud]: "${data.text}"`);
+              await this.handleTextQuery(data.text.trim());
+              return;
+            }
+          } catch (_) {}
+        }
+
+        // 2. Nếu /api/stt không phản hồi, thử gửi qua /api/voice-audio
+        let voiceResponse = null;
+        for (const targetUrl of uniqueUrls) {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            voiceResponse = await fetch(`${targetUrl}/api/voice-audio`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ audio: base64Audio, mimeType }),
+              signal: controller.signal
+            });
+            clearTimeout(timer);
+            if (voiceResponse && voiceResponse.ok) {
+              this.activeServerUrl = targetUrl;
+              localStorage.setItem('diana_server_url', targetUrl);
+              break;
+            }
+          } catch (_) {}
+        }
+
+        if (voiceResponse && voiceResponse.ok) {
+          try {
+            const data = await voiceResponse.json();
+            if (data && data.success && data.query) {
+              const userQuery = data.query;
+              // Kiểm tra xem câu lệnh này có xử lý được trên điện thoại Native không
+              const isNativeHandled = await this.handleNativeMobileActions(userQuery);
+              if (!isNativeHandled) {
+                this.addMessage('user', userQuery);
+
+                const textReply = typeof data.reply === 'string' ? data.reply : (data.reply.text || JSON.stringify(data.reply));
+                const attachments = data.reply.attachments || data.attachments || [];
+
+                this.addMessage('bot', textReply, attachments);
+                this.showResultInCapsule(userQuery, textReply, attachments);
+                this.updateLiveOverlayState('speaking', 'Diana đang trả lời', textReply);
+
+                if (this.ttsEnabled) {
+                  this.speak(textReply);
+                } else {
+                  this.setDotState('idle');
+                  this.scheduleCapsuleClose(5000);
+                }
+              } else {
+                this.setDotState('idle');
+                this.scheduleCapsuleClose(4000);
+              }
+              return;
+            }
+          } catch (_) {}
+        }
+
+        // 3. Fallback sang Web Speech Text nếu các API Server không khả dụng
+        if (fallbackText && fallbackText.length > 0) {
+          console.warn('[Diana STT] Server không khả dụng, dùng WebSpeech Fallback:', fallbackText);
+          await this.handleTextQuery(fallbackText);
+          return;
+        }
+
+        this.showErrorResult('Không nhận diện được âm thanh. Anh vui lòng thử lại nhé!');
       };
     } catch (err) {
       console.error('Lỗi gửi âm thanh:', err);
-      this.setDotState('idle');
-      this.showCapsule('idle', 'Lỗi kết nối', '⚠️ Không thể kết nối máy chủ.');
-      this.scheduleCapsuleClose(3000);
-
-      if (this.autoVadEnabled) {
-        setTimeout(() => {
-          this.vadState = 'WAITING_VOICE';
-        }, 3000);
+      if (fallbackText) {
+        await this.handleTextQuery(fallbackText);
+      } else {
+        this.showErrorResult('Không thể kết nối đến máy chủ nhận diện âm thanh.');
       }
+    }
+  }
+
+  showErrorResult(errText) {
+    this.setDotState('idle');
+    this.showCapsule('idle', 'Lỗi nhận diện', `⚠️ ${errText}`);
+    this.addMessage('bot', `⚠️ ${errText}`);
+    this.updateLiveOverlayState('idle', 'Lỗi', errText);
+    this.scheduleCapsuleClose(4000);
+
+    if (this.autoVadEnabled) {
+      setTimeout(() => {
+        this.vadState = 'WAITING_VOICE';
+        this.showCapsule('listening', 'Chế độ Rảnh tay', '👂 Diana đang chờ câu hỏi tiếp theo...');
+      }, 3000);
     }
   }
 
@@ -1769,7 +1844,7 @@ class DianaVoiceApp {
     if (lower.includes('bật đèn pin') || lower.includes('mở đèn pin')) {
       try {
         await native.toggleFlashlight({ enable: true });
-        const reply = 'Dạ em đã bật đèn pin điện thoại rồi ạ! 🔦';
+        const reply = 'Đã hoàn thành';
         this.addMessage('bot', reply);
         this.showResultInCapsule(query, reply);
         if (this.ttsEnabled) this.speak(reply);
@@ -1778,7 +1853,7 @@ class DianaVoiceApp {
     } else if (lower.includes('tắt đèn pin')) {
       try {
         await native.toggleFlashlight({ enable: false });
-        const reply = 'Dạ em đã tắt đèn pin rồi ạ! ✨';
+        const reply = 'Đã hoàn thành';
         this.addMessage('bot', reply);
         this.showResultInCapsule(query, reply);
         if (this.ttsEnabled) this.speak(reply);
@@ -1822,11 +1897,10 @@ class DianaVoiceApp {
         try {
           const res = await native.openApp({ appName: rawTarget });
           if (res && res.success) {
-            const appDisplayName = res.appName || rawTarget;
-            const reply = `Dạ em đã mở **${appDisplayName}** trên điện thoại cho anh rồi ạ! 🚀`;
+            const reply = 'Đã hoàn thành';
             this.addMessage('bot', reply);
             this.showResultInCapsule(query, reply);
-            if (this.ttsEnabled) this.speak(`Dạ em đã mở ${appDisplayName} cho anh rồi ạ!`);
+            if (this.ttsEnabled) this.speak(reply);
             return true;
           }
         } catch (err) {
@@ -1843,7 +1917,7 @@ class DianaVoiceApp {
       const pct = Math.min(100, Math.max(0, parseInt(volMatch[1], 10)));
       try {
         await native.setVolume({ percent: pct });
-        const reply = `Dạ em đã chỉnh âm lượng điện thoại về ${pct}% rồi ạ! 🔊`;
+        const reply = 'Đã hoàn thành';
         this.addMessage('bot', reply);
         this.showResultInCapsule(query, reply);
         if (this.ttsEnabled) this.speak(reply);
@@ -1886,10 +1960,10 @@ class DianaVoiceApp {
         if (bestApp && maxScore >= 60) {
           const openRes = await native.openApp({ packageName: bestApp.packageName, appName: bestApp.appName });
           if (openRes && openRes.success) {
-            const reply = `Dạ em đã mở ứng dụng **${bestApp.appName}** trên điện thoại cho anh rồi ạ! 🚀`;
+            const reply = 'Đã hoàn thành';
             this.addMessage('bot', reply);
             this.showResultInCapsule(query, reply);
-            if (this.ttsEnabled) this.speak(`Dạ em đã mở ${bestApp.appName} cho anh rồi ạ!`);
+            if (this.ttsEnabled) this.speak(reply);
             return true;
           }
         }

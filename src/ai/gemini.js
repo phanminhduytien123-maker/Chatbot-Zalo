@@ -11,12 +11,10 @@ import VoiceNormalizer from '../services/voiceNormalizer.js';
 
 // Danh sách các model AI ưu tiên theo tốc độ và dung lượng quota
 const BACKUP_MODELS = [
-  'gemini-3.6-flash',
-  'gemini-3.7-flash',
-  'gemini-3.5-flash',
+  'gemini-3.8-flash',
   'gemini-3.5-flash-lite',
-  'gemini-3.1-flash-lite',
-  'gemini-flash-latest'
+  'gemini-3.5-flash',
+  'gemini-flash-lite-latest'
 ];
 
 export class GeminiAssistant {
@@ -182,6 +180,7 @@ QUY TẮC PHẢN HỒI BẮT BUỘC (ĐỂ TIẾT KIỆM TOKEN & RÕ RÀNG):
 3. PHONG CÁCH: Nhã nhặn, lịch sự, gọn gàng, súc tích (luôn có "Dạ...", "ạ").
 4. KHI TRẢ LỜI SỐ LIỆU (Điểm, Học phí, GPA, Lịch thi): Trình bày số liệu chính xác, rõ ràng, ngắn gọn.
 5. KHÔNG MỞ NGOẶC GIẢI THÍCH HÀNH ĐỘNG: Tuyệt đối không thêm các chú thích trong dấu ngoặc đơn (...) để giải thích về hành động vừa thực hiện hay công dụng phụ (ví dụ: KHÔNG viết "(tiết kiệm điện & riêng tư)", "(TeamViewer Mode)", v.v.). Trả lời dứt khoát, tự nhiên và gãy gọn.
+6. KHI THỰC HIỆN LỆNH / THAO TÁC HỆ THỐNG HOẶC ĐIỀU KHIỂN (mở ứng dụng, tắt/mở màn hình, khóa/mở khóa máy, chỉnh âm lượng, thao tác lệnh PC/điện thoại, v.v.): CHỈ CẦN NÓI DUY NHẤT: "Đã hoàn thành", TUYỆT ĐỐI KHÔNG NÓI DÀI DÒNG, không thêm câu chào hay giải thích thừa thãi.
 
 [TÍNH NĂNG HẸN GIỜ & NHẮC NHỞ]:
 - Bạn (Diana) ĐÃ ĐƯỢC TÍCH HỢP TÍNH NĂNG HẸN GIỜ TỰ ĐỘNG THÔNG MINH.
@@ -362,25 +361,27 @@ ${deepExtraInfo}`;
       throw new Error('Chưa cấu hình Gemini API Key.');
     }
 
-    const cleanMime = mimeType.split(';')[0];
+    const cleanMime = mimeType.split(';')[0].trim().toLowerCase();
     const modelsToTry = [
-      'gemini-3.6-flash',
-      'gemini-3.5-flash',
+      'gemini-3.8-flash',
       'gemini-3.5-flash-lite',
-      'gemini-flash-latest'
+      'gemini-3.5-flash',
+      'gemini-flash-lite-latest'
     ];
 
-    const sttPrompt = `Hãy nghe đoạn âm thanh này và ghi lại chính xác từng từ tiếng Việt được nói trong file audio.
-- Chỉ xuất ra văn bản tiếng Việt người dùng đã nói.
-- Không thêm giải thích, không thêm dấu ngoặc kép, không trả lời thay người dùng.
-- Nếu không có tiếng nói rõ ràng, trả về rỗng.`;
+    const sttPrompt = `Bạn là hệ thống chuyển giọng nói thành văn bản tiếng Việt cực kỳ chính xác cho Trợ lý ảo Diana.
+Hãy nghe đoạn âm thanh này và ghi lại chính xác từng từ tiếng Việt được nói trong file audio:
+- Chỉ xuất ra đúng văn bản tiếng Việt mà người dùng đã nói (không thêm giải thích, không thêm dấu ngoặc kép, không thêm lời bình, không tự trả lời).
+- Nhận diện chuẩn xác mọi câu lệnh điều khiển: mở ứng dụng, tắt màn hình, bật màn hình, khóa máy, mở khóa, chụp màn hình, bật đèn pin, tắt đèn pin, xem bảng điểm, điểm thi, GPA, học phí, hẹn giờ, báo thức, gọi điện, nhắn tin...
+- Nhận diện chuẩn xác tên ứng dụng: Chrome, YouTube, Zalo, VS Code, Facebook, TikTok, Spotify, Antigravity IDE, Word, Excel, Notepad, Camera, Ghi chú, Cài đặt...
+- Nếu không có tiếng nói rõ ràng hoặc chỉ có tạp âm/im lặng, trả về rỗng.`;
 
     for (const modelName of modelsToTry) {
       try {
         const model = this.genAI.getGenerativeModel({
           model: modelName,
           generationConfig: {
-            temperature: 0.1,
+            temperature: 0.05,
             maxOutputTokens: 300
           }
         });

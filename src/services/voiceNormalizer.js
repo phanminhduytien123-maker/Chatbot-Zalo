@@ -9,45 +9,51 @@ export class VoiceNormalizer {
    */
   static PHONETIC_MAP = [
     // 1. Tên Bot & Xưng hô
-    { pattern: /\b(?:đai\s*a\s*na|đi\s*a\s*na|đa\s*na|đai\s*na|di\s*a\s*na|dia\s*na|điana)\b/gi, replacement: 'Diana' },
-    { pattern: /\b(?:anh\s+tiếng|anh\s+tiến|sếp\s+tiến)\b/gi, replacement: 'anh Tiến' },
+    { pattern: /\b(?:đai\s*a\s*na|đi\s*a\s*na|đa\s*na|đai\s*na|di\s*a\s*na|dia\s*na|điana|đai-a-na|dayana|diana\s*ơi)\b/gi, replacement: 'Diana' },
+    { pattern: /\b(?:anh\s+tiếng|anh\s+tiến|sếp\s+tiến|a\s+tiến)\b/gi, replacement: 'anh Tiến' },
 
     // 2. Ứng dụng & Dịch vụ phổ biến
-    { pattern: /\b(?:du\s*túp|du\s*tuýp|diu\s*túp|du\s*túp\s*be|yutube|yu\s*túp|dút\s*túp)\b/gi, replacement: 'youtube' },
-    { pattern: /\b(?:phây\s*búc|phây|phây\s*s\s*búc|phe\s*búc|face\s*book)\b/gi, replacement: 'facebook' },
-    { pattern: /\b(?:gia\s*lo|da\s*lo|za\s*nô|za\s*lo)\b/gi, replacement: 'zalo' },
-    { pattern: /\b(?:cờ\s*rôm|ch\s*rome|gúc\s*gồ\s*ch\s*rome|crôm)\b/gi, replacement: 'chrome' },
-    { pattern: /\b(?:v\s*s\s*cốt|v\s*ét\s*cốt|vi\s*ét\s*cốt|vsc\s*code|vi\s*ét\s*cốt)\b/gi, replacement: 'vscode' },
-    { pattern: /\b(?:gúc\s*gồ|gúc\s*gồ|gu\s*gồ|gồ)\b/gi, replacement: 'google' },
-    { pattern: /\b(?:s\s*po\s*ti\s*phai|xì\s*po\s*ti\s*phai|xì\s*po|spo\s*ti\s*fy)\b/gi, replacement: 'spotify' },
-    { pattern: /\b(?:an\s*ti\s*gra\s*vi\s*ti|an\s*ti\s*gờ\s*ra\s*vi\s*ti|antigravity\s*ide)\b/gi, replacement: 'antigravity' },
-    { pattern: /\b(?:quép|vép|wép|trang\s*quép)\b/gi, replacement: 'web' },
+    { pattern: /\b(?:du\s*túp|du\s*tuýp|diu\s*túp|du\s*túp\s*be|yutube|yu\s*túp|dút\s*túp|diu\s*túp|diu\s*túp\s*be)\b/gi, replacement: 'youtube' },
+    { pattern: /\b(?:phây\s*búc|phây|phây\s*s\s*búc|phe\s*búc|face\s*book|phay\s*búc)\b/gi, replacement: 'facebook' },
+    { pattern: /\b(?:gia\s*lo|da\s*lo|za\s*nô|za\s*lo|gia-lo)\b/gi, replacement: 'zalo' },
+    { pattern: /\b(?:cờ\s*rôm|ch\s*rome|gúc\s*gồ\s*ch\s*rome|crôm|co\s*rom|cơ\s*rôm)\b/gi, replacement: 'chrome' },
+    { pattern: /\b(?:v\s*s\s*cốt|v\s*ét\s*cốt|vi\s*ét\s*cốt|vsc\s*code|vi\s*ét\s*cốt|vs\s*code|vi\s*ét\s*cốt)\b/gi, replacement: 'vscode' },
+    { pattern: /\b(?:gúc\s*gồ|gu\s*gồ|gồ|gúc\s*gô|gu\s*gồ\s*sớt)\b/gi, replacement: 'google' },
+    { pattern: /\b(?:s\s*po\s*ti\s*phai|xì\s*po\s*ti\s*phai|xì\s*po|spo\s*ti\s*fy|spô\s*ti\s*phai)\b/gi, replacement: 'spotify' },
+    { pattern: /\b(?:an\s*ti\s*gra\s*vi\s*ti|an\s*ti\s*gờ\s*ra\s*vi\s*ti|antigravity\s*ide|an\s*ti\s*gra\s*vi\s*ty)\b/gi, replacement: 'antigravity' },
+    { pattern: /\b(?:quép|vép|wép|trang\s*quép|trang\s*wép)\b/gi, replacement: 'web' },
+    { pattern: /\b(?:tóp\s*tóp|tóp\s*top|tíc\s*tốc|tik\s*tok)\b/gi, replacement: 'tiktok' },
+    { pattern: /\b(?:cà\s*me\s*ra|ca\s*me\s*ra|máy\s*chụp\s*hình)\b/gi, replacement: 'camera' },
+    { pattern: /\b(?:ghi\s*chép|nốt|sổ\s*tay)\b/gi, replacement: 'ghi chú' },
 
-    // 3. Lệnh Điều Khiển Máy Tính (Windows)
-    { pattern: /\b(?:màng\s*hình)\b/gi, replacement: 'màn hình' },
+    // 3. Lệnh Điều Khiển Hệ Thống (Phone & Windows PC)
+    { pattern: /\b(?:màng\s*hình|màn\s*hinh|màn\s*hình\s*máy\s*tính)\b/gi, replacement: 'màn hình' },
     { pattern: /\b(?:chụp\s+(?:lại\s+)?(?:màng|màn)\s*hình)\b/gi, replacement: 'chụp màn hình' },
-    { pattern: /\b(?:chụp\s+đét\s*tóp|chụp\s+đéc\s*tóp|chụp\s+màn\s+ảnh)\b/gi, replacement: 'chụp màn hình' },
-    { pattern: /\b(?:khoá\s*máy|khoá\s*màn\s*hình|khóa\s*màng\s*hình|lốc\s*máy|lốc\s*màn\s*hình|lóc\s*máy)\b/gi, replacement: 'khóa màn hình' },
-    { pattern: /\b(?:mở\s*khoá|mở\s*máy|ăn\s*lốc|an\s*lốc)\b/gi, replacement: 'mở khóa' },
-    { pattern: /\b(?:sút\s*đao|sắt\s*đao|sất\s*đao)\b/gi, replacement: 'tắt máy' },
-    { pattern: /\b(?:sờ\s*líp|sì\s*líp|xì\s*líp)\b/gi, replacement: 'cho máy ngủ' },
-    { pattern: /\b(?:bật\s*sáng\s*màn\s*hình|đánh\s*thức\s*màn\s*hình)\b/gi, replacement: 'bật màn hình' },
-    { pattern: /\b(?:tối\s*màn\s*hình)\b/gi, replacement: 'tắt màn hình' },
-    { pattern: /\b(?:chỉnh\s*loa|tăng\s*loa|giảm\s*loa|vo\s*lum|vô\s*lum|vo\s*lùm)\b/gi, replacement: 'âm lượng' },
-    { pattern: /\b(?:tắt\s*loa|câm\s*loa|miu\s*tơ|miút)\b/gi, replacement: 'tắt tiếng' },
-    { pattern: /\b(?:bát\s*tơ\s*ri|bét\s*tơ\s*ri)\b/gi, replacement: 'pin' },
+    { pattern: /\b(?:chụp\s+đét\s*tóp|chụp\s+đéc\s*tóp|chụp\s+màn\s+ảnh|chụp\s+desktop)\b/gi, replacement: 'chụp màn hình' },
+    { pattern: /\b(?:khoá\s*máy|khoá\s*màn\s*hình|khóa\s*màng\s*hình|lốc\s*máy|lốc\s*màn\s*hình|lóc\s*máy|lock\s*máy)\b/gi, replacement: 'khóa màn hình' },
+    { pattern: /\b(?:mở\s*khoá|mở\s*máy|ăn\s*lốc|an\s*lốc|unlock\s*máy)\b/gi, replacement: 'mở khóa' },
+    { pattern: /\b(?:sút\s*đao|sắt\s*đao|sất\s*đao|sắt\s*down)\b/gi, replacement: 'tắt máy' },
+    { pattern: /\b(?:sờ\s*líp|sì\s*líp|xì\s*líp|slíp)\b/gi, replacement: 'cho máy ngủ' },
+    { pattern: /\b(?:bật\s*sáng\s*màn\s*hình|đánh\s*thức\s*màn\s*hình|mở\s*sáng\s*màn\s*hình)\b/gi, replacement: 'bật màn hình' },
+    { pattern: /\b(?:tối\s*màn\s*hình|tắt\s*màn|tắt\s*màng)\b/gi, replacement: 'tắt màn hình' },
+    { pattern: /\b(?:bật\s*màn|mở\s*màn|mở\s*màng|bật\s*màng)\b/gi, replacement: 'bật màn hình' },
+    { pattern: /\b(?:bật\s*đèn|mở\s*đèn|bật\s*flash|mở\s*flash)\b/gi, replacement: 'bật đèn pin' },
+    { pattern: /\b(?:tắt\s*đèn|tắt\s*flash)\b/gi, replacement: 'tắt đèn pin' },
+    { pattern: /\b(?:chỉnh\s*loa|tăng\s*loa|giảm\s*loa|vo\s*lum|vô\s*lum|vo\s*lùm|vô\s*ly|volumn)\b/gi, replacement: 'âm lượng' },
+    { pattern: /\b(?:tắt\s*loa|câm\s*loa|miu\s*tơ|miút|mute\s*loa)\b/gi, replacement: 'tắt tiếng' },
+    { pattern: /\b(?:bát\s*tơ\s*ri|bét\s*tơ\s*ri|bát\s*teri)\b/gi, replacement: 'pin' },
 
     // 4. Thuật ngữ Học tập & Cổng TDTU
-    { pattern: /\b(?:gê\s*pê\s*a|vê\s*pê\s*a|g\s*p\s*a|rê\s*pê\s*a)\b/gi, replacement: 'GPA' },
+    { pattern: /\b(?:gê\s*pê\s*a|vê\s*pê\s*a|g\s*p\s*a|rê\s*pê\s*a|dê\s*pê\s*a)\b/gi, replacement: 'GPA' },
     { pattern: /\b(?:đê\s*rờ\s*lờ|điểm\s*rèn\s*luyện|d\s*r\s*l|đrl)\b/gi, replacement: 'điểm rèn luyện' },
     { pattern: /\b(?:tê\s*ca\s*bê|t\s*k\s*b|thời\s*khoá\s*biểu)\b/gi, replacement: 'thời khóa biểu' },
     { pattern: /\b(?:t\s*c\s*t\s*l|tín\s*chỉ\s*tích\s*luỹ|tín\s*chỉ\s*tích\s*lũy)\b/gi, replacement: 'tín chỉ tích lũy' },
-    { pattern: /\b(?:hột\s*phí|hộc\s*phí|tiền\s*hột)\b/gi, replacement: 'học phí' },
+    { pattern: /\b(?:hột\s*phí|hộc\s*phí|tiền\s*hột|tiền\s*học)\b/gi, replacement: 'học phí' },
     { pattern: /\b(?:bản\s*điểm|bản\s*điểm\s*học\s*tập)\b/gi, replacement: 'bảng điểm' },
-    { pattern: /\b(?:t\s*d\s*t\s*u|tôn\s*đức\s*thắng|trường\s*tôn\s*đức\s*thắng)\b/gi, replacement: 'TDTU' },
+    { pattern: /\b(?:t\s*d\s*t\s*u|tôn\s*đức\s*thắng|trường\s*tôn\s*đức\s*thắng|tê\s*đê\s*tê\s*u)\b/gi, replacement: 'TDTU' },
 
     // 5. Từ cảm thán / đệm ngắt quãng do STT ghi nhận
-    { pattern: /^(?:ừm|à|ờ|ơi|nè|này|ê|alo|a\s*lô)\s*,?\s*/gi, replacement: '' },
+    { pattern: /^(?:ừm|à|ờ|ơi|nè|này|ê|alo|a\s*lô|dạ|dạ\s*em)\s*,?\s*/gi, replacement: '' },
     { pattern: /\s+(?:nè|nha|nhé|nhá|ạ|nhe|ha)\s*[.?!]*$/gi, replacement: '' }
   ];
 

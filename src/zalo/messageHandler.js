@@ -38,26 +38,26 @@ export class MessageHandler {
         // --- NHÓM 1: ĐIỀU KHIỂN MÁY TÍNH WINDOWS (PC BRIDGE) ---
         case '/lock': {
           const res = await pcBridge.executeCommand('lock');
-          return res.message || (res.success ? '🔒 Đã khóa màn hình máy tính!' : res.error);
+          return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể khóa màn hình.');
         }
 
         case '/unlock':
         case '/mokhoa': {
           const pass = args || '\\';
           const res = await pcBridge.executeCommand('unlock', { password: pass });
-          return res.message || (res.success ? '🔓 Đã mở khóa máy tính thành công!' : res.error);
+          return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể mở khóa.');
         }
 
         case '/off':
         case '/tatmanhinh': {
           const res = await pcBridge.executeCommand('turnoff_display');
-          return res.message || res.error;
+          return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể tắt màn hình.');
         }
 
         case '/on':
         case '/batmanhinh': {
           const res = await pcBridge.executeCommand('wake_display');
-          return res.message || res.error;
+          return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể bật màn hình.');
         }
 
 
@@ -88,26 +88,26 @@ export class MessageHandler {
             case 'lock':
             case 'khoa': {
               const res = await pcBridge.executeCommand('lock');
-              return res.message || (res.success ? '🔒 Đã khóa máy tính thành công!' : res.error);
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể khóa máy.');
             }
 
             case 'unlock':
             case 'mokhoa': {
               const pass = subArgs || '\\';
               const res = await pcBridge.executeCommand('unlock', { password: pass });
-              return res.message || (res.success ? '🔓 Đã mở khóa máy tính thành công!' : res.error);
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể mở khóa.');
             }
 
             case 'off':
             case 'tatmanhinh': {
               const res = await pcBridge.executeCommand('turnoff_display');
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể tắt màn hình.');
             }
 
             case 'on':
             case 'batmanhinh': {
               const res = await pcBridge.executeCommand('wake_display');
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể bật màn hình.');
             }
 
 
@@ -136,14 +136,14 @@ export class MessageHandler {
             case 'amluong': {
               const level = parseInt(subArgs, 10) || 50;
               const res = await pcBridge.executeCommand('volume', { level });
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể chỉnh âm lượng.');
             }
 
             case 'turnoff_display':
             case 'tatmanhinh':
             case 'tatman': {
               const res = await pcBridge.executeCommand('turnoff_display');
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể tắt màn hình.');
             }
 
             case 'wake_display':
@@ -152,26 +152,26 @@ export class MessageHandler {
             case 'momanhinh':
             case 'moman': {
               const res = await pcBridge.executeCommand('wake_display');
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể bật màn hình.');
             }
 
             case 'mute': {
               const res = await pcBridge.executeCommand('mute');
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể tắt/bật âm thanh.');
             }
 
             case 'open':
             case 'mo': {
               if (!subArgs) return '⚠️ Vui lòng nhập tên ứng dụng hoặc link cần mở (VD: /pc open chrome hoặc /pc open https://tdtu.edu.vn)';
               const res = await pcBridge.executeCommand('open', { target: subArgs });
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể mở ứng dụng.');
             }
 
             case 'clip':
             case 'copy': {
               if (!subArgs) return '⚠️ Vui lòng nhập nội dung cần copy vào máy tính (VD: /pc clip Xin chao)';
               const res = await pcBridge.executeCommand('clipboard', { text: subArgs });
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể copy.');
             }
 
             case 'notify':
@@ -180,26 +180,26 @@ export class MessageHandler {
               const title = notiParts[0]?.trim() || 'Diana Assistant';
               const msg = notiParts[1]?.trim() || notiParts[0]?.trim() || 'Anh Tiến ơi!';
               const res = await pcBridge.executeCommand('notify', { title, message: msg });
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể hiện thông báo.');
             }
 
             case 'shutdown':
             case 'tatmay': {
               const minutes = parseInt(subArgs, 10) || 0;
               const res = await pcBridge.executeCommand('shutdown', { minutes });
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể tắt máy.');
             }
 
             case 'sleep':
             case 'ngu': {
               const res = await pcBridge.executeCommand('sleep');
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể cho máy ngủ.');
             }
 
             case 'cancel':
             case 'huy': {
               const res = await pcBridge.executeCommand('cancel_shutdown');
-              return res.message || res.error;
+              return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể hủy tắt máy.');
             }
 
             case 'status': {
@@ -552,36 +552,7 @@ export class MessageHandler {
     };
 
     // 8. Nhận diện ý định ĐIỀU KHIỂN MÁY TÍNH WINDOWS (NLP PC Commands)
-    // 8.0. WAKE / TURN OFF DISPLAY (Ưu tiên kiểm tra trước mở App)
-    if (
-      lower.includes('bật màn hình') || lower.includes('bat man hinh') || 
-      lower.includes('mở màn hình') || lower.includes('mo man hinh') || 
-      lower.includes('sáng màn hình') || lower.includes('sang man hinh') || 
-      lower.includes('đánh thức màn hình') || lower.includes('danh thuc man hinh') || 
-      lower.includes('bật display') || lower.includes('bat display') || 
-      lower.includes('mở display') || lower.includes('mo display') || 
-      lower.includes('bật màn') || lower.includes('bat man') || 
-      lower.includes('mở màn') || lower.includes('mo man')
-    ) {
-      const res = await pcBridge.executeCommand('wake_display');
-      const reply = res.message || res.error || '💡 Đã bật sáng lại màn hình máy tính của anh!';
-      aiAssistant.memory.addTurn(text, reply);
-      return reply;
-    }
-
-    if (
-      lower.includes('tắt màn hình') || lower.includes('tat man hinh') || 
-      lower.includes('tắt display') || lower.includes('tat display') || 
-      lower.includes('tắt màn') || lower.includes('tat man') ||
-      lower.includes('tối màn hình') || lower.includes('toi man hinh')
-    ) {
-      const res = await pcBridge.executeCommand('turnoff_display');
-      const reply = res.message || res.error || '🖥️ Đã tắt màn hình máy tính của anh!';
-      aiAssistant.memory.addTurn(text, reply);
-      return reply;
-    }
-
-    // 8.0a. WAKE DISPLAY (Bật màn hình / Mở màn hình / Đánh thức màn hình)
+    // 8.0. WAKE DISPLAY (Bật màn hình / Mở màn hình / Đánh thức màn hình)
     if (
       lower.includes('bật màn hình') || lower.includes('bat man hinh') || 
       lower.includes('mở màn hình') || lower.includes('mo man hinh') || 
@@ -589,10 +560,14 @@ export class MessageHandler {
       lower.includes('bật lại màn hình') || lower.includes('bat lai man hinh') || 
       lower.includes('mở lại màn hình') || lower.includes('mo lai man hinh') || 
       lower.includes('đánh thức màn hình') || lower.includes('danh thuc man hinh') || 
-      lower.includes('wake display') || lower.includes('bật màn') || lower.includes('mở màn')
+      lower.includes('bật display') || lower.includes('bat display') || 
+      lower.includes('mở display') || lower.includes('mo display') || 
+      lower.includes('bật màn') || lower.includes('bat man') || 
+      lower.includes('mở màn') || lower.includes('mo man') ||
+      lower.includes('wake display')
     ) {
       const res = await pcBridge.executeCommand('wake_display');
-      const reply = res.message || (res.success ? '💡 Dạ em đã bật sáng màn hình máy tính cho anh rồi ạ! ✨' : res.error);
+      const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể bật màn hình.');
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
@@ -603,11 +578,12 @@ export class MessageHandler {
        lower.includes('làm tối màn hình') || lower.includes('lam toi man hinh') || 
        lower.includes('tối màn hình') || lower.includes('toi man hinh') || 
        lower.includes('tắt màn') || lower.includes('tat man') || 
+       lower.includes('tắt display') || lower.includes('tat display') || 
        lower.includes('turnoff display')) &&
       !lower.includes('khóa') && !lower.includes('khoa')
     ) {
       const res = await pcBridge.executeCommand('turnoff_display');
-      const reply = res.message || (res.success ? '🖥️ Dạ em đã tắt màn hình máy tính cho anh rồi ạ! 🌸' : res.error);
+      const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể tắt màn hình.');
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
@@ -626,7 +602,7 @@ export class MessageHandler {
         pass = passMatch[1].trim();
       }
       const res = await pcBridge.executeCommand('unlock', { password: pass });
-      const reply = res.message || (res.success ? '🔓 Đã mở khóa máy tính của anh rồi ạ!' : res.error);
+      const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể mở khóa máy tính.');
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
@@ -639,7 +615,7 @@ export class MessageHandler {
       lower.includes('vào chế độ ngủ')
     ) {
       const res = await pcBridge.executeCommand('sleep');
-      const reply = res.message || res.error || (res.success ? '💤 Đã cho máy tính của anh vào chế độ Sleep rồi ạ!' : '❌ Không thể đưa máy vào chế độ Sleep.');
+      const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể đưa máy vào chế độ Sleep.');
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
@@ -652,7 +628,7 @@ export class MessageHandler {
       !lower.includes('xoalich') && !lower.includes('xóa')
     ) {
       const res = await pcBridge.executeCommand('lock');
-      const reply = res.message || (res.success ? '🔒 Đã khóa màn hình máy tính của anh rồi ạ!' : res.error);
+      const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể khóa màn hình.');
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
@@ -700,7 +676,7 @@ export class MessageHandler {
       lower.includes('cancel shutdown')
     ) {
       const res = await pcBridge.executeCommand('cancel_shutdown');
-      const reply = res.message || res.error;
+      const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể hủy tắt máy.');
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
@@ -711,7 +687,7 @@ export class MessageHandler {
       const minMatch = text.match(/(\d+)\s*(?:phút|p|m)/i);
       if (minMatch) minutes = parseInt(minMatch[1], 10);
       const res = await pcBridge.executeCommand('shutdown', { minutes });
-      const reply = res.message || res.error;
+      const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể tắt máy.');
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
@@ -719,7 +695,7 @@ export class MessageHandler {
     // 8.8. VOLUME / MUTE (Âm lượng / Tắt tiếng)
     if (lower.includes('tắt tiếng') || lower.includes('tat tieng') || lower.includes('bật tiếng') || lower.includes('bat tieng') || lower.includes('mute')) {
       const res = await pcBridge.executeCommand('mute');
-      const reply = res.message || res.error;
+      const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể đổi trạng thái âm thanh.');
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
@@ -727,7 +703,7 @@ export class MessageHandler {
       const volMatch = text.match(/(\d+)\s*%?/);
       const level = volMatch ? parseInt(volMatch[1], 10) : 50;
       const res = await pcBridge.executeCommand('volume', { level });
-      const reply = res.message || res.error;
+      const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể chỉnh âm lượng.');
       aiAssistant.memory.addTurn(text, reply);
       return reply;
     }
@@ -738,7 +714,7 @@ export class MessageHandler {
       const target = cleanCommandSuffix(openMatch[1]);
       if (target.length > 0) {
         const res = await pcBridge.executeCommand('open', { target });
-        const reply = res.message || res.error || (res.success ? `🚀 Đã mở "${target}" trên máy tính của anh!` : `❌ Không thể mở "${target}".`);
+        const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || `❌ Không thể mở "${target}".`);
         aiAssistant.memory.addTurn(text, reply);
         return reply;
       }
