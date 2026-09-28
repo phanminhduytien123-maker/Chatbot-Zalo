@@ -8,7 +8,11 @@ import android.hardware.camera2.CameraManager;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
 import android.provider.AlarmClock;
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
 import android.util.Log;
 import androidx.core.content.ContextCompat;
 
@@ -20,6 +24,9 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.util.ArrayList;
+import java.util.Locale;
+
 @CapacitorPlugin(
     name = "DianaNative",
     permissions = {
@@ -30,6 +37,215 @@ import com.getcapacitor.annotation.PermissionCallback;
     }
 )
 public class DianaNativePlugin extends Plugin {
+
+    private SpeechRecognizer speechRecognizer = null;
+    private boolean isListeningSpeech = false;
+
+    @PluginMethod
+    public void isSpeechRecognitionAvailable(PluginCall call) {
+        boolean available = SpeechRecognizer.isRecognitionAvailable(getContext());
+        JSObject ret = new JSObject();
+        ret.put("available", available);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void requestAudioPermission(PluginCall call) {
+        if (getPermissionState("audio") == com.getcapacitor.PermissionState.GRANTED) {
+            JSObject ret = new JSObject();
+            ret.put("granted", true);
+            call.resolve(ret);
+        } else {
+            requestPermissionForAlias("audio", call, "audioPermissionCallback");
+        }
+    }
+
+    @PermissionCallback
+    private void audioPermissionCallback(PluginCall call) {
+        if (getPermissionState("audio") == com.getcapacitor.PermissionState.GRANTED) {
+            JSObject ret = new JSObject();
+            ret.put("granted", true);
+            call.resolve(ret);
+        } else {
+            call.reject("Quyền truy cập Micro chưa được cấp.");
+        }
+    }
+
+    @PluginMethod
+    public void startSpeechRecognition(PluginCall call) {
+        if (getPermissionState("audio") != com.getcapacitor.PermissionState.GRANTED) {
+            requestPermissionForAlias("audio", call, "speechPermCallback");
+            return;
+        }
+
+        executeStartSpeechRecognition(call);
+    }
+
+    @PermissionCallback
+    private void speechPermCallback(PluginCall call) {
+        if (getPermissionState("audio") == com.getcapacitor.PermissionState.GRANTED) {
+            executeStartSpeechRecognition(call);
+        } else {
+            call.reject("Quyền Micro bị từ chối.");
+        }
+    }
+
+    private void executeStartSpeechRecognition(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                Context context = getContext();
+                if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+                    call.reject("Speech Recognition không khả dụng trên thiết bị này");
+                    return;
+                }
+
+                if (speechRecognizer != null) {
+                    try {
+                        speechRecognizer.cancel();
+                        speechRecognizer.destroy();
+                    } catch (Exception ignored) {}
+                    speechRecognizer = null;
+                }
+
+                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context);
+                
+                Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "vi-VN");
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "vi-VN");
+                intent.putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "vi-VN");
+                intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+                intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
+                intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.getPackageName());
+
+                speechRecognizer.setRecognitionListener(new RecognitionListener() {
+                    @Override
+                    public void onReadyForSpeech(Bundle params) {
+                        isListeningSpeech = true;
+                        JSObject data = new JSObject();
+                        data.put("status", "ready");
+                        notifyListeners("onSpeechReady", data);
+                    }
+
+                    @Override
+                    public void onBeginningOfSpeech() {
+                        JSObject data = new JSObject();
+                        data.put("status", "listening");
+                        notifyListeners("onSpeechStart", data);
+                    }
+
+                    @Override
+                    public void onRmsChanged(float rmsdB) {
+                        JSObject data = new JSObject();
+                        data.put("rmsdB", rmsdB);
+                        notifyListeners("onSpeechRms", data);
+                    }
+
+                    @Override
+                    public void onBufferReceived(byte[] buffer) {}
+
+                    @Override
+                    public void onEndOfSpeech() {
+                        isListeningSpeech = false;
+                        JSObject data = new JSObject();
+                        data.put("status", "end");
+                        notifyListeners("onSpeechEnd", data);
+                    }
+
+                    @Override
+                    public void onError(int error) {
+                        isListeningSpeech = false;
+                        String errorMessage;
+                        switch (error) {
+                            case SpeechRecognizer.ERROR_AUDIO: errorMessage = "Lỗi âm thanh"; break;
+                            case SpeechRecognizer.ERROR_CLIENT: errorMessage = "Lỗi ứng dụng client"; break;
+                            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: errorMessage = "Thiếu quyền ghi âm"; break;
+                            case SpeechRecognizer.ERROR_NETWORK: errorMessage = "Lỗi mạng"; break;
+                            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: errorMessage = "Hết thời gian chờ mạng"; break;
+                            case SpeechRecognizer.ERROR_NO_MATCH: errorMessage = "Không nhận diện được giọng nói"; break;
+                            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: errorMessage = "Bộ nhận diện đang bận"; break;
+                            case SpeechRecognizer.ERROR_SERVER: errorMessage = "Lỗi máy chủ nhận diện"; break;
+                            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: errorMessage = "Không có tiếng nói"; break;
+                            default: errorMessage = "Lỗi nhận diện mã: " + error; break;
+                        }
+                        JSObject data = new JSObject();
+                        data.put("error", error);
+                        data.put("message", errorMessage);
+                        notifyListeners("onSpeechError", data);
+                    }
+
+                    @Override
+                    public void onResults(Bundle results) {
+                        isListeningSpeech = false;
+                        ArrayList<String> matches = results != null ? results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) : null;
+                        String resultText = (matches != null && !matches.isEmpty()) ? matches.get(0) : "";
+                        JSObject data = new JSObject();
+                        data.put("text", resultText);
+                        data.put("success", true);
+                        notifyListeners("onSpeechResult", data);
+                    }
+
+                    @Override
+                    public void onPartialResults(Bundle partialResults) {
+                        ArrayList<String> partials = partialResults != null ? partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) : null;
+                        if (partials != null && !partials.isEmpty()) {
+                            String partialText = partials.get(0);
+                            JSObject data = new JSObject();
+                            data.put("text", partialText);
+                            notifyListeners("onSpeechPartial", data);
+                        }
+                    }
+
+                    @Override
+                    public void onEvent(int eventType, Bundle params) {}
+                });
+
+                speechRecognizer.startListening(intent);
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                call.resolve(ret);
+            } catch (Exception e) {
+                isListeningSpeech = false;
+                call.reject("Lỗi bắt đầu nhận diện giọng nói: " + e.getMessage());
+            }
+        });
+    }
+
+    @PluginMethod
+    public void stopSpeechRecognition(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                if (speechRecognizer != null) {
+                    speechRecognizer.stopListening();
+                }
+                isListeningSpeech = false;
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Lỗi dừng nhận diện giọng nói: " + e.getMessage());
+            }
+        });
+    }
+
+    @PluginMethod
+    public void cancelSpeechRecognition(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                if (speechRecognizer != null) {
+                    speechRecognizer.cancel();
+                    speechRecognizer.destroy();
+                    speechRecognizer = null;
+                }
+                isListeningSpeech = false;
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Lỗi hủy nhận diện giọng nói: " + e.getMessage());
+            }
+        });
+    }
 
     @PluginMethod
     public void setAlarm(PluginCall call) {

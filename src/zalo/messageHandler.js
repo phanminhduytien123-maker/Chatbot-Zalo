@@ -160,6 +160,18 @@ export class MessageHandler {
               return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể tắt/bật âm thanh.');
             }
 
+            case 'mirror':
+            case 'stream':
+            case 'phone': {
+              if (subArgs && (subArgs.includes('tat') || subArgs.includes('stop') || subArgs.includes('off'))) {
+                const res = await pcBridge.executeCommand('stop_phone_mirror');
+                return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể tắt stream.');
+              }
+              const target = subArgs && subArgs.includes(':') ? subArgs : '192.168.100.224:37821';
+              const res = await pcBridge.executeCommand('start_phone_mirror', { target });
+              return res.success !== false ? '📱 Dạ em đã truyền trực tiếp màn hình điện thoại lên máy tính cho anh rồi ạ! ✨' : (res.error || res.message || '❌ Không thể stream màn hình điện thoại.');
+            }
+
             case 'open':
             case 'mo': {
               if (!subArgs) return '⚠️ Vui lòng nhập tên ứng dụng hoặc link cần mở (VD: /pc open chrome hoặc /pc open https://tdtu.edu.vn)';
@@ -552,6 +564,29 @@ export class MessageHandler {
     };
 
     // 8. Nhận diện ý định ĐIỀU KHIỂN MÁY TÍNH WINDOWS (NLP PC Commands)
+    // 8.00. PHONE MIRROR (Stream & điều khiển màn hình điện thoại lên máy tính)
+    if (
+      lower.includes('stream màn hình') || lower.includes('stream man hinh') ||
+      lower.includes('chiếu màn hình điện thoại') || lower.includes('chieu man hinh dien thoai') ||
+      lower.includes('chiếu điện thoại') || lower.includes('chieu dien thoai') ||
+      lower.includes('stream điện thoại') || lower.includes('stream dien thoai') ||
+      lower.includes('mở màn hình điện thoại') || lower.includes('mo man hinh dien thoai') ||
+      lower.includes('điều khiển điện thoại') || lower.includes('dieu khien dien thoai') ||
+      lower.includes('phone mirror') || lower.includes('mirror phone') || lower.includes('scrcpy')
+    ) {
+      if (lower.includes('tắt') || lower.includes('tat') || lower.includes('dừng') || lower.includes('dung') || lower.includes('đóng') || lower.includes('dong')) {
+        const res = await pcBridge.executeCommand('stop_phone_mirror');
+        const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể dừng stream.');
+        aiAssistant.memory.addTurn(text, reply);
+        return reply;
+      } else {
+        const res = await pcBridge.executeCommand('start_phone_mirror', { target: '192.168.100.224:37821' });
+        const reply = res.success !== false ? 'Dạ em đã mở cửa sổ truyền trực tiếp màn hình điện thoại lên máy tính cho anh rồi ạ! 📱✨🖥️' : (res.error || res.message || '❌ Không thể kết nối truyền màn hình điện thoại.');
+        aiAssistant.memory.addTurn(text, reply);
+        return reply;
+      }
+    }
+
     // 8.0. WAKE DISPLAY (Bật màn hình / Mở màn hình / Đánh thức màn hình)
     if (
       lower.includes('bật màn hình') || lower.includes('bat man hinh') || 

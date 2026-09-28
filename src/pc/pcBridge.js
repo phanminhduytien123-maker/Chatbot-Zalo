@@ -134,6 +134,13 @@ export class PCBridgeService {
       case 'stop_air_gesture':
         return WindowsController.stopAirGestureDetector();
 
+      case 'phone_mirror':
+      case 'start_phone_mirror':
+        return await WindowsController.startPhoneMirror(params?.target);
+
+      case 'stop_phone_mirror':
+        return WindowsController.stopPhoneMirror();
+
       default:
         return { success: false, error: `Hành động "${action}" không hợp lệ.` };
     }

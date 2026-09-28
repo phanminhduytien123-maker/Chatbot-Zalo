@@ -11,10 +11,10 @@ import VoiceNormalizer from '../services/voiceNormalizer.js';
 
 // Danh sách các model AI ưu tiên theo tốc độ và dung lượng quota
 const BACKUP_MODELS = [
-  'gemini-3.8-flash',
+  'gemini-flash-lite-latest',
   'gemini-3.5-flash-lite',
   'gemini-3.5-flash',
-  'gemini-flash-lite-latest'
+  'gemini-3.8-flash'
 ];
 
 export class GeminiAssistant {
@@ -363,18 +363,17 @@ ${deepExtraInfo}`;
 
     const cleanMime = mimeType.split(';')[0].trim().toLowerCase();
     const modelsToTry = [
-      'gemini-3.8-flash',
+      'gemini-flash-lite-latest',
       'gemini-3.5-flash-lite',
       'gemini-3.5-flash',
-      'gemini-flash-lite-latest'
+      'gemini-3.8-flash'
     ];
 
-    const sttPrompt = `Bạn là hệ thống chuyển giọng nói thành văn bản tiếng Việt cực kỳ chính xác cho Trợ lý ảo Diana.
-Hãy nghe đoạn âm thanh này và ghi lại chính xác từng từ tiếng Việt được nói trong file audio:
-- Chỉ xuất ra đúng văn bản tiếng Việt mà người dùng đã nói (không thêm giải thích, không thêm dấu ngoặc kép, không thêm lời bình, không tự trả lời).
-- Nhận diện chuẩn xác mọi câu lệnh điều khiển: mở ứng dụng, tắt màn hình, bật màn hình, khóa máy, mở khóa, chụp màn hình, bật đèn pin, tắt đèn pin, xem bảng điểm, điểm thi, GPA, học phí, hẹn giờ, báo thức, gọi điện, nhắn tin...
-- Nhận diện chuẩn xác tên ứng dụng: Chrome, YouTube, Zalo, VS Code, Facebook, TikTok, Spotify, Antigravity IDE, Word, Excel, Notepad, Camera, Ghi chú, Cài đặt...
-- Nếu không có tiếng nói rõ ràng hoặc chỉ có tạp âm/im lặng, trả về rỗng.`;
+    const sttPrompt = `Bạn là hệ thống chuyển giọng nói tiếng Việt thành văn bản.
+Nhiệm vụ: Nghe đoạn âm thanh được cung cấp và phiên âm chính xác từng từ tiếng Việt người nói đã phát âm:
+- Chỉ xuất ra văn bản tiếng Việt đúng với những gì được nói trong file âm thanh.
+- Tuyệt đối KHÔNG thêm lời bình luận, KHÔNG giải thích, KHÔNG thêm dấu ngoặc kép, KHÔNG tự trả lời câu hỏi.
+- Nếu đoạn âm thanh chỉ là tiếng ồn, tiếng rè, tiếng thở hoặc im lặng không có tiếng nói rõ ràng, bạn hãy trả về RỖNG (không trả lời gì cả).`;
 
     for (const modelName of modelsToTry) {
       try {
@@ -400,7 +399,7 @@ Hãy nghe đoạn âm thanh này và ghi lại chính xác từng từ tiếng V
 
         const rawText = result.response.text();
         if (rawText && rawText.trim().length > 0) {
-          const cleanText = VoiceNormalizer.normalize(rawText);
+          const cleanText = VoiceNormalizer.normalize(rawText.trim());
           if (cleanText && cleanText.length > 0) {
             return cleanText;
           }

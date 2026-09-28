@@ -378,6 +378,47 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({ success: true, message: 'Đã tắt Webcam và kết thúc cử chỉ.' }));
   }
 
+  // 3.6 API: Bắt đầu Stream màn hình điện thoại lên PC (Phone Mirror & Control)
+  if (url.pathname === '/api/phone/mirror/start') {
+    const targetDevice = url.searchParams.get('target') || '192.168.100.224:37821';
+    pcBridge.executeCommand('start_phone_mirror', { target: targetDevice })
+      .then(result => {
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(500, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      });
+    return;
+  }
+
+  // 3.7 API: Tắt Stream màn hình điện thoại
+  if (url.pathname === '/api/phone/mirror/stop') {
+    pcBridge.executeCommand('stop_phone_mirror')
+      .then(result => {
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(500, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      });
+    return;
+  }
+
   // 4. Endpoint thăm dò lệnh cho PC Agent
   if (url.pathname === '/pc/poll') {
     const cmd = pcBridge.pollCommand();

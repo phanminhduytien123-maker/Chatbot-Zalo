@@ -258,6 +258,19 @@ async function pollServer() {
           break;
         }
 
+        case 'phone_mirror':
+        case 'start_phone_mirror': {
+          result = await WindowsController.startPhoneMirror(params?.target);
+          result.id = id;
+          break;
+        }
+
+        case 'stop_phone_mirror': {
+          result = WindowsController.stopPhoneMirror();
+          result.id = id;
+          break;
+        }
+
         case 'air_gesture':
         case 'start_air_gesture': {
           result = await WindowsController.startAirGestureDetector(params?.timeout || 86400, params?.sessionData);

@@ -1093,6 +1093,101 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
     }
     return { success: true, message: 'Webcam hiện không hoạt động.' };
   }
+
+  static phoneMirrorProcess = null;
+  static phoneMirrorTarget = '192.168.100.224:37821';
+
+  /**
+   * Khởi động Stream màn hình điện thoại lên máy tính và điều khiển trực tiếp
+   * @param {string} targetDevice Địa chỉ IP:Port hoặc Serial thiết bị ADB (Mặc định: 192.168.100.224:37821)
+   */
+  static async startPhoneMirror(targetDevice = '192.168.100.224:37821') {
+    return new Promise(async (resolve) => {
+      const target = targetDevice || WindowsController.phoneMirrorTarget || '192.168.100.224:37821';
+      WindowsController.phoneMirrorTarget = target;
+
+      const scrcpyPath = path.resolve(__dirname, '..', '..', 'tools', 'scrcpy', 'scrcpy.exe');
+      const adbPath = path.resolve(__dirname, '..', '..', 'tools', 'scrcpy', 'adb.exe');
+
+      if (!fs.existsSync(scrcpyPath)) {
+        return resolve({ success: false, error: 'Không tìm thấy bộ công cụ scrcpy tại tools/scrcpy/scrcpy.exe' });
+      }
+
+      // 1. Đảm bảo ADB đã kết nối với thiết bị
+      if (target.includes(':')) {
+        try {
+          await new Promise((res) => {
+            execFile(adbPath, ['connect', target], { timeout: 4000 }, () => res());
+          });
+        } catch (_) {}
+      }
+
+      // 2. Nếu tiến trình cũ đang chạy, tắt đi để khởi động lại sạch sẽ
+      if (WindowsController.phoneMirrorProcess) {
+        try {
+          WindowsController.phoneMirrorProcess.kill('SIGTERM');
+        } catch (_) {}
+        WindowsController.phoneMirrorProcess = null;
+      }
+
+      // 3. Khởi động Scrcpy với cấu hình tối ưu độ trễ thấp 60fps, điều khiển chuột & phím
+      const args = [
+        '-s', target,
+        '--window-title', '📱 Diana - Màn hình Điện thoại (Redmi K70)',
+        '--max-size', '1440',
+        '--video-bit-rate', '8M',
+        '--max-fps', '60',
+        '--stay-awake',
+        '--always-on-top'
+      ];
+
+      try {
+        const child = spawn(scrcpyPath, args, {
+          cwd: path.dirname(scrcpyPath),
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: true
+        });
+
+        WindowsController.phoneMirrorProcess = child;
+
+        child.on('close', () => {
+          WindowsController.phoneMirrorProcess = null;
+        });
+
+        child.on('error', (err) => {
+          WindowsController.phoneMirrorProcess = null;
+          console.error('[Phone Mirror Error]:', err);
+        });
+
+        // Hiển thị Toast thông báo trên Windows
+        WindowsController.showToastNotification('📱 Diana Phone Mirror', 'Đang truyền trực tiếp màn hình điện thoại lên máy tính!');
+
+        resolve({
+          success: true,
+          message: `Đã kết nối và truyền màn hình ${target} lên máy tính thành công!`,
+          target
+        });
+      } catch (err) {
+        resolve({ success: false, error: err.message });
+      }
+    });
+  }
+
+  /**
+   * Tắt stream màn hình điện thoại
+   */
+  static stopPhoneMirror() {
+    if (WindowsController.phoneMirrorProcess) {
+      try {
+        WindowsController.phoneMirrorProcess.kill('SIGTERM');
+      } catch (_) {}
+      WindowsController.phoneMirrorProcess = null;
+    }
+    try {
+      exec('taskkill /F /IM scrcpy.exe', () => {});
+    } catch (_) {}
+    return { success: true, message: 'Đã tắt stream màn hình điện thoại.' };
+  }
 }
 
 export default WindowsController;
