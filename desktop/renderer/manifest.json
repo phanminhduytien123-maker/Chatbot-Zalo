@@ -1,0 +1,23 @@
+{
+  "name": "Diana AI Voice Assistant",
+  "short_name": "Diana AI",
+  "description": "Trợ lý ảo giọng nói Diana - Điều khiển máy tính và hỗ trợ học tập thông minh",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070a12",
+  "theme_color": "#070a12",
+  "icons": [
+    {
+      "src": "/avatar.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png"
+    }
+  ]
+}

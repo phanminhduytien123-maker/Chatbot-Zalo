@@ -65,10 +65,11 @@ export class MessageHandler {
         case '/screenshot':
         case '/chupmanhinh': {
           const res = await pcBridge.executeCommand('screenshot');
-          if (res.success && res.filePath) {
+          if (res.success && (res.filePath || res.screenshotBase64)) {
             return {
               text: '📸 Dạ em gửi ảnh chụp màn hình máy tính của anh đây ạ! 🌸',
-              attachments: [res.filePath]
+              attachments: res.filePath ? [res.filePath] : [],
+              screenshotBase64: res.screenshotBase64
             };
           }
           return res.message || res.error || '❌ Không thể chụp ảnh màn hình máy tính.';
@@ -116,10 +117,11 @@ export class MessageHandler {
             case 'screenshot':
             case 'chup': {
               const res = await pcBridge.executeCommand('screenshot');
-              if (res.success && res.filePath) {
+              if (res.success && (res.filePath || res.screenshotBase64)) {
                 return {
                   text: '📸 Dạ em gửi ảnh chụp màn hình máy tính của anh đây ạ! 🌸',
-                  attachments: [res.filePath]
+                  attachments: res.filePath ? [res.filePath] : [],
+                  screenshotBase64: res.screenshotBase64
                 };
               }
               return res.message || res.error || '❌ Không thể chụp ảnh màn hình máy tính.';
@@ -167,7 +169,7 @@ export class MessageHandler {
                 const res = await pcBridge.executeCommand('stop_phone_mirror');
                 return res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || '❌ Không thể tắt stream.');
               }
-              const target = subArgs && subArgs.includes(':') ? subArgs : '192.168.100.224:37821';
+              const target = subArgs && subArgs.includes(':') ? subArgs.trim() : '';
               const res = await pcBridge.executeCommand('start_phone_mirror', { target });
               return res.success !== false ? '📱 Dạ em đã truyền trực tiếp màn hình điện thoại lên máy tính cho anh rồi ạ! ✨' : (res.error || res.message || '❌ Không thể stream màn hình điện thoại.');
             }
@@ -580,7 +582,7 @@ export class MessageHandler {
         aiAssistant.memory.addTurn(text, reply);
         return reply;
       } else {
-        const res = await pcBridge.executeCommand('start_phone_mirror', { target: '192.168.100.224:37821' });
+        const res = await pcBridge.executeCommand('start_phone_mirror', { target: '' });
         const reply = res.success !== false ? 'Dạ em đã mở cửa sổ truyền trực tiếp màn hình điện thoại lên máy tính cho anh rồi ạ! 📱✨🖥️' : (res.error || res.message || '❌ Không thể kết nối truyền màn hình điện thoại.');
         aiAssistant.memory.addTurn(text, reply);
         return reply;
@@ -680,10 +682,11 @@ export class MessageHandler {
       lower.includes('screenshot') || lower.includes('chụp màn') || lower.includes('chup man')
     ) {
       const res = await pcBridge.executeCommand('screenshot');
-      if (res.success && res.filePath) {
+      if (res.success && (res.filePath || res.screenshotBase64)) {
         const replyObj = {
           text: '📸 Dạ em gửi ảnh chụp màn hình máy tính của anh đây ạ! 🌸',
-          attachments: [res.filePath]
+          attachments: res.filePath ? [res.filePath] : [],
+          screenshotBase64: res.screenshotBase64
         };
         aiAssistant.memory.addTurn(text, replyObj.text);
         return replyObj;

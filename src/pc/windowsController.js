@@ -1095,16 +1095,21 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
   }
 
   static phoneMirrorProcess = null;
-  static phoneMirrorTarget = '192.168.100.224:37821';
+  static phoneMirrorTarget = '';
 
   /**
+   * Tự động quét toàn bộ  /**
    * Khởi động Stream màn hình điện thoại lên máy tính và điều khiển trực tiếp
-   * @param {string} targetDevice Địa chỉ IP:Port hoặc Serial thiết bị ADB (Mặc định: 192.168.100.224:37821)
+   * @param {string} [targetDevice=''] Địa chỉ IP:Port hoặc Serial thiết bị ADB
    */
-  static async startPhoneMirror(targetDevice = '192.168.100.224:37821') {
+  static async startPhoneMirror(targetDevice = '') {
     return new Promise(async (resolve) => {
-      const target = targetDevice || WindowsController.phoneMirrorTarget || '192.168.100.224:37821';
-      WindowsController.phoneMirrorTarget = target;
+      // 0. Luôn tắt triệt để mọi tiến trình scrcpy cũ trước để không bao giờ bị mở đè 2 cửa sổ
+      try {
+        exec('taskkill /F /IM scrcpy.exe', { windowsHide: true }, () => {});
+      } catch (_) {}
+
+      let target = (targetDevice && typeof targetDevice === 'string') ? targetDevice.trim() : (WindowsController.phoneMirrorTarget || '');
 
       const scrcpyPath = path.resolve(__dirname, '..', '..', 'tools', 'scrcpy', 'scrcpy.exe');
       const adbPath = path.resolve(__dirname, '..', '..', 'tools', 'scrcpy', 'adb.exe');
@@ -1113,14 +1118,75 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
         return resolve({ success: false, error: 'Không tìm thấy bộ công cụ scrcpy tại tools/scrcpy/scrcpy.exe' });
       }
 
-      // 1. Đảm bảo ADB đã kết nối với thiết bị
-      if (target.includes(':')) {
+      // 1. Đảm bảo ADB đã kết nối với thiết bị nếu có target cụ thể
+      if (target && target.includes(':')) {
         try {
           await new Promise((res) => {
-            execFile(adbPath, ['connect', target], { timeout: 4000 }, () => res());
+            execFile(adbPath, ['connect', target], { timeout: 2500, windowsHide: true }, () => res());
           });
         } catch (_) {}
       }
+
+      // Tự động kiểm tra danh sách thiết bị ADB đang kết nối
+      let foundActive = null;
+      try {
+        const getDevices = () => new Promise((res) => {
+          execFile(adbPath, ['devices', '-l'], { timeout: 3000, windowsHide: true }, (err, stdout) => {
+            res(stdout || '');
+          });
+        });
+
+        const adbDevicesOut = await getDevices();
+        const lines = (adbDevicesOut || '').split('\n');
+        let activeDevices = [];
+        let ipDevice = null;
+        let preferredDevice = null;
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('List of') && /\sdevice(\s|$)/.test(trimmed)) {
+            const devId = trimmed.split(/\s+/)[0].trim();
+            activeDevices.push(devId);
+            if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$/.test(devId)) {
+              ipDevice = devId;
+            } else if (trimmed.includes('23113RKC6C') || trimmed.includes('vermeer')) {
+              preferredDevice = devId;
+            }
+          }
+        }
+
+        if (target && activeDevices.includes(target)) {
+          foundActive = target;
+        } else if (ipDevice) {
+          foundActive = ipDevice;
+          target = ipDevice;
+        } else if (preferredDevice) {
+          foundActive = preferredDevice;
+          target = preferredDevice;
+        } else if (activeDevices.length > 0) {
+          foundActive = activeDevices[0];
+          target = foundActive;
+        }
+
+        // Nếu chưa tìm thấy thiết bị, tự động quét toàn mạng LAN
+        if (!foundActive) {
+          const scannedIps = await WindowsController.scanLanAdbDevices();
+          for (const ip of scannedIps) {
+            const candidate = `${ip}:5555`;
+            await new Promise((res) => {
+              execFile(adbPath, ['connect', candidate], { timeout: 2000, windowsHide: true }, () => res());
+            });
+            foundActive = candidate;
+            target = candidate;
+            break;
+          }
+        }
+      } catch (_) {}
+
+      if (foundActive) {
+        target = foundActive;
+      }
+
+      WindowsController.phoneMirrorTarget = target;
 
       // 2. Nếu tiến trình cũ đang chạy, tắt đi để khởi động lại sạch sẽ
       if (WindowsController.phoneMirrorProcess) {
@@ -1130,33 +1196,20 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
         WindowsController.phoneMirrorProcess = null;
       }
 
-      // 3. Khởi động Scrcpy với cấu hình tối ưu độ trễ thấp 60fps, điều khiển chuột & phím
-      const args = [
-        '-s', target,
-        '--window-title', '📱 Diana - Màn hình Điện thoại (Redmi K70)',
-        '--max-size', '1440',
-        '--video-bit-rate', '8M',
-        '--max-fps', '60',
-        '--stay-awake',
-        '--always-on-top'
-      ];
+      // 3. Khởi động Scrcpy qua WScript.Shell cmd start (Ẩn 100% Terminal, triệt tiêu lỗi 0x800700e8)
+      const scrcpyDir = path.dirname(scrcpyPath);
+      const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
+WshShell.CurrentDirectory = "${scrcpyDir.replace(/\\/g, '\\\\')}"
+WshShell.Run "cmd /c start """" scrcpy.exe -s ${target} --no-audio --video-codec=h264 --window-title ""📱 Diana - Màn hình Điện thoại (Redmi K70)"" --max-size 1440 --video-bit-rate 8M --max-fps 60 --stay-awake --always-on-top --push-target /sdcard/Pictures/", 0, False
+`;
+      const tempVbs = path.join(os.tmpdir(), `diana_scrcpy_${Date.now()}.vbs`);
 
       try {
-        const child = spawn(scrcpyPath, args, {
-          cwd: path.dirname(scrcpyPath),
-          stdio: ['ignore', 'pipe', 'pipe'],
-          detached: true
-        });
-
-        WindowsController.phoneMirrorProcess = child;
-
-        child.on('close', () => {
-          WindowsController.phoneMirrorProcess = null;
-        });
-
-        child.on('error', (err) => {
-          WindowsController.phoneMirrorProcess = null;
-          console.error('[Phone Mirror Error]:', err);
+        fs.writeFileSync(tempVbs, vbsContent, 'utf8');
+        execFile('wscript.exe', [tempVbs], { windowsHide: true }, () => {
+          setTimeout(() => {
+            try { fs.unlinkSync(tempVbs); } catch (_) {}
+          }, 3000);
         });
 
         // Hiển thị Toast thông báo trên Windows
@@ -1164,12 +1217,40 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 
         resolve({
           success: true,
+          mode: 'scrcpy',
+          activeDevice: target,
+          isMirroring: true,
           message: `Đã kết nối và truyền màn hình ${target} lên máy tính thành công!`,
           target
         });
       } catch (err) {
         resolve({ success: false, error: err.message });
       }
+    });
+  }
+
+  /**
+   * Bật/Tắt (Toggle) chiếu màn hình Scrcpy thông minh
+   * @param {string} [targetDevice='']
+   */
+  static async togglePhoneMirror(targetDevice = '') {
+    const isRunning = await WindowsController.isPhoneMirrorRunning();
+    if (isRunning) {
+      return WindowsController.stopPhoneMirror();
+    } else {
+      return await WindowsController.startPhoneMirror(targetDevice);
+    }
+  }
+
+  /**
+   * Kiểm tra xem Scrcpy có đang chạy chiếu màn hình hay không
+   * @returns {Promise<boolean>}
+   */
+  static async isPhoneMirrorRunning() {
+    return new Promise((resolve) => {
+      exec('tasklist /FI "IMAGENAME eq scrcpy.exe" /NH', { windowsHide: true, timeout: 2000 }, (err, stdout) => {
+        resolve(Boolean(stdout && stdout.includes('scrcpy.exe')));
+      });
     });
   }
 
@@ -1184,9 +1265,147 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
       WindowsController.phoneMirrorProcess = null;
     }
     try {
-      exec('taskkill /F /IM scrcpy.exe', () => {});
+      exec('taskkill /F /IM scrcpy.exe', { windowsHide: true }, () => {});
     } catch (_) {}
-    return { success: true, message: 'Đã tắt stream màn hình điện thoại.' };
+    return { success: true, isMirroring: false, message: 'Đã tắt stream màn hình điện thoại.' };
+  }
+
+  /**
+   * Tự động mở cửa sổ xem màn hình điện thoại (Live Stream Player) trên máy tính
+   * @param {string} [streamUrl='http://192.168.100.225:8088/']
+   */
+  static async openPhoneScreenViewer(streamUrl = 'http://192.168.100.225:8088/') {
+    try {
+      const targetUrl = streamUrl || 'http://192.168.100.225:8088/';
+      const chromePaths = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+      ];
+      let browserExe = chromePaths.find(p => fs.existsSync(p));
+
+      if (browserExe) {
+        spawn(browserExe, [`--app=${targetUrl}`, '--window-size=460,920'], {
+          detached: true,
+          stdio: 'ignore'
+        });
+      } else {
+        execFile('cmd', ['/c', 'start', targetUrl], { windowsHide: true });
+      }
+
+      WindowsController.showToastNotification('📱 Diana Live Screen', 'Đã mở cửa sổ truyền màn hình điện thoại lên máy tính!');
+      return { success: true, message: 'Đã mở cửa sổ xem màn hình điện thoại trên máy tính!' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Kiểm tra xem tiến trình Air Gesture AI có đang chạy hay không
+   */
+  static async isAirGestureRunning() {
+    return new Promise((resolve) => {
+      const pidFile = path.resolve(__dirname, '..', '..', '.air_gesture.pid');
+      if (fs.existsSync(pidFile)) {
+        try {
+          const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+          if (pid && !isNaN(pid)) {
+            exec(`tasklist /FI "PID eq ${pid}" /NH`, { windowsHide: true, timeout: 2000 }, (err, stdout) => {
+              if (stdout && stdout.includes(String(pid)) && stdout.toLowerCase().includes('python')) return resolve(true);
+              checkByCmd();
+            });
+            return;
+          }
+        } catch (_) {}
+      }
+      checkByCmd();
+
+      function checkByCmd() {
+        const psCmd = `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name LIKE 'python%' AND CommandLine LIKE '%air_gesture_controller.py%'\\" | Select-Object -ExpandProperty ProcessId"`;
+        exec(psCmd, { windowsHide: true, timeout: 3000 }, (err, stdout) => {
+          const hasPid = Boolean(stdout && stdout.trim().length > 0 && !isNaN(parseInt(stdout.trim(), 10)));
+          resolve(hasPid);
+        });
+      }
+    });
+  }
+
+  /**
+   * Bật Air Gesture AI Controller
+   */
+  static async startAirGesture() {
+    const isRunning = await WindowsController.isAirGestureRunning();
+    if (isRunning) {
+      return { success: true, active: true, message: 'Air Gesture AI đang hoạt động.' };
+    }
+
+    const scriptPath = path.resolve(__dirname, '..', '..', 'scripts', 'air_gesture_controller.py');
+    if (!fs.existsSync(scriptPath)) {
+      return { success: false, error: 'Không tìm thấy file scripts/air_gesture_controller.py' };
+    }
+
+    const pythonCandidates = [
+      'C:\\Users\\ADMIN\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'python.exe'),
+      'python.exe',
+      'python'
+    ];
+    const pythonExe = pythonCandidates.find(p => fs.existsSync(p)) || 'python';
+
+    try {
+      const child = spawn(pythonExe, [scriptPath], {
+        cwd: path.dirname(scriptPath),
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false
+      });
+      child.unref();
+
+      WindowsController.showToastNotification('🖐️ Diana Air Gesture', 'Đã bật chế độ điều khiển máy tính bằng cử chỉ tay!');
+      return { success: true, active: true, message: 'Đã kích hoạt Diana Air Gesture AI thành công!' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Tắt Air Gesture AI Controller
+   */
+  static async stopAirGesture() {
+    try {
+      const pidFile = path.resolve(__dirname, '..', '..', '.air_gesture.pid');
+      if (fs.existsSync(pidFile)) {
+        try {
+          const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+          if (pid) exec(`taskkill /F /PID ${pid}`, { windowsHide: true }, () => {});
+        } catch (_) {}
+      }
+
+      const psKill = `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"CommandLine LIKE '%air_gesture_controller.py%'\\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"`;
+      exec(psKill, { windowsHide: true }, () => {
+        if (fs.existsSync(pidFile)) {
+          try { fs.unlinkSync(pidFile); } catch (_) {}
+        }
+      });
+
+      WindowsController.showToastNotification('🖐️ Diana Air Gesture', 'Đã tắt chế độ điều khiển bằng cử chỉ tay.');
+      return { success: true, active: false, message: 'Đã tắt Diana Air Gesture.' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Bật / Tắt (Toggle) Air Gesture 1 chạm
+   */
+  static async toggleAirGesture() {
+    const isRunning = await WindowsController.isAirGestureRunning();
+    if (isRunning) {
+      return await WindowsController.stopAirGesture();
+    } else {
+      return await WindowsController.startAirGesture();
+    }
   }
 }
 

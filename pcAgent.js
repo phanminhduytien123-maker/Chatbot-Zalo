@@ -1,8 +1,10 @@
 import axios from 'axios';
+import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import net from 'net';
 import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
+import { spawn, execFile } from 'child_process';
 import chalk from 'chalk';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -87,6 +89,15 @@ async function loadController() {
 // Nạp lần đầu
 await loadController();
 
+// Đảm bảo ADB daemon nền luôn sẵn sàng cho kết nối điện thoại
+try {
+  const adbPath = path.resolve(__dirname, 'tools', 'scrcpy', 'adb.exe');
+  if (fs.existsSync(adbPath)) {
+    execFile(adbPath, ['start-server'], { windowsHide: true }, () => {});
+  }
+} catch (_) {}
+
+
 // Thiết lập giám sát file (File Watcher) để tự động reset/nạp lại khi có code mới
 let reloadDebounce = null;
 const pcDir = path.join(__dirname, 'src', 'pc');
@@ -142,7 +153,12 @@ async function pollServer() {
   if (isProcessing) return;
 
   try {
-    const res = await axios.get(`${SERVER_URL}/pc/poll`, {
+    let mirrorActive = false;
+    if (WindowsController && typeof WindowsController.isPhoneMirrorRunning === 'function') {
+      mirrorActive = await WindowsController.isPhoneMirrorRunning().catch(() => false);
+    }
+
+    const res = await axios.get(`${SERVER_URL}/pc/poll?mirrorActive=${mirrorActive}`, {
       timeout: 5000,
       headers: { 'User-Agent': 'Diana-Windows-Client-Agent/1.0' }
     });
@@ -265,6 +281,13 @@ async function pollServer() {
           break;
         }
 
+        case 'phone_mirror_toggle':
+        case 'toggle_phone_mirror': {
+          result = await WindowsController.togglePhoneMirror(params?.target);
+          result.id = id;
+          break;
+        }
+
         case 'stop_phone_mirror': {
           result = WindowsController.stopPhoneMirror();
           result.id = id;
@@ -280,6 +303,13 @@ async function pollServer() {
 
         case 'stop_air_gesture': {
           result = WindowsController.stopAirGestureDetector();
+          result.id = id;
+          break;
+        }
+
+        case 'open_phone_screen_viewer':
+        case 'view_phone_stream': {
+          result = await WindowsController.openPhoneScreenViewer(params?.streamUrl);
           result.id = id;
           break;
         }
@@ -311,8 +341,320 @@ async function pollServer() {
   }
 }
 
+// Tự động phát hiện khi điện thoại bật Share màn hình (Cổng 8088) để tự mở cửa sổ trên máy tính
+let isStreamViewerOpen = false;
+let lastStreamIp = '';
+
+function checkPhoneLiveStream() {
+  const candidateIps = ['192.168.0.105', '192.168.100.148', '192.168.100.225'];
+  
+  for (const ip of candidateIps) {
+    const socket = new net.Socket();
+    socket.setTimeout(600);
+    socket.on('connect', () => {
+      socket.destroy();
+      if (!isStreamViewerOpen || lastStreamIp !== ip) {
+        isStreamViewerOpen = true;
+        lastStreamIp = ip;
+        log(`📱 [Phát hiện Stream từ điện thoại (${ip}:8088)]: Đang tự động mở cửa sổ trên máy tính...`, chalk.cyan.bold);
+        if (WindowsController && typeof WindowsController.openPhoneScreenViewer === 'function') {
+          WindowsController.openPhoneScreenViewer(`http://${ip}:8088/`);
+        }
+      }
+    });
+    socket.on('error', () => { socket.destroy(); if (lastStreamIp === ip) isStreamViewerOpen = false; });
+    socket.on('timeout', () => { socket.destroy(); if (lastStreamIp === ip) isStreamViewerOpen = false; });
+    try { socket.connect(8088, ip); } catch (_) {}
+  }
+}
+
 // Bắt đầu vòng lặp thăm dò máy chủ
-setInterval(pollServer, POLL_INTERVAL_MS);
+setInterval(async () => {
+  await pollServer();
+  checkPhoneLiveStream();
+}, POLL_INTERVAL_MS);
 pollServer();
+checkPhoneLiveStream();
+
+// -------------------------------------------------------------
+// LOCAL HTTP LAN SERVER (PORT 3000)
+// Cho phép App trên Điện thoại / Mobile Web điều khiển PC trực tiếp 0ms trên mạng LAN
+// -------------------------------------------------------------
+const HTTP_PORT = process.env.LOCAL_PORT || 3000;
+
+function startLocalHttpServer() {
+  const server = http.createServer(async (req, res) => {
+    // CORS headers cho mọi request từ Phone App / Browser
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      return res.end();
+    }
+
+    try {
+      const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      const pathname = parsedUrl.pathname;
+      const target = parsedUrl.searchParams.get('target') || '';
+
+      if (!WindowsController) {
+        await loadController();
+      }
+
+      // 1. Trạng thái hệ thống & Scrcpy Mirror
+      if (pathname === '/api/status') {
+        const mirrorActive = WindowsController ? await WindowsController.isPhoneMirrorRunning().catch(() => false) : false;
+        const airActive = WindowsController && typeof WindowsController.isAirGestureRunning === 'function' 
+          ? await WindowsController.isAirGestureRunning().catch(() => false) 
+          : false;
+
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({
+          success: true,
+          online: true,
+          pcOnline: true,
+          status: 'ONLINE',
+          bot: 'Diana PC Local Agent',
+          uptime: `${Math.floor(process.uptime())}s`,
+          mirrorActive,
+          airGestureActive: airActive,
+          deviceIp: '192.168.100.148:5555'
+        }));
+      }
+
+      // 2. Toggle Chiếu Màn Hình (Phone Mirror)
+      if (pathname === '/api/phone/mirror/toggle') {
+        log(`📱 [LAN HTTP Request]: Nhận lệnh TOGGLE Mirror (${target || 'Auto'}) từ Phone App`, chalk.cyan.bold);
+        const result = WindowsController ? await WindowsController.togglePhoneMirror(target) : { success: false, error: 'WindowsController chưa sẵn sàng' };
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify(result));
+      }
+
+      // 3. Start Chiếu Màn Hình
+      if (pathname === '/api/phone/mirror/start') {
+        log(`📱 [LAN HTTP Request]: Nhận lệnh START Mirror (${target || 'Auto'}) từ Phone App`, chalk.cyan.bold);
+        const result = WindowsController ? await WindowsController.startPhoneMirror(target) : { success: false, error: 'WindowsController chưa sẵn sàng' };
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify(result));
+      }
+
+      // 4. Stop Chiếu Màn Hình
+      if (pathname === '/api/phone/mirror/stop') {
+        log(`📱 [LAN HTTP Request]: Nhận lệnh STOP Mirror từ Phone App`, chalk.yellow.bold);
+        const result = WindowsController ? WindowsController.stopPhoneMirror() : { success: true };
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify(result));
+      }
+
+      // 5. Kiểm tra trạng thái Mirror
+      if (pathname === '/api/phone/mirror/status' || pathname === '/api/mirror/status') {
+        const mirrorActive = WindowsController ? await WindowsController.isPhoneMirrorRunning().catch(() => false) : false;
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ success: true, mirrorActive }));
+      }
+
+      // 6. Air Gesture AI
+      if (pathname === '/api/air-gesture/toggle') {
+        const isAir = WindowsController && typeof WindowsController.isAirGestureRunning === 'function' ? await WindowsController.isAirGestureRunning() : false;
+        let result;
+        if (isAir) {
+          result = WindowsController.stopAirGestureDetector();
+        } else {
+          result = await WindowsController.startAirGestureDetector();
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify(result));
+      }
+
+      if (pathname === '/api/air-gesture/status') {
+        const active = WindowsController && typeof WindowsController.isAirGestureRunning === 'function' ? await WindowsController.isAirGestureRunning() : false;
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ success: true, active }));
+      }
+
+      // 6.2 API: Xem / Tải ảnh chụp màn hình PC mới nhất
+      if (pathname === '/api/screenshot/latest' || pathname.startsWith('/api/screenshot/') || pathname.startsWith('/data/screenshots/')) {
+        const screenshotDir = path.resolve(__dirname, 'data', 'screenshots');
+        let targetFile = null;
+        if (pathname === '/api/screenshot/latest') {
+          if (fs.existsSync(screenshotDir)) {
+            const files = fs.readdirSync(screenshotDir)
+              .filter(f => f.endsWith('.png') || f.endsWith('.jpg'))
+              .map(f => ({ name: f, time: fs.statSync(path.join(screenshotDir, f)).mtimeMs }))
+              .sort((a, b) => b.time - a.time);
+            if (files.length > 0) {
+              targetFile = path.join(screenshotDir, files[0].name);
+            }
+          }
+        } else {
+          const fileName = path.basename(pathname);
+          const possiblePath = path.join(screenshotDir, fileName);
+          if (fs.existsSync(possiblePath)) {
+            targetFile = possiblePath;
+          }
+        }
+
+        if (targetFile && fs.existsSync(targetFile)) {
+          res.writeHead(200, {
+            'Access-Control-Allow-Origin': '*',
+            'Content-Type': 'image/png',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          });
+          return fs.createReadStream(targetFile).pipe(res);
+        } else {
+          res.writeHead(404, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ success: false, error: 'Chưa có ảnh chụp màn hình nào.' }));
+        }
+      }
+
+      // 7. Lệnh điều khiển PC trực tiếp (lock, sleep, etc.)
+      if (pathname === '/pc/action' || pathname === '/api/pc/action') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            const data = JSON.parse(body || '{}');
+            const act = data.action;
+            let actResult = { success: false };
+            if (act === 'lock') actResult = await WindowsController.lockScreen();
+            else if (act === 'sleep') actResult = await WindowsController.sleep();
+            else if (act === 'screenshot') {
+              const scr = await WindowsController.takeScreenshot();
+              let screenshotBase64 = null;
+              if (scr.success && scr.filePath && fs.existsSync(scr.filePath)) {
+                screenshotBase64 = fs.readFileSync(scr.filePath, 'base64');
+              }
+              actResult = { ...scr, screenshotBase64 };
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify(actResult));
+          } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: false, error: e.message }));
+          }
+        });
+        return;
+      }
+
+      // 8. Trợ lý AI & Lệnh thoại trực tiếp (Voice Assistant Text)
+      if (pathname === '/api/voice' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            const data = JSON.parse(body || '{}');
+            const query = (data.query || data.text || '').trim();
+            const lower = query.toLowerCase();
+
+            // Xử lý tức thì các lệnh phần cứng máy tính trực tiếp
+            if (lower.includes('chụp màn') || lower.includes('chụp ảnh màn') || lower.includes('chụp pc') || lower.includes('screenshot') || lower.includes('chụp ảnh máy')) {
+              const screen = await WindowsController.takeScreenshot();
+              let screenshotBase64 = null;
+              if (screen.success && screen.filePath && fs.existsSync(screen.filePath)) {
+                screenshotBase64 = fs.readFileSync(screen.filePath, 'base64');
+              }
+              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+              return res.end(JSON.stringify({
+                success: true,
+                query,
+                reply: {
+                  text: '📸 Dạ em đã chụp ảnh màn hình máy tính của anh Tiến rồi đây ạ! 🌸',
+                  screenshotBase64
+                }
+              }));
+            }
+
+            if (lower.includes('khóa máy') || lower.includes('khóa pc') || lower.includes('lock pc') || lower === 'khóa') {
+              const lockRes = await WindowsController.lockScreen();
+              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+              return res.end(JSON.stringify({
+                success: true,
+                query,
+                reply: lockRes.success ? '🔒 Dạ em đã khóa màn hình máy tính của anh rồi ạ! 🌸' : '❌ Lỗi khóa máy tính.'
+              }));
+            }
+
+            if (lower.includes('chiếu màn hình') || lower.includes('mirror phone') || lower.includes('scrcpy') || lower.includes('chiếu điện thoại')) {
+              const mirrorRes = await WindowsController.startPhoneMirror();
+              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+              return res.end(JSON.stringify({
+                success: true,
+                query,
+                reply: mirrorRes.success ? '📱 Dạ em đã bật cửa sổ chiếu màn hình điện thoại 60 FPS lên máy tính của anh rồi ạ! 🌸' : `❌ ${mirrorRes.error || 'Lỗi bật chiếu màn hình'}`
+              }));
+            }
+
+            // Chuyển tiếp các câu hỏi AI tổng quát (thời tiết, điểm số, trò chuyện) lên Render Cloud
+            try {
+              const cloudRes = await axios.post(`${SERVER_URL}/api/voice`, { query }, {
+                timeout: 15000,
+                headers: { 'Content-Type': 'application/json' }
+              });
+              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+              return res.end(JSON.stringify(cloudRes.data));
+            } catch (cloudErr) {
+              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+              return res.end(JSON.stringify({
+                success: true,
+                query,
+                reply: `Dạ em đã nhận được lệnh "${query}" từ anh Tiến! 🌸`
+              }));
+            }
+          } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: false, error: e.message }));
+          }
+        });
+        return;
+      }
+
+      // 9. API: Voice Audio File STT (Proxy sang Cloud)
+      if (pathname === '/api/voice-audio' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            const cloudRes = await axios.post(`${SERVER_URL}/api/voice-audio`, body, {
+              timeout: 15000,
+              headers: { 'Content-Type': 'application/json' }
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify(cloudRes.data));
+          } catch (cloudErr) {
+            res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: false, error: cloudErr.message }));
+          }
+        });
+        return;
+      }
+
+      // Fallback: 404
+      res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: 'Endpoint không tồn tại' }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+  });
+
+  server.listen(HTTP_PORT, '0.0.0.0', () => {
+    log(`🌐 [LAN Server]: Đang mở cổng HTTP ${HTTP_PORT} (0.0.0.0:${HTTP_PORT}) để Phone App kết nối siêu tốc!`, chalk.cyan.bold);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      log(`⚠️ Cổng ${HTTP_PORT} đang bận, tiến trình khác đã lắng nghe trên cổng này.`, chalk.yellow);
+    } else {
+      log(`⚠️ Lỗi HTTP Server: ${err.message}`, chalk.red);
+    }
+  });
+}
+
+startLocalHttpServer();
+
+
+
 
 

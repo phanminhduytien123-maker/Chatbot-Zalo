@@ -9,11 +9,16 @@ export class PCBridgeService {
     this.pendingCommands = [];
     this.commandPromises = new Map();
     this.lastHeartbeat = 0;
+    this.mirrorActive = false;
     this.pcInfo = {
       name: 'Windows PC (Duy Tiến)',
       online: false,
       lastSeen: 0
     };
+  }
+
+  isMirrorActive() {
+    return Boolean(this.mirrorActive);
   }
 
   /**
@@ -97,8 +102,17 @@ export class PCBridgeService {
 
 
 
-      case 'screenshot':
-        return await WindowsController.takeScreenshot();
+      case 'screenshot': {
+        const screen = await WindowsController.takeScreenshot();
+        if (screen.success && screen.filePath && fs.existsSync(screen.filePath)) {
+          const base64Data = fs.readFileSync(screen.filePath, 'base64');
+          return {
+            ...screen,
+            screenshotBase64: base64Data
+          };
+        }
+        return screen;
+      }
 
       case 'battery':
         return await WindowsController.getBatteryInfo();
@@ -129,17 +143,36 @@ export class PCBridgeService {
 
       case 'air_gesture':
       case 'start_air_gesture':
-        return await WindowsController.startAirGestureDetector(params?.timeout || 600, params?.sessionData);
+        return await WindowsController.startAirGesture();
 
       case 'stop_air_gesture':
-        return WindowsController.stopAirGestureDetector();
+        return await WindowsController.stopAirGesture();
+
+      case 'toggle_air_gesture':
+        return await WindowsController.toggleAirGesture();
+
+      case 'get_air_gesture_status':
+        return { success: true, active: await WindowsController.isAirGestureRunning() };
 
       case 'phone_mirror':
-      case 'start_phone_mirror':
-        return await WindowsController.startPhoneMirror(params?.target);
+      case 'start_phone_mirror': {
+        const res = await WindowsController.startPhoneMirror(params?.target);
+        if (res && res.success) this.mirrorActive = true;
+        return res;
+      }
 
-      case 'stop_phone_mirror':
-        return WindowsController.stopPhoneMirror();
+      case 'phone_mirror_toggle':
+      case 'toggle_phone_mirror': {
+        const res = await WindowsController.togglePhoneMirror(params?.target);
+        this.mirrorActive = Boolean(res && res.isMirroring !== false && res.mode === 'scrcpy');
+        return res;
+      }
+
+      case 'stop_phone_mirror': {
+        const res = WindowsController.stopPhoneMirror();
+        this.mirrorActive = false;
+        return res;
+      }
 
       default:
         return { success: false, error: `Hành động "${action}" không hợp lệ.` };
@@ -149,10 +182,14 @@ export class PCBridgeService {
   /**
    * Client Agent gọi API để lấy lệnh đang chờ xử lý
    */
-  pollCommand() {
+  pollCommand(query = {}) {
     this.lastHeartbeat = Date.now();
     this.pcInfo.online = true;
     this.pcInfo.lastSeen = Date.now();
+
+    if (typeof query.mirrorActive !== 'undefined') {
+      this.mirrorActive = query.mirrorActive === 'true' || query.mirrorActive === true;
+    }
 
     if (this.pendingCommands.length > 0) {
       return this.pendingCommands.shift();
@@ -164,7 +201,13 @@ export class PCBridgeService {
    * Client Agent gửi kết quả xử lý lên Server
    */
   handleResult(resultData) {
-    const { id, success, message, error, screenshotBase64 } = resultData;
+    const { id, success, message, error, screenshotBase64, mode } = resultData;
+    if (resultData.action === 'start_phone_mirror' || resultData.action === 'phone_mirror' || mode === 'scrcpy') {
+      this.mirrorActive = Boolean(success);
+    } else if (resultData.action === 'stop_phone_mirror') {
+      this.mirrorActive = false;
+    }
+
     if (!id || !this.commandPromises.has(id)) return false;
 
     const { resolve, timeout } = this.commandPromises.get(id);
@@ -190,7 +233,8 @@ export class PCBridgeService {
     resolve({
       success: Boolean(success),
       message: message || (success ? 'Thực hiện lệnh thành công!' : (error || 'Thất bại')),
-      filePath
+      filePath,
+      screenshotBase64
     });
 
     return true;

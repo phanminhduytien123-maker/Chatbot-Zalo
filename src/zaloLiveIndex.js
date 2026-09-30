@@ -2,6 +2,7 @@ process.env.TZ = 'Asia/Ho_Chi_Minh';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
 import config from './config/config.js';
 import aiAssistant from './ai/gemini.js';
@@ -216,8 +217,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 4. API: Trạng thái hệ thống & PC Status
+  // 4. API: Trạng thái hệ thống & PC Status (bao gồm trạng thái mirror)
   if (url.pathname === '/api/status' || url.pathname === '/pc/status') {
+    // Kiểm tra scrcpy.exe đang chạy để đồng bộ trạng thái giữa Phone và PC
+    const mirrorActive = await new Promise(resolve => {
+      exec('tasklist /FI "IMAGENAME eq scrcpy.exe" /NH', { windowsHide: true, timeout: 2000 }, (e, out) => {
+        resolve(out && out.includes('scrcpy.exe'));
+      });
+    }).catch(() => false);
+
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     return res.end(JSON.stringify({
       status: 'ONLINE',
@@ -228,8 +236,70 @@ const server = http.createServer(async (req, res) => {
       model: config.ai.model,
       zaloConnected: zaloLive.isConnected,
       pcOnline: pcBridge.isPCOnline(),
-      pcInfo: pcBridge.pcInfo
+      pcInfo: pcBridge.pcInfo,
+      mirrorActive,
+      phoneStream: global.phoneStreamState || { isStreaming: false }
     }));
+  }
+
+  // 4.1 API: Trạng thái mirror cụ thể (cho toggle button)
+  if (url.pathname === '/api/mirror/status') {
+    let mirrorActive = false;
+    if (process.platform === 'win32') {
+      try {
+        mirrorActive = await WindowsController.isPhoneMirrorRunning().catch(() => false);
+      } catch (_) {
+        mirrorActive = pcBridge.isMirrorActive();
+      }
+    } else {
+      mirrorActive = pcBridge.isMirrorActive();
+    }
+
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({
+      success: true,
+      mirrorActive,
+      target: global.__mirrorTarget || '',
+      phoneStream: global.phoneStreamState || { isStreaming: false }
+    }));
+  }
+
+  // 4.2 API: Xem / Tải ảnh chụp màn hình PC mới nhất
+  if (url.pathname === '/api/screenshot/latest' || url.pathname.startsWith('/api/screenshot/') || url.pathname.startsWith('/data/screenshots/')) {
+    const screenshotDir = path.resolve(config.paths.dataDir, 'screenshots');
+    let targetFile = null;
+    if (url.pathname === '/api/screenshot/latest') {
+      if (fs.existsSync(screenshotDir)) {
+        const files = fs.readdirSync(screenshotDir)
+          .filter(f => f.endsWith('.png') || f.endsWith('.jpg'))
+          .map(f => ({ name: f, time: fs.statSync(path.join(screenshotDir, f)).mtimeMs }))
+          .sort((a, b) => b.time - a.time);
+        if (files.length > 0) {
+          targetFile = path.join(screenshotDir, files[0].name);
+        }
+      }
+    } else {
+      const fileName = path.basename(url.pathname);
+      const possiblePath = path.join(screenshotDir, fileName);
+      if (fs.existsSync(possiblePath)) {
+        targetFile = possiblePath;
+      }
+    }
+
+    if (targetFile && fs.existsSync(targetFile)) {
+      res.writeHead(200, {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'image/png',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+      return fs.createReadStream(targetFile).pipe(res);
+    } else {
+      res.writeHead(404, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, error: 'Chưa có ảnh chụp màn hình nào.' }));
+    }
   }
 
   // 2.1 API: Lấy danh sách bạn bè Zalo chính thức
@@ -380,7 +450,8 @@ const server = http.createServer(async (req, res) => {
 
   // 3.6 API: Bắt đầu Stream màn hình điện thoại lên PC (Phone Mirror & Control)
   if (url.pathname === '/api/phone/mirror/start') {
-    const targetDevice = url.searchParams.get('target') || '192.168.100.224:37821';
+    const targetDevice = url.searchParams.get('target') || '';
+    global.__mirrorTarget = targetDevice;
     pcBridge.executeCommand('start_phone_mirror', { target: targetDevice })
       .then(result => {
         res.writeHead(200, {
@@ -419,9 +490,144 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 3.8 API: Bật/Tắt (Toggle) Stream màn hình điện thoại
+  if (url.pathname === '/api/phone/mirror/toggle') {
+    const targetDevice = url.searchParams.get('target') || '';
+    global.__mirrorTarget = targetDevice;
+    pcBridge.executeCommand('toggle_phone_mirror', { target: targetDevice })
+      .then(result => {
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(500, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      });
+    return;
+  }
+
+  // 3.9 API: Air Gesture AI Controller (Điều khiển máy tính bằng cử chỉ tay)
+  if (url.pathname === '/api/air-gesture/toggle') {
+    pcBridge.executeCommand('toggle_air_gesture')
+      .then(result => {
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(500, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      });
+    return;
+  }
+
+  if (url.pathname === '/api/air-gesture/status') {
+    pcBridge.executeCommand('get_air_gesture_status')
+      .then(result => {
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify({ success: false, active: false, error: err.message }));
+      });
+    return;
+  }
+
+  if (url.pathname === '/api/air-gesture/start') {
+    pcBridge.executeCommand('start_air_gesture')
+      .then(result => {
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(500, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      });
+    return;
+  }
+
+  if (url.pathname === '/api/air-gesture/stop') {
+    pcBridge.executeCommand('stop_air_gesture')
+      .then(result => {
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(500, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      });
+    return;
+  }
+
+  // 3.8 API: Quản lý Native Phone Screen Stream (MediaProjection / MJPEG không cần Dev Mode)
+  if (url.pathname === '/api/phone/screen/register' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        global.phoneStreamState = {
+          isStreaming: Boolean(data.isStreaming),
+          streamUrl: data.streamUrl || '',
+          deviceName: data.deviceName || 'Redmi K70',
+          updatedAt: Date.now()
+        };
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify({ success: true, state: global.phoneStreamState }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === '/api/phone/screen/status') {
+    const state = global.phoneStreamState || { isStreaming: false, streamUrl: '' };
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({ success: true, ...state }));
+  }
+
   // 4. Endpoint thăm dò lệnh cho PC Agent
   if (url.pathname === '/pc/poll') {
-    const cmd = pcBridge.pollCommand();
+    const mirrorQuery = url.searchParams.get('mirrorActive');
+    const cmd = pcBridge.pollCommand({ mirrorActive: mirrorQuery });
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     return res.end(JSON.stringify({
       online: true,
@@ -595,8 +801,16 @@ async function streamTTS(text, res, voice = 'diana_female', apiKey = '', pitch =
 
   let cleanText = text
     .replace(/[*_#`~]/g, '')
+    // Lọc bỏ các emoji và ký tự biểu tượng
     .replace(/[\u{1F600}-\u{1F6FF}|[\u{1F300}-\u{1F5FF}|[\u{1F900}-\u{1F9FF}|[\u{2600}-\u{26FF}]/gu, '')
+    // Lọc bỏ các biểu cảm typo phổ biến: >.<, >﹏<, :3, :D, ^.^, ^_^, (⁠≧⁠▽⁠≦⁠), (⁠◕⁠ᴗ⁠◕⁠✿⁠), (⁠｡⁠♥⁠‿⁠♥⁠｡⁠), etc.
+    .replace(/[>><]+[._~﹏\-]+[<><]+/g, '')
+    .replace(/\b:[3DPOpo]\b/g, '')
+    .replace(/\^[._\-~]\^/g, '')
+    .replace(/\([^\p{L}\p{N}]{2,}\)/gu, '')
+    .replace(/[\u{3000}-\u{303F}\u{FF00}-\u{FFEF}]/gu, '')
     .replace(/\n+/g, '. ')
+    .replace(/\s+/g, ' ')
     .trim();
 
   // Tùy biến nhịp điệu ngắt nghỉ câu (Cadence)

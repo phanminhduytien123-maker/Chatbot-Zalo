@@ -42,13 +42,10 @@ if ($Action -eq "start") {
     if ($existing) {
         Write-Host "Diana PC Agent dang chay ngam (PID: $($existing.Id))." -ForegroundColor Yellow
     } else {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = "node.exe"
-        $psi.Arguments = "pcAgent.js"
-        $psi.CreateNoWindow = $true
-        $psi.UseShellExecute = $false
-        $psi.WorkingDirectory = $rootDir
-        $p = [System.Diagnostics.Process]::Start($psi)
+        $p = Start-Process -FilePath "node.exe" -ArgumentList "pcAgent.js" -WorkingDirectory $rootDir -WindowStyle Hidden -PassThru
+        if ($p) {
+            try { Set-Content $pidFile $p.Id.ToString() -Force } catch {}
+        }
         
         Start-Sleep -Milliseconds 1500
         $newProc = Get-AgentProcess

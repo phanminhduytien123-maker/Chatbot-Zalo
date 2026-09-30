@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # DIANA AI - 100% NATIVE WINDOWS ASSISTIVETOUCH FLOATING BUBBLE (ALWAYS ON TOP)
 # ==============================================================================
 
@@ -146,6 +146,11 @@ function PlayDianaVoice($text) {
         if (-not $text) { return }
         $cleanText = [System.Text.RegularExpressions.Regex]::Replace($text, '[*_#~\`]', '')
         $cleanText = [System.Text.RegularExpressions.Regex]::Replace($cleanText, '[\uD800-\uDBFF][\uDC00-\uDFFF]', '')
+        $cleanText = [System.Text.RegularExpressions.Regex]::Replace($cleanText, '[>><]+[._~﹏\-]+[<><]+', '')
+        $cleanText = [System.Text.RegularExpressions.Regex]::Replace($cleanText, '\b:[3DPOpo]\b', '')
+        $cleanText = [System.Text.RegularExpressions.Regex]::Replace($cleanText, '\([^\p{L}\p{N}]{2,}\)', '')
+        $cleanText = $cleanText.Trim()
+        if (-not $cleanText) { return }
         
         $encoded = [Uri]::EscapeDataString($cleanText.Substring(0, [Math]::Min(350, $cleanText.Length)))
         $ttsUrl = "$serverUrl/api/tts?text=$encoded&voice=moss_audio_881639b8-b831-11f1-80cc-aac30e71d302"
@@ -165,20 +170,18 @@ function PlayDianaVoice($text) {
     } catch {}
 }
 
-function SnapToEdge {
+function UpdateBubbleOrientation {
     $midX = [System.Windows.SystemParameters]::PrimaryScreenWidth / 2
     if ($window.Left -lt $midX) {
-        $window.Left = 10
         [System.Windows.Controls.Canvas]::SetLeft($speechBubble, 80)
         [System.Windows.Controls.Canvas]::SetLeft($dotRoot, 5)
     } else {
-        $window.Left = [System.Windows.SystemParameters]::PrimaryScreenWidth - 325
         [System.Windows.Controls.Canvas]::SetLeft($speechBubble, 0)
         [System.Windows.Controls.Canvas]::SetLeft($dotRoot, 245)
     }
 }
 
-# --- CƠ CHẾ CLICK & KÉO THẢ CHUẨN XÁC 100% ---
+# --- CƠ CHẾ CLICK & KÉO THẢ TỰ DO 100% ---
 $dotRoot.Add_PreviewMouseLeftButtonDown({
     $script:isMouseDown = $true
     $script:hasMoved = $false
@@ -193,7 +196,7 @@ $dotRoot.Add_PreviewMouseMove({
             $script:hasMoved = $true
             $window.DragMove()
             $script:isMouseDown = $false
-            SnapToEdge
+            UpdateBubbleOrientation
         }
     }
 })

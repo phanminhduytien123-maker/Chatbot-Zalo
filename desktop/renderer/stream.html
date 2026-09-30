@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📱 Diana Live Stream - Redmi K70</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0c0d0e;
+      --card-bg: #111215;
+      --card-border: #1f2128;
+      --text-main: #f0f2f5;
+      --text-muted: #8b949e;
+      --accent-cyan: #00f2fe;
+      --accent-blue: #4facfe;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --accent-orange: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+    }
+
+    /* Custom Modern Minimalist Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.16);
+      border-radius: 999px;
+      border: 1px solid transparent;
+      background-clip: padding-box;
+      transition: background-color 0.2s ease;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.32);
+    }
+
+    ::-webkit-scrollbar-thumb:active {
+      background: var(--accent-cyan, #00f2fe);
+    }
+
+    ::-webkit-scrollbar-button {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top Control Bar */
+    .stream-header {
+      height: 44px;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      -webkit-app-region: drag;
+      z-index: 100;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--accent-green);
+    }
+
+    .live-badge.offline {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: var(--accent-red);
+    }
+
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 6px currentColor;
+      animation: pulse 1.2s infinite alternate;
+    }
+
+    @keyframes pulse {
+      from { opacity: 0.4; }
+      to { opacity: 1; }
+    }
+
+    .device-title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      -webkit-app-region: no-drag;
+    }
+
+    .btn-icon {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      transition: all 0.15s ease;
+    }
+
+    .btn-icon:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      border-color: var(--card-border);
+    }
+
+    /* Screen Viewport */
+    .stream-container {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      overflow: hidden;
+    }
+
+    #streamView {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      display: none;
+      box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+    }
+
+    /* Standby / Connecting Screen */
+    .standby-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      max-width: 380px;
+      padding: 32px 24px;
+      background: rgba(17, 18, 21, 0.95);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(10px);
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .standby-icon-ring {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: rgba(0, 242, 254, 0.1);
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      margin-bottom: 16px;
+      box-shadow: 0 0 20px rgba(0, 242, 254, 0.15);
+      animation: breathe 2s infinite ease-in-out;
+    }
+
+    @keyframes breathe {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 15px rgba(0, 242, 254, 0.1); }
+      50% { transform: scale(1.06); box-shadow: 0 0 30px rgba(0, 242, 254, 0.3); }
+    }
+
+    .standby-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 8px;
+    }
+
+    .standby-desc {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 18px;
+    }
+
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      text-align: left;
+      width: 100%;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .step-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 0.78rem;
+      color: #cbd5e1;
+    }
+
+    .step-num {
+      background: rgba(0, 242, 254, 0.2);
+      color: var(--accent-cyan);
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .reconnect-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      color: var(--accent-cyan);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(0, 242, 254, 0.2);
+      border-top-color: var(--accent-cyan);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Bottom Status Bar */
+    .stream-footer {
+      height: 28px;
+      background: var(--card-bg);
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .footer-left {
+      display: flex;
+      gap: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="stream-header">
+    <div class="header-left">
+      <div class="live-badge offline" id="badgeLive">
+        <span class="live-dot"></span>
+        <span id="txtLiveStatus">Đang chờ...</span>
+      </div>
+      <span class="device-title">Redmi K70 (Method 3 Native)</span>
+    </div>
+    <div class="header-right">
+      <button class="btn-icon" id="btnRefresh" title="Làm mới kết nối">🔄</button>
+      <button class="btn-icon" id="btnFullscreen" title="Toàn màn hình (F)">⛶</button>
+    </div>
+  </div>
+
+  <div class="stream-container">
+    <canvas id="streamCanvas" style="display:none;"></canvas>
+    
+    <div class="standby-card" id="standbyCard">
+      <div class="standby-icon-ring">📱</div>
+      <h3 class="standby-title">Đang chờ tín hiệu từ điện thoại</h3>
+      <p class="standby-desc">Hãy mở ứng dụng <strong>Diana</strong> trên điện thoại để bắt đầu phát màn hình.</p>
+      
+      <div class="step-list">
+        <div class="step-item">
+          <span class="step-num">1</span>
+          <span>Mở <strong>App Diana</strong> trên điện thoại.</span>
+        </div>
+        <div class="step-item">
+          <span class="step-num">2</span>
+          <span>Bấm biểu tượng <strong>📱 Chiếu màn hình</strong> (hoặc nói <em>"Diana, chiếu màn hình"</em>).</span>
+        </div>
+        <div class="step-item">
+          <span class="step-num">3</span>
+          <span>Bấm <strong>Bắt đầu ngay</strong> trên thông báo hệ thống Android.</span>
+        </div>
+      </div>
+
+      <div class="reconnect-pill">
+        <span class="spinner"></span>
+        <span id="txtScanInfo">Tự động kết nối tới 192.168.100.225:8088...</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="stream-footer">
+    <div class="footer-left">
+      <span id="txtEndpoint">IP: 192.168.100.225:8088</span>
+      <span id="txtFps">FPS: --</span>
+    </div>
+    <div class="footer-right">
+      <span>Độ trễ: ~0ms (Native Stream)</span>
+    </div>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetIp = urlParams.get('ip') || '192.168.100.225';
+    const streamPort = urlParams.get('port') || '8088';
+    
+    const canvas = document.getElementById('streamCanvas');
+    const ctx = canvas.getContext('2d');
+    const standbyCard = document.getElementById('standbyCard');
+    const badgeLive = document.getElementById('badgeLive');
+    const txtLiveStatus = document.getElementById('txtLiveStatus');
+    const txtEndpoint = document.getElementById('txtEndpoint');
+    const txtFps = document.getElementById('txtFps');
+    const txtScanInfo = document.getElementById('txtScanInfo');
+    const btnRefresh = document.getElementById('btnRefresh');
+    const btnFullscreen = document.getElementById('btnFullscreen');
+
+    txtEndpoint.textContent = `IP: ${targetIp}:${streamPort}`;
+    txtScanInfo.textContent = `Tự động kết nối tới ${targetIp}:${streamPort}...`;
+
+    let isConnected = false;
+    let isFetching = false;
+    let frameCounter = 0;
+    let lastFpsTime = Date.now();
+    let failStreak = 0;
+
+    function renderLoop() {
+      if (isFetching) {
+        requestAnimationFrame(renderLoop);
+        return;
+      }
+
+      isFetching = true;
+      const img = new Image();
+      
+      img.onload = () => {
+        failStreak = 0;
+        if (!isConnected) {
+          isConnected = true;
+          standbyCard.style.display = 'none';
+          canvas.style.display = 'block';
+          badgeLive.className = 'live-badge';
+          txtLiveStatus.textContent = 'TRỰC TIẾP';
+        }
+
+        if (canvas.width !== img.width || canvas.height !== img.height) {
+          canvas.width = img.width;
+          canvas.height = img.height;
+        }
+
+        ctx.drawImage(img, 0, 0);
+        frameCounter++;
+
+        const now = Date.now();
+        if (now - lastFpsTime >= 1000) {
+          txtFps.textContent = `FPS: ${frameCounter}`;
+          frameCounter = 0;
+          lastFpsTime = now;
+        }
+
+        isFetching = false;
+        requestAnimationFrame(renderLoop);
+      };
+
+      img.onerror = () => {
+        failStreak++;
+        isFetching = false;
+        if (failStreak > 4 && isConnected) {
+          isConnected = false;
+          canvas.style.display = 'none';
+          standbyCard.style.display = 'flex';
+          badgeLive.className = 'live-badge offline';
+          txtLiveStatus.textContent = 'Đang chờ...';
+          txtFps.textContent = 'FPS: --';
+        }
+        setTimeout(renderLoop, 300);
+      };
+
+      img.src = `http://${targetIp}:${streamPort}/frame.jpg?t=${Date.now()}`;
+    }
+
+    renderLoop();
+
+    // Refresh button
+    btnRefresh.addEventListener('click', () => {
+      failStreak = 0;
+      renderLoop();
+    });
+
+    // Fullscreen toggle
+    btnFullscreen.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'f' || e.key === 'F') {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+    });
+  </script>
+</body>
+</html>
