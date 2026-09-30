@@ -3,6 +3,8 @@ using System;
 using System.IO;
 using System.Text;
 using System.Threading;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
 namespace DianaUnlock {
@@ -31,11 +33,35 @@ namespace DianaUnlock {
         [DllImport("user32.dll")]
         public static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
+        [DllImport("user32.dll")]
+        public static extern bool SetProcessDPIAware();
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetDC(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        [DllImport("gdi32.dll")]
+        public static extern bool BitBlt(IntPtr hObject, int nXDest, int nYDest, int nWidth, int nHeight, IntPtr hObjectSource, int nXSrc, int nYSrc, int dwRop);
+
+        [DllImport("user32.dll")]
+        public static extern int GetSystemMetrics(int nIndex);
+
         public const uint DESKTOP_ALL = 0x01FF;
         public const uint KEYEVENTF_KEYUP = 0x0002;
         public const uint MOUSEEVENTF_MOVE = 0x0001;
         public const uint WM_SYSCOMMAND = 0x0112;
         public const int SC_MONITORPOWER = 0xF170;
+
+        public const int SM_CXSCREEN = 0;
+        public const int SM_CYSCREEN = 1;
+        public const int SM_XVIRTUALSCREEN = 76;
+        public const int SM_YVIRTUALSCREEN = 77;
+        public const int SM_CXVIRTUALSCREEN = 78;
+        public const int SM_CYVIRTUALSCREEN = 79;
+        public const int SRCCOPY = 0x00CC0020;
+        public const int CAPTUREBLT = 0x40000000;
 
         private static string logFile = @"D:\Zalo Bot\data\worker.log";
 
@@ -116,6 +142,47 @@ namespace DianaUnlock {
         static void Main(string[] args) {
             try {
                 Log("=== DianaUnlockWorker Started ===");
+                try { SetProcessDPIAware(); } catch {}
+
+                if (args.Length > 0 && !string.IsNullOrEmpty(args[0]) && args[0].StartsWith("SCREENSHOT:")) {
+                    string b64Path = args[0].Substring(11);
+                    string targetPath = Encoding.UTF8.GetString(Convert.FromBase64String(b64Path));
+                    Log(string.Format("Screenshot mode requested for: '{0}'", targetPath));
+
+                    AttachToInput("Screenshot Mode");
+                    WakeDisplay();
+                    Thread.Sleep(100);
+
+                    try {
+                        int left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+                        int top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+                        int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+                        int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+                        if (width <= 0 || height <= 0) {
+                            width = GetSystemMetrics(SM_CXSCREEN);
+                            height = GetSystemMetrics(SM_CYSCREEN);
+                        }
+                        if (width <= 0) width = 1920;
+                        if (height <= 0) height = 1080;
+
+                        using (Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb)) {
+                            using (Graphics g = Graphics.FromImage(bmp)) {
+                                IntPtr hdcDest = g.GetHdc();
+                                IntPtr hdcSrc = GetDC(IntPtr.Zero);
+                                BitBlt(hdcDest, 0, 0, width, height, hdcSrc, left, top, SRCCOPY | CAPTUREBLT);
+                                ReleaseDC(IntPtr.Zero, hdcSrc);
+                                g.ReleaseHdc(hdcDest);
+                            }
+                            bmp.Save(targetPath, ImageFormat.Png);
+                        }
+                        Log(string.Format("Screenshot successfully saved to '{0}'", targetPath));
+                    } catch (Exception ex) {
+                        Log(string.Format("Screenshot error: {0}", ex.Message));
+                    }
+                    return;
+                }
+
                 string pass = "";
                 if (args.Length > 0 && !string.IsNullOrEmpty(args[0])) {
                     string rawArg = args[0];
@@ -208,7 +275,7 @@ namespace DianaUnlock {
 "@
 
 $targetExe = Join-Path $PSScriptRoot "DianaUnlockWorker.exe"
-Add-Type -TypeDefinition $src -OutputAssembly $targetExe -OutputType WindowsApplication
+Add-Type -TypeDefinition $src -ReferencedAssemblies System.Drawing -OutputAssembly $targetExe -OutputType WindowsApplication
 if (Test-Path $targetExe) {
     Write-Output "COMPILED_SUCCESSFULLY"
 } else {

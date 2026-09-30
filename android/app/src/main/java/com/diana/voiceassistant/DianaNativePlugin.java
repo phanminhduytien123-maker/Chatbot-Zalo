@@ -1,11 +1,15 @@
 package com.diana.voiceassistant;
 
 import android.Manifest;
+import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.hardware.camera2.CameraManager;
 import android.media.AudioManager;
+import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -14,17 +18,20 @@ import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.util.Log;
+import androidx.activity.result.ActivityResult;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 @CapacitorPlugin(
@@ -90,6 +97,36 @@ public class DianaNativePlugin extends Plugin {
         }
     }
 
+    private SpeechRecognizer createBestSpeechRecognizer(Context context) {
+        try {
+            // Ưu tiên kết nối trực tiếp đến Google Speech Recognition Service (tránh Mi AI Speech trên Xiaomi gây lỗi Permission)
+            Intent serviceIntent = new Intent("android.speech.RecognitionService");
+            List<ResolveInfo> availableServices = context.getPackageManager().queryIntentServices(serviceIntent, 0);
+            
+            ComponentName googleComponent = null;
+            if (availableServices != null) {
+                for (ResolveInfo ri : availableServices) {
+                    if (ri.serviceInfo != null && ri.serviceInfo.packageName != null) {
+                        String pkg = ri.serviceInfo.packageName.toLowerCase(Locale.ROOT);
+                        if (pkg.contains("googlequicksearchbox") || pkg.contains("google.android.tts")) {
+                            googleComponent = new ComponentName(ri.serviceInfo.packageName, ri.serviceInfo.name);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (googleComponent != null) {
+                Log.d("DianaNative", "Khởi tạo Google Speech Recognition Service: " + googleComponent.flattenToString());
+                return SpeechRecognizer.createSpeechRecognizer(context, googleComponent);
+            }
+        } catch (Exception e) {
+            Log.w("DianaNative", "Không thể tạo Google Speech Recognition riêng, chuyển sang mặc định: " + e.getMessage());
+        }
+
+        return SpeechRecognizer.createSpeechRecognizer(context);
+    }
+
     private void executeStartSpeechRecognition(PluginCall call) {
         getActivity().runOnUiThread(() -> {
             try {
@@ -107,7 +144,7 @@ public class DianaNativePlugin extends Plugin {
                     speechRecognizer = null;
                 }
 
-                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context);
+                speechRecognizer = createBestSpeechRecognizer(context);
                 
                 Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
                 intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
@@ -245,6 +282,77 @@ public class DianaNativePlugin extends Plugin {
                 call.reject("Lỗi hủy nhận diện giọng nói: " + e.getMessage());
             }
         });
+    }
+
+    @PluginMethod
+    public void startScreenCapture(PluginCall call) {
+        if (ScreenCaptureService.isStreaming()) {
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("isStreaming", true);
+            ret.put("streamUrl", ScreenCaptureService.getStreamUrl());
+            ret.put("message", "Đang truyền trực tiếp màn hình!");
+            call.resolve(ret);
+            return;
+        }
+
+        MediaProjectionManager mgr = (MediaProjectionManager) getContext().getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+        if (mgr != null) {
+            Intent captureIntent = mgr.createScreenCaptureIntent();
+            startActivityForResult(call, captureIntent, "mediaProjectionCallback");
+        } else {
+            call.reject("MediaProjectionManager không khả dụng trên thiết bị này.");
+        }
+    }
+
+    @ActivityCallback
+    private void mediaProjectionCallback(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+
+        if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
+            Context context = getContext();
+            Intent serviceIntent = new Intent(context, ScreenCaptureService.class);
+            serviceIntent.setAction(ScreenCaptureService.ACTION_START);
+            serviceIntent.putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.getResultCode());
+            serviceIntent.putExtra(ScreenCaptureService.EXTRA_DATA, result.getData());
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent);
+            } else {
+                context.startService(serviceIntent);
+            }
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("isStreaming", true);
+            ret.put("message", "Đã khởi động truyền trực tiếp màn hình thành công!");
+            call.resolve(ret);
+        } else {
+            call.reject("Người dùng đã từ chối quyền chia sẻ màn hình.");
+        }
+    }
+
+    @PluginMethod
+    public void stopScreenCapture(PluginCall call) {
+        Context context = getContext();
+        Intent serviceIntent = new Intent(context, ScreenCaptureService.class);
+        serviceIntent.setAction(ScreenCaptureService.ACTION_STOP);
+        context.startService(serviceIntent);
+
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        ret.put("isStreaming", false);
+        ret.put("message", "Đã dừng truyền màn hình.");
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void isScreenStreaming(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        ret.put("isStreaming", ScreenCaptureService.isStreaming());
+        ret.put("streamUrl", ScreenCaptureService.getStreamUrl());
+        call.resolve(ret);
     }
 
     @PluginMethod

@@ -25,8 +25,43 @@ export class WindowsController {
       const fileName = `screen_${Date.now()}.png`;
       const filePath = path.resolve(screenshotDir, fileName);
 
-      // Script PowerShell chụp ảnh màn hình bằng .NET Graphics
-      const psScript = `
+      // 1. Thử gọi native DianaScreenCapture.exe (nhanh nhất & chính xác tuyệt đối)
+      const possibleExes = [
+        path.resolve(__dirname, '../../scripts/DianaScreenCapture.exe'),
+        path.resolve(__dirname, '../../bin/DianaScreenCapture.exe'),
+        path.resolve(process.cwd(), 'scripts/DianaScreenCapture.exe'),
+        path.resolve(process.cwd(), 'bin/DianaScreenCapture.exe')
+      ];
+
+      const captureExe = possibleExes.find(p => fs.existsSync(p));
+
+      if (captureExe) {
+        execFile(captureExe, [filePath], { timeout: 5000, windowsHide: true }, (err, stdout, stderr) => {
+          if (!err && fs.existsSync(filePath) && fs.statSync(filePath).size > 15000) {
+            const base64 = fs.readFileSync(filePath, 'base64');
+            return resolve({
+              success: true,
+              filePath,
+              fileName,
+              screenshotBase64: base64
+            });
+          }
+
+          // Fallback qua PowerShell nếu file lỗi hoặc quá nhỏ (màn hình đen)
+          this._fallbackPowerShellCapture(filePath, fileName, resolve);
+        });
+        return;
+      }
+
+      this._fallbackPowerShellCapture(filePath, fileName, resolve);
+    });
+  }
+
+  /**
+   * Helper fallback chụp ảnh màn hình bằng PowerShell
+   */
+  static _fallbackPowerShellCapture(filePath, fileName, resolve) {
+    const psScript = `
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -37,22 +72,23 @@ $bitmap.Save('${filePath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.Image
 $graphics.Dispose()
 $bitmap.Dispose()
 Write-Output "OK"
-      `.trim();
+    `.trim();
 
-      const base64Script = Buffer.from(psScript, 'utf16le').toString('base64');
+    const base64Script = Buffer.from(psScript, 'utf16le').toString('base64');
 
-      exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error, stdout) => {
-        if (error || !fs.existsSync(filePath)) {
-          return resolve({
-            success: false,
-            error: error ? error.message : 'Không thể lưu file ảnh màn hình.'
-          });
-        }
-        resolve({
-          success: true,
-          filePath,
-          fileName
+    exec(`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${base64Script}`, (error) => {
+      if (error || !fs.existsSync(filePath)) {
+        return resolve({
+          success: false,
+          error: error ? error.message : 'Không thể lưu file ảnh màn hình.'
         });
+      }
+      const base64 = fs.readFileSync(filePath, 'base64');
+      resolve({
+        success: true,
+        filePath,
+        fileName,
+        screenshotBase64: base64
       });
     });
   }

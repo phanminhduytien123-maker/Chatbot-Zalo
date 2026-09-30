@@ -16,7 +16,7 @@ data/qr/
 data/screenshots/
 *.xlsx
 qr.png
-
+    
 # Logs
 logs/
 *.log

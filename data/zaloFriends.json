@@ -1,0 +1,74 @@
+[
+  {
+    "userId": "7758467700915138244",
+    "displayName": "Zalo",
+    "zaloName": "Zalo",
+    "avatar": "https://s120-26-ava-talk.zadn.vn/38/16782d311b12da6d28daa13e343986b8.jpg?key=je6pkYV8qk3k1TYGPoroIA&time=1795772697",
+    "phoneNumber": "",
+    "gender": 0,
+    "isFr": 1
+  },
+  {
+    "userId": "6989620659493752687",
+    "displayName": "Nguyễn Thị Loan",
+    "zaloName": "Nguyễn Thị Loan",
+    "avatar": "https://s120-26-ava-talk.zadn.vn/37/0445495fedf5246b5cb78575363e2c0c.jpg?key=1VjTFtIqpV_gxOTfoW2rlA&time=1795772697",
+    "phoneNumber": "",
+    "gender": 1,
+    "isFr": 1
+  },
+  {
+    "userId": "2353484352055945158",
+    "displayName": "Bé Cua <3",
+    "zaloName": "Nguyễn Phương Thanh",
+    "avatar": "https://s120-26-ava-talk.zadn.vn/13/b3d9a5d3cc9a3f400d49a861af0da1ef.jpg?key=EHpqfRI3mlPk6Emdtsa3nw&time=1795772697",
+    "phoneNumber": "84828556347",
+    "gender": 1,
+    "isFr": 1
+  },
+  {
+    "userId": "4150026493728653560",
+    "displayName": "Duy Tiến",
+    "zaloName": "Duy Tiến",
+    "avatar": "https://s120-26-ava-talk.zadn.vn/10/bd4df75c86fe2e115390f2a9df438d82.jpg?key=Hslif7L7LXBYwu4mgniGYA&time=1795772697",
+    "phoneNumber": "",
+    "gender": 0,
+    "isFr": 1
+  },
+  {
+    "userId": "4005624655495172089",
+    "displayName": "Trương Huỳnh Lộc",
+    "zaloName": "Trương Huỳnh Lộc",
+    "avatar": "https://s160-ava-talk.zadn.vn/default",
+    "phoneNumber": "",
+    "gender": 0,
+    "isFr": 1
+  },
+  {
+    "userId": "335939754875356102",
+    "displayName": "Phan Minh Minh",
+    "zaloName": "Phan Minh Minh",
+    "avatar": "https://s120-26-ava-talk.zadn.vn/4/68355fcf11f954682c6933ca0741eb11.jpg?key=GLOhQ5_5gIrZf3B-o9dcJg&time=1795772697",
+    "phoneNumber": "",
+    "gender": 0,
+    "isFr": 1
+  },
+  {
+    "userId": "3111106874940664131",
+    "displayName": "Nhi Phan",
+    "zaloName": "Nhi Phan",
+    "avatar": "https://s120-26-ava-talk.zadn.vn/19/879616f5856f406b74e1f4d4abcb0db6.jpg?key=lIFn4XCKNo0kRy64hVLIuA&time=1795772697",
+    "phoneNumber": "",
+    "gender": 1,
+    "isFr": 1
+  },
+  {
+    "userId": "8371231151726163523",
+    "displayName": "Nguyễn Thach Bảo Bảo",
+    "zaloName": "Nguyễn Thach Bảo Bảo",
+    "avatar": "https://s120-26-ava-talk.zadn.vn/2/41482dc7f2394e74e30774d9868c20d4.jpg?key=xI6hi9JW9JaEisnKSp4fuA&time=1795772697",
+    "phoneNumber": "",
+    "gender": 0,
+    "isFr": 1
+  }
+]
