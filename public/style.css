@@ -2205,3 +2205,100 @@ body.welcome-mode #pane-welcome {
 .diana-pet-roamer:active .pet-character-wrap {
   transform: scale(0.95);
 }
+
+/* ==========================================================================
+   IMAGE LIGHTBOX & CHAT SCREENSHOT PREVIEWS
+   ========================================================================== */
+.image-lightbox {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.lightbox-modal {
+  background: #111218;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  max-width: 92vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 35px rgba(168, 85, 247, 0.3);
+  overflow: hidden;
+}
+
+.lightbox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: #161722;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #e2e8f0;
+}
+
+.lightbox-close-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.lightbox-close-btn:hover {
+  background: rgba(239, 68, 68, 0.8);
+}
+
+.lightbox-body {
+  padding: 12px;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #090a0f;
+}
+
+.lightbox-body img {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.bubble-img-container {
+  display: block;
+  margin-top: 10px;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.bubble-img-container:hover {
+  transform: translateY(-2px);
+}
+
+.bubble-img-container img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
