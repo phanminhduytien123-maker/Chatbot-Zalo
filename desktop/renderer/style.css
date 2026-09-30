@@ -1553,11 +1553,12 @@ body {
     width: 100%;
   }
 
-.stat-val.decoder-tag {
-  font-size: 0.88rem;
-  letter-spacing: -0.01em;
-  text-align: right;
-  white-space: nowrap;
+  .stat-val.decoder-tag {
+    font-size: 0.88rem;
+    letter-spacing: -0.01em;
+    text-align: right;
+    white-space: nowrap;
+  }
 }
 
 /* ==========================================================================
