@@ -50,8 +50,9 @@ LOCAL_VOICE_API = 'http://localhost:3000/api/voice'
 CLOUD_VOICE_API = 'https://diana-h73u.onrender.com/api/voice'
 
 # Regex nhận diện từ khóa đánh thức (Wake Words)
+# Mở rộng các biến thể phát âm thực tế mà Google STT nhận diện được từ giọng nói tự nhiên
 WAKE_REGEX = re.compile(
-    r'\b(?:diana\s*ơi|ơi\s*diana|hey\s*diana|điana\s*ơi|di\s*a\s*na\s*ơi|đi\s*a\s*na\s*ơi|diana|điana)\b',
+    r'\b(?:diana\s*ơi|ơi\s*diana|hey\s*diana|alo\s*diana|ê\s*diana|chào\s*diana|điana\s*ơi|di\s*a\s*na\s*ơi|đi\s*a\s*na\s*ơi|di\s*an\s*na|đi\s*an\s*na|bé\s*na\s*ơi|bena\s*ơi|đa\s*na\s*ơi|đen\s*ơi|đan\s*ơi|đăng\s*ơi|dian|deana|diana|điana)\b',
     re.IGNORECASE | re.UNICODE
 )
 
@@ -279,7 +280,41 @@ def execute_voice_command(raw_query):
         webbrowser.open('https://portal.tdtu.edu.vn')
         return "Dạ em đã mở Cổng thông tin sinh viên TDTU cho anh Tiến rồi ạ! 🎓"
 
-    # 10. Mở Zalo
+    # 10. Mở Trình duyệt Chrome / Web
+    if any(k in q_lower for k in ['chrome', 'trình duyệt', 'google chrome', 'mở web', 'cốc cốc']):
+        try:
+            subprocess.Popen(['cmd.exe', '/c', 'start', 'chrome'], shell=True)
+            return "Dạ em đã mở trình duyệt Chrome cho anh rồi ạ! 🌐"
+        except Exception:
+            try:
+                webbrowser.open('https://www.google.com')
+                return "Dạ em đã mở trình duyệt cho anh rồi ạ! 🌐"
+            except Exception:
+                pass
+
+    # 11. Mở Word / Excel / PowerPoint
+    if 'word' in q_lower:
+        try:
+            subprocess.Popen(['cmd.exe', '/c', 'start', 'winword'], shell=True)
+            return "Dạ em đã mở Microsoft Word cho anh rồi ạ! 📄"
+        except Exception:
+            pass
+
+    if 'excel' in q_lower:
+        try:
+            subprocess.Popen(['cmd.exe', '/c', 'start', 'excel'], shell=True)
+            return "Dạ em đã mở Microsoft Excel cho anh rồi ạ! 📊"
+        except Exception:
+            pass
+
+    if 'powerpoint' in q_lower or 'ppt' in q_lower:
+        try:
+            subprocess.Popen(['cmd.exe', '/c', 'start', 'powerpnt'], shell=True)
+            return "Dạ em đã mở Microsoft PowerPoint cho anh rồi ạ! 📑"
+        except Exception:
+            pass
+
+    # 12. Mở Zalo
     if 'zalo' in q_lower:
         try:
             os.system('start zalo:')
@@ -408,6 +443,8 @@ def wake_listener_loop():
     log("🌸 DIANA STATION ĐANG CHẠY NGẦM VÀ LẮNG NGHE 'Diana ơi'...", 'SUCCESS')
     broadcast_wake_event('ready', reply='Diana luôn lắng nghe...')
 
+    awaiting_command_until = 0
+
     while RUNNING:
         try:
             with microphone as source:
@@ -427,59 +464,50 @@ def wake_listener_loop():
             clean_text = text.strip()
             log(f"👂 [Nghe được]: '{clean_text}'", 'INFO')
 
-            # Kiểm tra xem có chứa từ khóa đánh thức không
+            now = time.time()
             wake_match = WAKE_REGEX.search(clean_text)
-            if not wake_match:
-                continue
 
-            # =========================================================
-            # 🎉 ĐÃ PHÁT HIỆN "DIANA ƠI" (WAKE WORD TRIGGERED!)
-            # =========================================================
-            log(f"✨ [WAKE TRIGGER]: Phát hiện từ khóa '{wake_match.group(0)}'!", 'SUCCESS')
-            play_siri_wake()
+            # -------------------------------------------------------------
+            # TRƯỜNG HỢP 1: PHÁT HIỆN TỪ KHÓA ĐÁNH THỨC "DIANA ƠI"
+            # -------------------------------------------------------------
+            if wake_match:
+                log(f"✨ [WAKE TRIGGER]: Phát hiện từ khóa '{wake_match.group(0)}'!", 'SUCCESS')
+                play_siri_wake()
 
-            # Tách phần câu lệnh sau từ khóa đánh thức (nếu nói liền một câu)
-            # Ví dụ: "Diana ơi mở YouTube cho anh" -> command = "mở YouTube cho anh"
-            command_part = WAKE_REGEX.sub('', clean_text).strip(' ,.?!')
+                # Tách phần câu lệnh sau từ khóa đánh thức
+                command_part = WAKE_REGEX.sub('', clean_text).strip(' ,.?!')
 
-            if len(command_part) >= 3:
-                # Người dùng nói câu lệnh ngay trong cùng một lượt nói!
-                log(f"⚡ [Lệnh kèm theo tức thì]: '{command_part}'", 'INFO')
-                broadcast_wake_event('wake_with_cmd', query=command_part)
-                
-                reply = execute_voice_command(command_part)
-                log(f"💬 [Diana phản hồi]: '{reply}'", 'INFO')
-                broadcast_wake_event('completed', query=command_part, reply=reply)
-                speak_text(reply)
-            else:
-                # Người dùng CHỈ nói "Diana ơi" và đợi Diana phản hồi
-                # Phát câu chào quen thuộc "Dạ em nghe ạ!" siêu tốc
-                log("🌸 Người dùng gọi 'Diana ơi' -> Đang chào 'Dạ em nghe ạ!' và chờ lệnh...", 'INFO')
-                broadcast_wake_event('listening_for_command', query='Diana ơi', reply='Dạ em nghe ạ!')
-                play_cached_voice('hear_you')
-
-                # Lắng nghe câu lệnh kế tiếp trong vòng 6 giây
-                try:
-                    with microphone as source:
-                        cmd_audio = recognizer.listen(source, timeout=6.0, phrase_time_limit=8.0)
-                    cmd_text = recognizer.recognize_google(cmd_audio, language="vi-VN")
-                    cmd_clean = cmd_text.strip()
-                    log(f"🎯 [Câu lệnh nhận được]: '{cmd_clean}'", 'SUCCESS')
-
-                    broadcast_wake_event('command_received', query=cmd_clean)
-                    reply = execute_voice_command(cmd_clean)
+                if len(command_part) >= 3:
+                    # Nói liền một câu (VD: "Diana ơi mở Chrome cho anh")
+                    awaiting_command_until = 0
+                    log(f"⚡ [Lệnh kèm theo tức thì]: '{command_part}'", 'INFO')
+                    broadcast_wake_event('wake_with_cmd', query=command_part)
+                    reply = execute_voice_command(command_part)
                     log(f"💬 [Diana phản hồi]: '{reply}'", 'INFO')
-                    broadcast_wake_event('completed', query=cmd_clean, reply=reply)
+                    broadcast_wake_event('completed', query=command_part, reply=reply)
                     speak_text(reply)
+                else:
+                    # Người dùng gọi "Diana ơi" -> Mở phiên chờ lệnh trong 15 giây
+                    awaiting_command_until = now + 15.0
+                    log("🌸 Người dùng gọi 'Diana ơi' -> Đang chào 'Dạ em nghe ạ!' (Cửa sổ nhận lệnh 15s mở)...", 'INFO')
+                    broadcast_wake_event('listening_for_command', query='Diana ơi', reply='Dạ em nghe ạ!')
+                    play_cached_voice('hear_you')
 
-                except sr.WaitTimeoutError:
-                    log("⏳ Hết thời gian chờ lệnh", 'WARN')
-                    play_siri_ready()
-                except sr.UnknownValueError:
-                    log("❓ Không rõ câu lệnh", 'WARN')
-                    play_cached_voice('did_not_hear')
-                except Exception as ex:
-                    log(f"Lỗi nhận diện câu lệnh tiếp theo: {ex}", 'ERROR')
+            # -------------------------------------------------------------
+            # TRƯỜNG HỢP 2: ĐANG TRONG PHIÊN CHỜ LỆNH (15s sau khi Diana chào)
+            # -------------------------------------------------------------
+            elif now < awaiting_command_until:
+                awaiting_command_until = 0
+                log(f"🎯 [Câu lệnh nhận được trong phiên]: '{clean_text}'", 'SUCCESS')
+                broadcast_wake_event('command_received', query=clean_text)
+                reply = execute_voice_command(clean_text)
+                log(f"💬 [Diana phản hồi]: '{reply}'", 'INFO')
+                broadcast_wake_event('completed', query=clean_text, reply=reply)
+                speak_text(reply)
+
+            else:
+                # Không có từ khóa và không trong phiên chờ lệnh -> Bỏ qua
+                continue
 
         except Exception as e:
             log(f"🔥 Ngoại lệ vòng lặp: {type(e).__name__}: {e}", 'ERROR')
