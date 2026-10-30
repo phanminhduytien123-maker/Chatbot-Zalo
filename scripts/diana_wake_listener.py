@@ -944,20 +944,27 @@ def wake_listener_loop():
     recognizer.phrase_threshold = 0.15          # Bắt ngay cả các từ ngắn như "Ơi", "Na", "Nè"
     recognizer.non_speaking_duration = 0.3
 
-    log("🎤 Đang khởi tạo Microphone...", 'INFO')
-    try:
-        microphone = sr.Microphone()
-    except Exception as e:
-        log(f"❌ Không thể mở Microphone: {e}", 'FATAL')
+    log("🎤 Đang kết nối Microphone hệ thống...", 'INFO')
+    microphone = None
+    for attempt in range(1, 6):
+        try:
+            mic = sr.Microphone()
+            with mic as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.35)
+            microphone = mic
+            break
+        except Exception as e:
+            log(f"⏳ Chưa thể kết nối Microphone (Lần {attempt}/5): {e}. Đang đợi hệ thống âm thanh Windows ổn định...", 'WARN')
+            time.sleep(2.0)
+
+    if microphone is None:
+        log("❌ Không thể kết nối Microphone sau 5 lần thử.", 'FATAL')
         return
 
-    with microphone as source:
-        log("🔄 Đang kiểm tra âm lượng Microphone...", 'INFO')
-        recognizer.adjust_for_ambient_noise(source, duration=0.4)
-        # Giữ ngưỡng năng lượng luôn trong vùng siêu nhạy (50 - 80 RMS)
-        recognizer.energy_threshold = min(max(recognizer.energy_threshold, 50), 80)
-        recognizer.dynamic_energy_threshold = False
-        log(f"✅ Microphone đã sẵn sàng! (Ngưỡng siêu nhạy: {int(recognizer.energy_threshold)} RMS - Nói nhỏ vẫn nghe rõ)", 'SUCCESS')
+    # Giữ ngưỡng năng lượng luôn trong vùng siêu nhạy (50 - 80 RMS)
+    recognizer.energy_threshold = min(max(recognizer.energy_threshold, 50), 80)
+    recognizer.dynamic_energy_threshold = False
+    log(f"✅ Microphone đã sẵn sàng! (Ngưỡng siêu nhạy: {int(recognizer.energy_threshold)} RMS - Nói nhỏ vẫn nghe rõ)", 'SUCCESS')
 
     log("🌸 DIANA STATION ĐANG CHẠY NGẦM VÀ LẮNG NGHE 'Diana ơi'...", 'SUCCESS')
     broadcast_wake_event('ready', reply='Diana luôn lắng nghe...')
@@ -1041,6 +1048,33 @@ def wake_listener_loop():
 # ---------------------------------------------------------------------------
 # QUẢN LÝ TIẾN TRÌNH & ĐIỀU KHIỂN HỆ THỐNG
 # ---------------------------------------------------------------------------
+MUTEX_HANDLE = None
+
+def ensure_single_instance():
+    """
+    Sử dụng Win32 Named Mutex để đảm bảo TUYỆT ĐỐI chỉ có 1 tiến trình Diana Wake Listener
+    được phép chạy và lắng nghe Micro trên toàn hệ thống.
+    Nếu Windows khởi động cả từ Startup Folder lẫn Registry Run, tiến trình phụ sẽ
+    tự động phát hiện và thoát ngay lập tức 0ms, không gây xung đột micro.
+    """
+    global MUTEX_HANDLE
+    try:
+        kernel32 = ctypes.windll.kernel32
+        MUTEX_NAME = "Global\\DianaWakeListenerSingleInstanceMutex_v1"
+        ERROR_ALREADY_EXISTS = 183
+
+        handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+        last_error = kernel32.GetLastError()
+        if last_error == ERROR_ALREADY_EXISTS:
+            log("⚠️ Đã có một tiến trình Diana Wake Listener khác đang chạy ngầm trên máy. Tự động thoát phiên bản trùng lặp để tránh xung đột Micro.", 'INFO')
+            if handle:
+                kernel32.CloseHandle(handle)
+            sys.exit(0)
+        MUTEX_HANDLE = handle
+        log("🔒 Khóa Single-Instance Mutex đã kích hoạt thành công (Duy nhất 1 phiên bản chạy ngầm).", 'INFO')
+    except Exception as e:
+        log(f"Cảnh báo kiểm tra Single Instance Mutex: {e}", 'WARN')
+
 def write_pid():
     try:
         with open(PID_FILE, 'w', encoding='utf-8') as f:
@@ -1050,12 +1084,19 @@ def write_pid():
         log(f"Lỗi ghi PID: {e}", 'WARN')
 
 def remove_pid():
+    global MUTEX_HANDLE
     try:
         if os.path.exists(PID_FILE):
             os.remove(PID_FILE)
             log("🗑️ Đã xóa file PID", 'INFO')
     except Exception:
         pass
+    if MUTEX_HANDLE:
+        try:
+            ctypes.windll.kernel32.CloseHandle(MUTEX_HANDLE)
+            MUTEX_HANDLE = None
+        except Exception:
+            pass
 
 def handle_exit(signum, frame):
     global RUNNING
@@ -1069,6 +1110,9 @@ def main():
     # Đăng ký bắt tín hiệu ngắt
     signal.signal(signal.SIGINT, handle_exit)
     signal.signal(signal.SIGTERM, handle_exit)
+
+    # Đảm bảo duy nhất 1 tiến trình chạy ngầm, loại bỏ nguy cơ trùng lặp khi khởi động máy
+    ensure_single_instance()
 
     # Ghi PID
     write_pid()
