@@ -157,6 +157,31 @@ export class GeminiAssistant {
           }
         }
 
+        if (lower.includes('máy in') || lower.includes('3d') || lower.includes('bambu') || lower.includes('đầu in') || lower.includes('bàn in') || lower.includes('bản in') || lower.includes('in ấn') || lower.includes('kết nối máy in')) {
+          try {
+            const { pcBridge } = await import('../pc/pcBridge.js');
+            const printerRes = await pcBridge.executeCommand('bambu_status');
+            if (printerRes && printerRes.status) {
+              const b = printerRes.status;
+              const stateStr = b.gcode_state === 'RUNNING' ? 'Đang in (Printing)' : (b.gcode_state === 'PAUSE' ? 'Tạm dừng (Paused)' : (b.gcode_state === 'PREPARE' ? 'Đang chuẩn bị / Gia nhiệt' : (b.gcode_state === 'IDLE' ? 'Sẵn sàng / Chờ lệnh (Idle)' : b.gcode_state)));
+              deepExtraInfo += `\n[THÔNG SỐ MÁY IN 3D BAMBU LAB A1 MINI THỜI GIAN THỰC (REALTIME)]:\n` +
+                `- Trạng thái kết nối máy in: ${b.connected ? '✅ Đang kết nối trực tuyến (Online)' : '❌ Chưa kết nối'}\n` +
+                `- Trạng thái in: ${stateStr}\n` +
+                `- Tệp đang in: ${b.subtask_name || b.gcode_file || 'Không có'}\n` +
+                `- Tiến độ in: ${b.mc_percent}% (Lớp ${b.layer_num}/${b.total_layer_num})\n` +
+                `- Thời gian còn lại: ~${b.mc_remaining_time} phút\n` +
+                `- Nhiệt độ đầu phun (Nozzle): Hiện tại ${b.nozzle_temper}°C (Mục tiêu: ${b.nozzle_target_temper}°C)\n` +
+                `- Nhiệt độ bàn in (Heatbed): Hiện tại ${b.bed_temper}°C (Mục tiêu: ${b.bed_target_temper}°C)\n` +
+                `- Tốc độ in: ${b.spd_mag}% (Cấp độ ${b.spd_lvl})\n` +
+                `- Quạt làm mát: ${b.fan_speed_percent}%\n` +
+                `- Đèn buồng in: ${b.light_state ? 'BẬT' : 'TẮT'}\n` +
+                `- Tín hiệu Wi-Fi máy in: ${b.wifi_signal}\n`;
+            }
+          } catch (pErr) {
+            console.error('Lỗi lấy thông tin máy in cho AI:', pErr.message);
+          }
+        }
+
         const bot = config.bot;
         const boss = config.boss;
         const timeInfo = TimeService.getRealtimeVN();
@@ -182,9 +207,13 @@ QUY TẮC PHẢN HỒI BẮT BUỘC (ĐỂ TIẾT KIỆM TOKEN & RÕ RÀNG):
 5. KHÔNG MỞ NGOẶC GIẢI THÍCH HÀNH ĐỘNG: Tuyệt đối không thêm các chú thích trong dấu ngoặc đơn (...) để giải thích về hành động vừa thực hiện hay công dụng phụ (ví dụ: KHÔNG viết "(tiết kiệm điện & riêng tư)", "(TeamViewer Mode)", v.v.). Trả lời dứt khoát, tự nhiên và gãy gọn.
 6. KHI THỰC HIỆN LỆNH / THAO TÁC HỆ THỐNG HOẶC ĐIỀU KHIỂN (mở ứng dụng, tắt/mở màn hình, khóa/mở khóa máy, chỉnh âm lượng, thao tác lệnh PC/điện thoại, v.v.): CHỈ CẦN NÓI DUY NHẤT: "Đã hoàn thành", TUYỆT ĐỐI KHÔNG NÓI DÀI DÒNG, không thêm câu chào hay giải thích thừa thãi.
 
-[TÍNH NĂNG HẸN GIỜ & NHẮC NHỞ]:
-- Bạn (Diana) ĐÃ ĐƯỢC TÍCH HỢP TÍNH NĂNG HẸN GIỜ TỰ ĐỘNG THÔNG MINH.
-- Khi anh Tiến yêu cầu nhắc nhở (VD: "6h tối hôm nay em nhắc anh làm đồ án nhé" hoặc "mỗi ngày nhớ nhắc anh chấm công lúc 8h sáng và 5h30 tối"), hệ thống sẽ tự động cài đặt lịch nhắc nhở native trên Zalo và gửi tin nhắn cảnh báo trực tiếp đúng giờ.
+[TÍNH NĂNG HẸN GIỜ & NHẮC NHỞ - NÓI TẠO LÀ TẠO, NÓI XÓA LÀ XÓA]:
+- Bạn (Diana) ĐÃ ĐƯỢC TÍCH HỢP TOOL manage_reminders ĐỂ QUẢN LÝ LỊCH HẸN GIỜ & NHẮC NHỞ TRỰC TIẾP TRÊN CẢ HỆ THỐNG VÀ ZALO.
+- KHI ANH TIẾN YÊU CẦU TẠO LỊCH NHẮC / BÁO THỨC / HẸN GIỜ: BẮT BUỘC gọi tool manage_reminders với action="create", title, time, repeat (daily/once).
+- KHI ANH TIẾN YÊU CẦU XÓA / BỎ / HỦY LỊCH NHẮC: BẮT BUỘC gọi tool manage_reminders với action="delete" (kèm title từ khóa cần xóa, ví dụ "chấm công", "tắm", "họp"...) hoặc action="clear_all" nếu xóa toàn bộ.
+- KHI ANH TIẾN HỎI XEM DANH SÁCH LỊCH NHẮC: BẮT BUỘC gọi tool manage_reminders với action="list".
+- ĐẶC BIỆT NGUYÊN TẮC VÀNG: "NÓI TẠO LÀ TẠO, NÓI XÓA LÀ XÓA". TUYỆT ĐỐI KHÔNG BAO GIỜ chỉ trả lời suông bằng lời nói mà KHÔNG gọi tool manage_reminders! Mọi yêu cầu tạo hoặc xóa lịch nhắc bắt buộc phải được thực thi qua tool để gỡ bỏ thật 100% trên máy chủ Zalo!
+- TUYỆT ĐỐI KHÔNG tự động nhắc chấm công (đặc biệt các mốc 8h sáng và 17h30) vì anh Tiến đã yêu cầu bỏ hoàn toàn việc nhắc chấm công.
 - Nếu anh Tiến hỏi bạn có thể hẹn giờ/nhắc việc được không: Hãy trả lời là "Dạ hoàn toàn được ạ!".
 
 [TÍNH NĂNG ĐIỀU KHIỂN MÁY TÍNH WINDOWS TỪ XA]:
@@ -287,11 +316,24 @@ ${deepExtraInfo}`;
       return TimeService.generateCurrentTimeReply();
     }
 
+    // 0.3. Máy in 3D Bambu Lab A1 mini
+    if (text.includes('máy in') || text.includes('bambu') || text.includes('3d') || text.includes('bản in') || text.includes('đầu in') || text.includes('bàn in') || text.includes('in ấn')) {
+      try {
+        const { pcBridge } = await import('../pc/pcBridge.js');
+        const printerRes = await pcBridge.executeCommand('bambu_status');
+        if (printerRes && printerRes.status) {
+          const b = printerRes.status;
+          const stateStr = b.gcode_state === 'RUNNING' ? 'Đang in' : (b.gcode_state === 'PAUSE' ? 'Tạm dừng' : (b.gcode_state === 'PREPARE' ? 'Đang chuẩn bị / Gia nhiệt' : (b.gcode_state === 'IDLE' ? 'Sẵn sàng (Nghỉ)' : b.gcode_state)));
+          return `🖨️ [Bambu Lab A1 mini]: Trạng thái: ${stateStr} | Tệp: ${b.subtask_name || 'Không có'} | Tiến độ: ${b.mc_percent}% (Lớp ${b.layer_num}/${b.total_layer_num}) | Còn lại: ~${b.mc_remaining_time} phút | Đầu phun: ${b.nozzle_temper}°C | Bàn in: ${b.bed_temper}°C 🌸`;
+        }
+      } catch (_) {}
+    }
+
     // 1. Hỏi về tính năng hẹn giờ / nhắc nhở
     if (text.includes('hẹn giờ') || text.includes('nhắc nhở') || text.includes('báo thức') || text.includes('nhắc việc') || text.includes('cài lịch')) {
       return `Dạ hoàn toàn được ạ! Em Diana có thể cài lịch hẹn giờ và nhắc nhở tự động cho anh Tiến:\n` +
         `• Nhắc 1 lần: VD "6h tối hôm nay em nhắc anh làm đồ án nhé", "15 phút nữa nhắc anh uống nước"\n` +
-        `• Nhắc hàng ngày: VD "mỗi ngày nhớ nhắc anh chấm công lúc 8h sáng và 5h30 tối"\n` +
+        `• Nhắc hàng ngày: VD "mỗi ngày nhớ nhắc anh uống nước lúc 9h sáng và 3h chiều"\n` +
         `Em sẽ tự động tạo lịch trên Zalo và gửi tin nhắn trực tiếp nhắc anh đúng giờ ạ! 🌸`;
     }
 

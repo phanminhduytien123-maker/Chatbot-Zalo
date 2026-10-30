@@ -214,7 +214,8 @@ export class NotificationFormatter {
       `⏰ [HẸN GIỜ & NHẮC VIỆC]:\n` +
       `• /reminders - Xem danh sách lịch hẹn đang bật\n` +
       `• /xoalich <Mã> - Hủy lịch hẹn giờ (hoặc /xoalich all)\n` +
-      `• Chat tự nhiên: "6h tối nay nhắc anh làm đồ án", "mỗi ngày nhắc anh chấm công lúc 8h sáng và 5h30 chiều"\n` +
+      `• /huychamcong - Gỡ bỏ hoàn toàn mọi lịch nhắc chấm công\n` +
+      `• Chat tự nhiên: "6h tối nay nhắc anh làm đồ án", "mỗi ngày nhắc anh uống nước lúc 9h sáng và 3h chiều"\n` +
       `━━━━━━━━━━━━━━━━━━━━━\n` +
       `🌸 Anh có thể gõ lệnh hoặc chat tự nhiên như người thật với em nhé! ✨`;
   }

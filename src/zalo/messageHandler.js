@@ -81,6 +81,18 @@ export class MessageHandler {
           return res.message || res.error || '❌ Không thể đọc thông tin pin.';
         }
 
+        case '/mayin':
+        case '/bambu':
+        case '/printer': {
+          const res = await pcBridge.executeCommand('bambu_status');
+          if (res && res.status) {
+            const b = res.status;
+            const stateStr = b.gcode_state === 'RUNNING' ? 'Đang in (Printing)' : (b.gcode_state === 'PAUSE' ? 'Tạm dừng (Paused)' : (b.gcode_state === 'PREPARE' ? 'Đang chuẩn bị / Gia nhiệt' : (b.gcode_state === 'IDLE' ? 'Sẵn sàng (Idle)' : b.gcode_state)));
+            return `🖨️ [BAMBU LAB A1 MINI]:\n• Trạng thái: ${stateStr}\n• Tệp in: ${b.subtask_name || b.gcode_file || 'Không có'}\n• Tiến độ: ${b.mc_percent}% (Lớp ${b.layer_num}/${b.total_layer_num})\n• Còn lại: ~${b.mc_remaining_time} phút\n• Đầu phun: ${b.nozzle_temper}°C / ${b.nozzle_target_temper}°C\n• Bàn in: ${b.bed_temper}°C / ${b.bed_target_temper}°C\n• Tốc độ: ${b.spd_mag}%\n• Tín hiệu Wi-Fi: ${b.wifi_signal} 🌸`;
+          }
+          return res.message || res.error || '❌ Chưa kết nối được với máy in Bambu Lab A1 mini.';
+        }
+
         case '/pc': {
           const subCommand = parts[1]?.toLowerCase() || '';
           const subArgs = parts.slice(2).join(' ').trim();
@@ -374,24 +386,31 @@ export class MessageHandler {
         case '/reminders':
         case '/lichnhac':
         case '/lich': {
-          return scheduler.formatRemindersList();
+          return await scheduler.formatRemindersList(senderThreadId);
         }
 
         case '/xoalich':
         case '/delrem': {
           if (!args) {
-            return `⚠️ Vui lòng cung cấp mã lịch cần xóa (VD: /xoalich rem_123) hoặc /xoalich all\n(Gõ /reminders để xem danh sách mã lịch)`;
+            return `⚠️ Vui lòng cung cấp mã lịch hoặc tên việc cần xóa (VD: /xoalich rem_123, /xoalich tắm) hoặc /xoalich all\n(Gõ /reminders để xem danh sách mã lịch)`;
           }
-          if (args.toLowerCase() === 'all' || args.toLowerCase() === 'tatca') {
-            scheduler.clearAll();
-            return `🗑️ Dạ em Diana đã xóa toàn bộ các lịch hẹn giờ rồi ạ!`;
+          if (args.toLowerCase() === 'all' || args.toLowerCase() === 'tatca' || args.toLowerCase() === 'toanbo') {
+            const res = await scheduler.clearAll(senderThreadId);
+            return `🗑️ Dạ em Diana đã xóa toàn bộ ${res.removedCount} lịch hẹn giờ trên cả hệ thống và Zalo rồi ạ!`;
           }
-          const success = scheduler.removeReminder(args);
-          if (success) {
-            return `✅ Dạ em đã hủy lịch hẹn giờ [${args}] thành công rồi ạ!`;
+          const res = await scheduler.removeMatchingReminders(args, senderThreadId);
+          if (res.removedCount > 0) {
+            return `✅ Dạ em Diana đã xóa thành công ${res.removedCount} lịch nhắc liên quan đến "${args}" trên cả hệ thống và Zalo rồi ạ!`;
           } else {
-            return `⚠️ Không tìm thấy mã lịch [${args}]. Anh gõ /reminders để xem danh sách lịch hiện có nhé!`;
+            return `⚠️ Không tìm thấy lịch nhắc nào khớp với [${args}]. Anh gõ /reminders để xem danh sách lịch hiện có nhé!`;
           }
+        }
+
+        case '/huychamcong':
+        case '/xoachamcong':
+        case '/bochamcong': {
+          await scheduler.removeAttendanceReminders(senderThreadId);
+          return `🌸 Dạ em Diana đã tắt và xóa hoàn toàn các lịch tự động nhắc chấm công (8h sáng & 17h30) trên Zalo cho anh Tiến rồi ạ! ✨`;
         }
 
         case '/change': {
@@ -753,6 +772,55 @@ export class MessageHandler {
       if (target.length > 0) {
         const res = await pcBridge.executeCommand('open', { target });
         const reply = res.success !== false ? 'Đã hoàn thành' : (res.error || res.message || `❌ Không thể mở "${target}".`);
+        aiAssistant.memory.addTurn(text, reply);
+        return reply;
+      }
+    }
+
+    // 8.94. Nhận diện ý định HỦY / XÓA TOÀN BỘ LỊCH NHẮC NHỞ (Tự nhiên 100%)
+    const isClearAllReminders = (
+      /(?:xóa|hủy|bỏ|tắt|dẹp)\s+(?:hết|toàn\s*bộ|tất\s*cả|mọi)\s*(?:các\s*)?(?:lịch|nhắc\s*nhở|lịch\s*nhắc|hẹn\s*giờ)/i.test(text) ||
+      /(?:bỏ|hủy|xóa|tắt|ngưng|dừng)\s+(?:việc\s+)?nhắc\s*nhở\s*(?:luôn|hết|đi|nhé|nha|ạ)?$/i.test(text.trim()) ||
+      /(?:bỏ|hủy|xóa|tắt)\s+(?:hết\s+)?lịch\s*nhắc(?:\s+luôn)?/i.test(text) ||
+      (lower.includes('bỏ việc nhắc') || lower.includes('bỏ nhắc nhở luôn') || lower.includes('xóa hết nhắc') || lower.includes('tắt hết nhắc'))
+    );
+
+    if (isClearAllReminders) {
+      const res = await scheduler.clearAll(senderThreadId);
+      const reply = `🌸 Dạ em Diana đã tắt và xóa toàn bộ mọi lịch hẹn giờ / nhắc nhở (${res.removedCount} lịch) trên cả hệ thống và Zalo cho anh Tiến rồi ạ! ✨\nTừ nay em sẽ không tự động nhắc gì nữa nhé 🥰.`;
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    // 8.95. Nhận diện ý định HỦY / BỎ TỰ ĐỘNG NHẮC CHẤM CÔNG (Tự nhiên 100%)
+    const isCancelAttendance = (
+      /(?:không|bỏ|hủy|xóa|tắt|đừng|ngưng|dừng)\s+(?:tự\s+động\s+)?(?:nhắc|hẹn|báo|cài)?\s*(?:lịch\s+)?chấm\s*công/i.test(text) ||
+      /(?:bỏ|hủy|xóa|tắt)\s+(?:lịch\s+)?chấm\s*công/i.test(text) ||
+      (lower.includes('chấm công') && (lower.includes('bỏ nhắc') || lower.includes('hủy nhắc') || lower.includes('không nhắc') || lower.includes('tắt nhắc') || lower.includes('đừng nhắc') || lower.includes('không tự động nhắc') || lower.includes('không cần nhắc') || lower.includes('xóa nhắc') || lower.includes('xóa lịch')))
+    );
+
+    if (isCancelAttendance) {
+      const res = await scheduler.removeMatchingReminders('chấm công', senderThreadId);
+      const reply = `🌸 Dạ em Diana đã tắt và xóa hoàn toàn các lịch tự động nhắc chấm công (cả sáng 8h00 và chiều 17h30) trên Zalo cho anh Tiến rồi ạ! ✨\nLịch thời tiết 7h00 sáng và các lịch khác của anh vẫn được duy trì bình thường. Từ nay em sẽ tuyệt đối không nhắc chấm công nữa nhé! 🥰`;
+      aiAssistant.memory.addTurn(text, reply);
+      return reply;
+    }
+
+    // 8.96. Nhận diện ý định HỦY / XÓA LỊCH NHẮC CỤ THỂ THEO TÊN (VD: "xóa nhắc nhở tắm", "bỏ nhắc họp", "hủy lịch nộp bài"...)
+    const cancelReminderMatch = text.match(/(?:xóa|hủy|bỏ|tắt|đừng)\s+(?:lịch\s+nhắc\s+|lịch\s+|nhắc\s+nhở\s+|nhắc\s+|hẹn\s+giờ\s+)(.+)/i);
+    if (cancelReminderMatch && cancelReminderMatch[1]) {
+      const rawTarget = cancelReminderMatch[1].trim();
+      const cleanTarget = rawTarget.replace(/\s*(?:đi|nha|nhé|nghen|nhen|giúp\s*anh|cho\s*anh|luôn|ạ)$/i, '').trim();
+      // Loại trừ các lệnh điều khiển máy tính như "tắt máy tính", "đóng app", v.v.
+      const isComputerCmd = /^(?:máy|màn\s*hình|loa|âm\s*lượng|cửa\s*sổ|app|ứng\s*dụng)/i.test(cleanTarget);
+      if (cleanTarget.length > 0 && !isComputerCmd) {
+        const res = await scheduler.removeMatchingReminders(cleanTarget, senderThreadId);
+        let reply = '';
+        if (res.removedCount > 0) {
+          reply = `🌸 Dạ em Diana đã xóa thành công ${res.removedCount} lịch nhắc liên quan đến "${cleanTarget}" trên cả hệ thống và Zalo cho anh Tiến rồi ạ! ✨`;
+        } else {
+          reply = `🌸 Em đã kiểm tra hệ thống và Zalo, hiện tại không còn lịch nhắc nào khớp với "${cleanTarget}" nữa rồi anh Tiến nhé! 🥰`;
+        }
         aiAssistant.memory.addTurn(text, reply);
         return reply;
       }

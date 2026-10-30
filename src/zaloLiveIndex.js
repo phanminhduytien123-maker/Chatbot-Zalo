@@ -15,6 +15,10 @@ import { pcBridge } from './pc/pcBridge.js';
 import WindowsController from './pc/windowsController.js';
 import VoiceNormalizer from './services/voiceNormalizer.js';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import secretRoleplay from './ai/secretRoleplay.js';
+import secretMemory from './services/secretMemory.js';
+import phoneStorage from './services/phoneStorageService.js';
+import dianaImageService, { DIANA_CHARACTER_STATES } from './services/dianaImageService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,6 +67,20 @@ const server = http.createServer(async (req, res) => {
       zaloConnected: zaloLive.isConnected,
       platform: process.platform,
       time: new Date().toISOString()
+    }));
+  }
+
+  // 0.1 API: Gỡ bỏ toàn bộ lịch nhắc chấm công (8h00 và 17h30)
+  if (url.pathname === '/api/reminders/clear-attendance') {
+    const result = await scheduler.removeAttendanceReminders();
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({
+      success: true,
+      message: 'Đã gỡ bỏ toàn bộ lịch tự động nhắc chấm công trên Zalo.',
+      ...result
     }));
   }
 
@@ -180,6 +198,158 @@ const server = http.createServer(async (req, res) => {
       }
     });
     return;
+  }
+
+  // ============================================================
+  // DIANA SECRET SANCTUARY (KHÔNG GIAN NHẬP VAI THẦM KÍN & KÝ ỨC RIÊNG)
+  // ============================================================
+  // 2.1 API: Secret Roleplay Chat
+  if (url.pathname === '/api/secret/chat' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const query = (data.query || data.text || '').trim();
+        if (!query) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error: 'Nội dung tâm sự không được để trống.' }));
+        }
+
+        const result = await secretRoleplay.processSecretMessage(query, data.configOverride || null);
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        return res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        return res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // 2.2 API: Secret History
+  if (url.pathname === '/api/secret/history' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({
+      success: true,
+      history: secretMemory.getHistory(),
+      turnCount: secretMemory.getTurnCount(),
+      config: secretMemory.config
+    }));
+  }
+
+  // 2.3 API: Secret Clear Memory
+  if (url.pathname === '/api/secret/clear' && req.method === 'POST') {
+    secretMemory.clearMemory();
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({
+      success: true,
+      message: 'Đã xóa toàn bộ ký ức riêng tư và bắt đầu câu chuyện mới!'
+    }));
+  }
+
+  // 2.4 API: Secret Config (GET / POST)
+  if (url.pathname === '/api/secret/config') {
+    if (req.method === 'GET') {
+      res.writeHead(200, {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json; charset=utf-8'
+      });
+      return res.end(JSON.stringify({
+        success: true,
+        config: secretMemory.config
+      }));
+    } else if (req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const newCfg = JSON.parse(body || '{}');
+          const updated = secretMemory.saveConfig(newCfg);
+          res.writeHead(200, {
+            'Access-Control-Allow-Origin': '*',
+            'Content-Type': 'application/json; charset=utf-8'
+          });
+          return res.end(JSON.stringify({
+            success: true,
+            config: updated
+          }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+  }
+
+  // 2.5 API: Secret State Image (/api/secret/image)
+  if (url.pathname === '/api/secret/image') {
+    const stateName = url.searchParams.get('state') || '';
+    const stateObj = DIANA_CHARACTER_STATES[stateName] || null;
+    const payload = dianaImageService.getImagePayload(stateObj);
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify(payload));
+  }
+
+  // 2.6 API: Secret Phone Storage Status (/sdcard/DianaSecret)
+  if (url.pathname === '/api/secret/phone/status' && req.method === 'GET') {
+    const status = await phoneStorage.getPhoneFolderStatus();
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({
+      success: true,
+      ...status
+    }));
+  }
+
+  // 2.6 API: Secret Phone Storage Sync
+  if (url.pathname === '/api/secret/phone/sync' && req.method === 'POST') {
+    const syncRes = await secretMemory.syncWithPhone();
+    const folderStatus = await phoneStorage.getPhoneFolderStatus();
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({
+      success: syncRes.success,
+      sync: syncRes,
+      status: folderStatus,
+      turnCount: secretMemory.getTurnCount(),
+      history: secretMemory.getHistory()
+    }));
+  }
+
+  // 2.7 API: Secret Phone Storage Wipe
+  if (url.pathname === '/api/secret/phone/wipe' && req.method === 'POST') {
+    const wipeRes = await phoneStorage.wipePhoneFolder();
+    secretMemory.clearMemory();
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    return res.end(JSON.stringify({
+      success: wipeRes.success,
+      message: 'Đã xóa toàn bộ file trong thư mục /sdcard/DianaSecret/ trên điện thoại!',
+      turnCount: 0
+    }));
   }
 
   // 3. API: Text-to-Speech (TTS) Giọng nói tiếng Việt tự nhiên cho Diana (Cố định: Pitch 1.2, Speed 1.2, Volume 1.1, Cadence Relaxed)
@@ -451,8 +621,9 @@ const server = http.createServer(async (req, res) => {
   // 3.6 API: Bắt đầu Stream màn hình điện thoại lên PC (Phone Mirror & Control)
   if (url.pathname === '/api/phone/mirror/start') {
     const targetDevice = url.searchParams.get('target') || '';
+    const mode = url.searchParams.get('mode') || 'mirror';
     global.__mirrorTarget = targetDevice;
-    pcBridge.executeCommand('start_phone_mirror', { target: targetDevice })
+    pcBridge.executeCommand('start_phone_mirror', { target: targetDevice, mode })
       .then(result => {
         res.writeHead(200, {
           'Access-Control-Allow-Origin': '*',
@@ -493,8 +664,31 @@ const server = http.createServer(async (req, res) => {
   // 3.8 API: Bật/Tắt (Toggle) Stream màn hình điện thoại
   if (url.pathname === '/api/phone/mirror/toggle') {
     const targetDevice = url.searchParams.get('target') || '';
+    const mode = url.searchParams.get('mode') || 'mirror';
     global.__mirrorTarget = targetDevice;
-    pcBridge.executeCommand('toggle_phone_mirror', { target: targetDevice })
+    pcBridge.executeCommand('toggle_phone_mirror', { target: targetDevice, mode })
+      .then(result => {
+        res.writeHead(200, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(500, {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      });
+    return;
+  }
+
+  // 3.8.1 API: Bật/Tắt (Toggle) Màn hình Song Song Độc Lập
+  if (url.pathname === '/api/phone/dual/toggle' || url.pathname === '/api/phone/dual/start') {
+    const targetDevice = url.searchParams.get('target') || '';
+    global.__mirrorTarget = targetDevice;
+    pcBridge.executeCommand('toggle_phone_dual', { target: targetDevice })
       .then(result => {
         res.writeHead(200, {
           'Access-Control-Allow-Origin': '*',
@@ -622,6 +816,127 @@ const server = http.createServer(async (req, res) => {
       'Content-Type': 'application/json; charset=utf-8'
     });
     return res.end(JSON.stringify({ success: true, ...state }));
+  }
+
+  // 3.9 BAMBU LAB A1 3D PRINTER CLOUD & LAN ROUTING
+  if (url.pathname === '/api/bambu/camera.mjpg' || url.pathname === '/api/bambu/camera/stream') {
+    const { bambuService } = await import('./services/bambuService.js');
+    return bambuService.handleMjpegStream(req, res);
+  }
+
+  if (url.pathname === '/api/bambu/camera/snapshot' || url.pathname === '/api/bambu/camera/frame') {
+    const { bambuService } = await import('./services/bambuService.js');
+    const frame = bambuService.getCameraSnapshot();
+    if (frame) {
+      res.writeHead(200, {
+        'Content-Type': 'image/jpeg',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Access-Control-Allow-Origin': '*'
+      });
+      return res.end(frame);
+    } else {
+      res.writeHead(503, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ success: false, error: 'Đang mở luồng camera...' }));
+    }
+  }
+
+  if (url.pathname === '/api/bambu/status') {
+    pcBridge.executeCommand('bambu_status')
+      .then(result => {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: err.message, status: { connected: false, online: false } }));
+      });
+    return;
+  }
+
+  if (url.pathname === '/api/bambu/plate' || url.pathname === '/api/bambu/plate-info') {
+    pcBridge.executeCommand('bambu_action', { action: 'get_plate_info' })
+      .then(result => {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      });
+    return;
+  }
+
+  if (url.pathname === '/api/bambu/config') {
+    pcBridge.executeCommand('bambu_config')
+      .then(result => {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: err.message, config: {} }));
+      });
+    return;
+  }
+
+  if (url.pathname === '/api/bambu/scan') {
+    pcBridge.executeCommand('bambu_scan')
+      .then(result => {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: err.message, foundPrinters: [] }));
+      });
+    return;
+  }
+
+  if (url.pathname === '/api/bambu/connect' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const creds = JSON.parse(body || '{}');
+        const result = await pcBridge.executeCommand('bambu_connect', creds);
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === '/api/bambu/disconnect' && req.method === 'POST') {
+    pcBridge.executeCommand('bambu_disconnect')
+      .then(result => {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      })
+      .catch(err => {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      });
+    return;
+  }
+
+  if (url.pathname === '/api/bambu/action' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const result = await pcBridge.executeCommand('bambu_action', data);
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    });
+    return;
   }
 
   // 4. Endpoint thăm dò lệnh cho PC Agent

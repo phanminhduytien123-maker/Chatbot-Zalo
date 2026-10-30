@@ -32,6 +32,10 @@ export class SchedulerService {
     this.loadReminders();
     this.restoreSchedules();
     this.setupMorningWeatherCron();
+    // Tự động kiểm tra và gỡ bỏ hoàn toàn mọi lịch nhắc chấm công (8h00 & 17h30)
+    this.removeAttendanceReminders().catch(err => {
+      console.warn(chalk.yellow('⚠️ [Scheduler] Gỡ bỏ lịch nhắc chấm công khi khởi động:'), err.message);
+    });
     console.log(chalk.cyan(`⏰ [Scheduler] Đã nạp ${this.getActiveReminders().length} lịch hẹn giờ hoạt động.`));
   }
 
@@ -111,6 +115,14 @@ export class SchedulerService {
     const now = Date.now();
 
     for (const rem of active) {
+      // Bỏ qua và hủy mọi lịch nhắc liên quan đến chấm công (8h00 / 17h30)
+      const isAttendance = /chấm\s*công|cham\s*cong|attendance/i.test(rem.title || '') ||
+        ((rem.timeStr === '08:00' || rem.timeStr === '8:00' || rem.timeStr === '17:30') && /công|chấm|cham|cong/i.test(rem.title || ''));
+      if (isAttendance) {
+        rem.status = 'cancelled';
+        continue;
+      }
+
       if (rem.type === 'daily') {
         this.scheduleDailyCron(rem);
       } else if (rem.type === 'once') {
@@ -264,40 +276,57 @@ export class SchedulerService {
   }
 
   /**
-   * Xóa lịch theo ID
+   * Xóa lịch theo ID (hỗ trợ cả bot ID và zaloReminderId)
    */
-  removeReminder(id) {
-    const cleanId = id.trim();
-    const idx = this.reminders.findIndex(r => r.id === cleanId || r.id.endsWith(cleanId));
-    if (idx === -1) return false;
+  async removeReminder(id, threadId = null) {
+    const cleanId = String(id).trim();
+    const targetUid = threadId || this.zaloLive?.ownerThreadId || '4150026493728653560';
+    let removed = false;
 
-    const rem = this.reminders[idx];
-    rem.status = 'cancelled';
+    const idx = this.reminders.findIndex(r => r.id === cleanId || r.id.endsWith(cleanId) || String(r.zaloReminderId) === cleanId);
+    if (idx !== -1) {
+      const rem = this.reminders[idx];
+      rem.status = 'cancelled';
 
-    if (this.cronJobs.has(rem.id)) {
-      try { this.cronJobs.get(rem.id).stop(); } catch (_) {}
-      this.cronJobs.delete(rem.id);
+      if (this.cronJobs.has(rem.id)) {
+        try { this.cronJobs.get(rem.id).stop(); } catch (_) {}
+        this.cronJobs.delete(rem.id);
+      }
+      if (this.timeouts.has(rem.id)) {
+        clearTimeout(this.timeouts.get(rem.id));
+        this.timeouts.delete(rem.id);
+      }
+
+      const zId = rem.zaloReminderId || cleanId;
+      if (zId && this.zaloLive?.api?.removeReminder) {
+        try {
+          await this.zaloLive.api.removeReminder(String(zId), rem.threadId || targetUid, 0);
+        } catch (_) {}
+      }
+
+      this.reminders.splice(idx, 1);
+      this.saveReminders();
+      removed = true;
     }
-    if (this.timeouts.has(rem.id)) {
-      clearTimeout(this.timeouts.get(rem.id));
-      this.timeouts.delete(rem.id);
-    }
 
-    if (rem.zaloReminderId && this.zaloLive?.api?.removeReminder) {
+    // Nếu không có trong local reminders hoặc cần đảm bảo xóa trên Zalo Native
+    if (this.zaloLive?.api?.removeReminder) {
       try {
-        this.zaloLive.api.removeReminder(rem.zaloReminderId, rem.threadId, 0).catch(() => {});
+        await this.zaloLive.api.removeReminder(cleanId, targetUid, 0);
+        removed = true;
       } catch (_) {}
     }
 
-    this.reminders.splice(idx, 1);
-    this.saveReminders();
-    return true;
+    return removed;
   }
 
   /**
-   * Xóa toàn bộ lịch
+   * Xóa toàn bộ tất cả lịch nhắc nhở (cả local timer/cron và Zalo Native Reminders trên server)
    */
-  clearAll() {
+  async clearAll(targetThreadId = null) {
+    const threadId = targetThreadId || this.zaloLive?.ownerThreadId || '4150026493728653560';
+    let removedCount = 0;
+
     for (const [id, task] of this.cronJobs.entries()) {
       try { task.stop(); } catch (_) {}
     }
@@ -308,26 +337,270 @@ export class SchedulerService {
     }
     this.timeouts.clear();
 
+    removedCount += this.reminders.length;
     this.reminders = [];
     this.saveReminders();
+
+    // Dọn sạch toàn bộ Native Reminders trên server Zalo
+    if (this.zaloLive?.api?.getListReminder && this.zaloLive?.api?.removeReminder) {
+      try {
+        console.log(chalk.cyan('🔍 [Scheduler] Đang quét xóa TOÀN BỘ Zalo Native Reminders trên server Zalo...'));
+        const nativeReminders = await this.zaloLive.api.getListReminder({ page: 1, count: 100 }, threadId, 0);
+        if (Array.isArray(nativeReminders)) {
+          for (const item of nativeReminders) {
+            const reminderId = item.reminderId || item.id;
+            if (reminderId) {
+              try {
+                await this.zaloLive.api.removeReminder(String(reminderId), threadId, 0);
+                console.log(chalk.green(`🗑️ [Scheduler] Đã xóa Zalo Native Reminder: [ID ${reminderId}] "${item.params?.title || ''}"`));
+                removedCount++;
+              } catch (delErr) {
+                console.warn(chalk.yellow(`⚠️ Lỗi xóa native reminder [${reminderId}]:`), delErr.message);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(chalk.yellow('⚠️ Lỗi khi quét getListReminder từ Zalo:'), err.message);
+      }
+    }
+
+    console.log(chalk.green(`✅ [Scheduler] Đã dọn sạch toàn bộ ${removedCount} lịch hẹn.`));
+    return { success: true, removedCount };
   }
 
   /**
-   * Format danh sách lịch hẹn đẹp mắt
+   * Tìm và xóa lịch nhắc theo từ khóa, tên nội dung hoặc ID
+   * Hỗ trợ tìm kiếm thông minh tiếng Việt (cả có dấu và không dấu)
    */
-  formatRemindersList() {
-    const active = this.getActiveReminders();
-    if (active.length === 0) {
-      return `⏰ Hiện tại anh Tiến chưa có lịch hẹn giờ nào ạ.\n👉 Anh có thể nhắn: "6h tối nhắc anh làm đồ án" hoặc "mỗi ngày nhắc anh chấm công lúc 8h sáng và 5h30 tối" nhé! ✨`;
+  async removeMatchingReminders(searchQuery, targetThreadId = null) {
+    const threadId = targetThreadId || this.zaloLive?.ownerThreadId || '4150026493728653560';
+    let removedCount = 0;
+    const removedTitles = [];
+    const query = (searchQuery || '').trim();
+
+    if (!query || /^(?:all|tatca|tat\s*ca|toanbo|toan\s*bo|het|toàn\s*bộ|tất\s*cả)$/i.test(query)) {
+      return await this.clearAll(threadId);
     }
 
-    let msg = `⏰ DANH SÁCH LỊCH HẸN GIỜ CỦA ANH TIẾN (${active.length} lịch):\n`;
-    active.forEach((r, idx) => {
-      const typeLabel = r.type === 'daily' ? '🔁 Mỗi ngày' : '⏳ Một lần';
-      msg += `\n${idx + 1}. [${typeLabel}] Lúc ${r.timeStr}\n   📝 Nội dung: ${r.title}\n   🆔 Lệnh xóa: /xoalich ${r.id}`;
+    const normalize = (str) => (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const cleanQuery = normalize(query.replace(/^(?:lịch\s*nhắc|lịch|nhắc\s*nhở|nhắc|hẹn\s*giờ|báo\s*thức|việc)\s*/i, ''));
+
+    const isMatch = (title, id, zaloReminderId) => {
+      if (!title && !id && !zaloReminderId) return false;
+      if (id && (id === query || id.endsWith(query))) return true;
+      if (zaloReminderId && String(zaloReminderId) === query) return true;
+      const normTitle = normalize(title);
+      if (cleanQuery && (normTitle.includes(cleanQuery) || cleanQuery.includes(normTitle))) return true;
+      // Đặc biệt cho từ khóa chấm công
+      if (cleanQuery.includes('cham cong') || cleanQuery.includes('cham') || cleanQuery.includes('cong')) {
+        if (/chấm\s*công|cham\s*cong|attendance/i.test(title || '')) return true;
+      }
+      return false;
+    };
+
+    // 1. Dọn dẹp trong danh sách reminders cục bộ
+    const remainingReminders = [];
+    for (const rem of this.reminders) {
+      if (isMatch(rem.title, rem.id, rem.zaloReminderId)) {
+        rem.status = 'cancelled';
+        if (this.cronJobs.has(rem.id)) {
+          try { this.cronJobs.get(rem.id).stop(); } catch (_) {}
+          this.cronJobs.delete(rem.id);
+        }
+        if (this.timeouts.has(rem.id)) {
+          clearTimeout(this.timeouts.get(rem.id));
+          this.timeouts.delete(rem.id);
+        }
+        if (rem.zaloReminderId && this.zaloLive?.api?.removeReminder) {
+          try {
+            await this.zaloLive.api.removeReminder(String(rem.zaloReminderId), rem.threadId || threadId, 0);
+          } catch (_) {}
+        }
+        removedCount++;
+        removedTitles.push(rem.title || rem.id);
+      } else {
+        remainingReminders.push(rem);
+      }
+    }
+    this.reminders = remainingReminders;
+    this.saveReminders();
+
+    // 2. Dọn dẹp trực tiếp trên Zalo Native Reminders
+    if (this.zaloLive?.api?.getListReminder && this.zaloLive?.api?.removeReminder) {
+      try {
+        const nativeReminders = await this.zaloLive.api.getListReminder({ page: 1, count: 50 }, threadId, 0);
+        if (Array.isArray(nativeReminders)) {
+          for (const item of nativeReminders) {
+            const rawTitle = item.params?.title || item.title || '';
+            const reminderId = item.reminderId || item.id;
+            if (reminderId && isMatch(rawTitle, null, String(reminderId))) {
+              try {
+                await this.zaloLive.api.removeReminder(String(reminderId), threadId, 0);
+                console.log(chalk.green(`🗑️ [Scheduler] Đã xóa Zalo Native Reminder: [ID ${reminderId}] "${rawTitle}"`));
+                removedCount++;
+                removedTitles.push(rawTitle || reminderId);
+              } catch (delErr) {
+                console.warn(chalk.yellow(`⚠️ Lỗi xóa native reminder [${reminderId}]:`), delErr.message);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(chalk.yellow('⚠️ Lỗi khi quét getListReminder từ Zalo:'), err.message);
+      }
+    }
+
+    return {
+      success: true,
+      removedCount,
+      removedTitles: [...new Set(removedTitles)]
+    };
+  }
+
+  /**
+   * Hủy và xóa hoàn toàn mọi lịch nhắc chấm công (cả local reminders và Zalo Native Reminders)
+   */
+  async removeAttendanceReminders(targetThreadId = null) {
+    const threadId = targetThreadId || this.zaloLive?.ownerThreadId || '4150026493728653560';
+    let removedCount = 0;
+
+    // 1. Dọn dẹp trong danh sách reminders cục bộ
+    const remainingReminders = [];
+    for (const rem of this.reminders) {
+      const isAttendanceTitle = /chấm\s*công|cham\s*cong|attendance/i.test(rem.title || '');
+      const isAttendanceTime = (rem.timeStr === '08:00' || rem.timeStr === '8:00' || rem.timeStr === '17:30') && 
+                               /công|chấm|cham|cong/i.test(rem.title || '');
+
+      if (isAttendanceTitle || isAttendanceTime) {
+        rem.status = 'cancelled';
+        if (this.cronJobs.has(rem.id)) {
+          try { this.cronJobs.get(rem.id).stop(); } catch (_) {}
+          this.cronJobs.delete(rem.id);
+        }
+        if (this.timeouts.has(rem.id)) {
+          clearTimeout(this.timeouts.get(rem.id));
+          this.timeouts.delete(rem.id);
+        }
+        if (rem.zaloReminderId && this.zaloLive?.api?.removeReminder) {
+          try {
+            await this.zaloLive.api.removeReminder(rem.zaloReminderId, rem.threadId || threadId, 0);
+          } catch (_) {}
+        }
+        removedCount++;
+      } else {
+        remainingReminders.push(rem);
+      }
+    }
+    this.reminders = remainingReminders;
+    this.saveReminders();
+
+    // 2. Dọn dẹp trực tiếp trên Zalo Native Reminders thông qua Zalo Live API
+    if (this.zaloLive?.api?.getListReminder && this.zaloLive?.api?.removeReminder) {
+      try {
+        console.log(chalk.cyan('🔍 [Scheduler] Đang quét Zalo Native Reminders để gỡ nhắc chấm công...'));
+        const nativeReminders = await this.zaloLive.api.getListReminder({ page: 1, count: 50 }, threadId, 0);
+        if (Array.isArray(nativeReminders)) {
+          for (const item of nativeReminders) {
+            const rawTitle = item.params?.title || item.title || '';
+            const reminderId = item.reminderId || item.id;
+            let isAttendance = /chấm\s*công|cham\s*cong|attendance/i.test(rawTitle);
+
+            // Kiểm tra mốc giờ theo múi giờ Việt Nam (8h sáng hoặc 17h30 chiều)
+            if (!isAttendance && item.startTime) {
+              const d = new Date(item.startTime);
+              const vnHour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour: 'numeric', hour12: false }).format(d), 10);
+              const vnMin = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', minute: 'numeric' }).format(d), 10);
+              if ((vnHour === 8 && vnMin === 0) || (vnHour === 17 && vnMin === 30)) {
+                if (/công|chấm|cham|cong/i.test(rawTitle)) {
+                  isAttendance = true;
+                }
+              }
+            }
+
+            if (isAttendance && reminderId) {
+              try {
+                await this.zaloLive.api.removeReminder(String(reminderId), threadId, 0);
+                console.log(chalk.green(`🗑️ [Scheduler] Đã xóa Zalo Native Reminder chấm công: [ID ${reminderId}] "${rawTitle}"`));
+                removedCount++;
+              } catch (delErr) {
+                console.warn(chalk.yellow(`⚠️ Không thể xóa native reminder [${reminderId}]:`), delErr.message);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(chalk.yellow('⚠️ Lỗi khi quét getListReminder từ Zalo:'), err.message);
+      }
+    }
+
+    console.log(chalk.green(`✅ [Scheduler] Đã hoàn tất gỡ bỏ nhắc chấm công (${removedCount} lịch đã xóa).`));
+    return { success: true, removedCount };
+  }
+
+  /**
+   * Format danh sách lịch hẹn đẹp mắt (đồng bộ cả Local và Zalo Native)
+   */
+  async formatRemindersList(targetThreadId = null) {
+    const threadId = targetThreadId || this.zaloLive?.ownerThreadId || '4150026493728653560';
+    const active = this.getActiveReminders();
+    
+    // Quét thêm danh sách từ Zalo Native
+    let nativeList = [];
+    if (this.zaloLive?.api?.getListReminder) {
+      try {
+        const res = await this.zaloLive.api.getListReminder({ page: 1, count: 50 }, threadId, 0);
+        if (Array.isArray(res)) {
+          nativeList = res;
+        }
+      } catch (_) {}
+    }
+
+    const combined = [];
+    const seenZaloIds = new Set();
+
+    for (const r of active) {
+      combined.push({
+        id: r.id,
+        zaloId: r.zaloReminderId,
+        title: r.title,
+        timeStr: r.timeStr,
+        type: r.type === 'daily' ? '🔁 Mỗi ngày' : '⏳ Một lần'
+      });
+      if (r.zaloReminderId) seenZaloIds.add(String(r.zaloReminderId));
+    }
+
+    for (const item of nativeList) {
+      const zId = String(item.reminderId || item.id || '');
+      if (zId && !seenZaloIds.has(zId)) {
+        let timeStr = 'Đã đặt';
+        if (item.startTime) {
+          const d = new Date(item.startTime);
+          const hh = String(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }).format(d)).padStart(2, '0');
+          const mm = String(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', minute: '2-digit' }).format(d)).padStart(2, '0');
+          timeStr = `${hh}:${mm}`;
+        }
+        combined.push({
+          id: zId,
+          zaloId: zId,
+          title: item.params?.title || item.title || 'Lịch Zalo',
+          timeStr: timeStr,
+          type: item.repeat === 1 ? '🔁 Mỗi ngày' : '⏳ Một lần'
+        });
+        seenZaloIds.add(zId);
+      }
+    }
+
+    if (combined.length === 0) {
+      return `⏰ Hiện tại anh Tiến chưa có lịch hẹn giờ nào ạ.\n👉 Anh có thể nhắn: "6h tối nhắc anh làm đồ án" hoặc "mỗi ngày nhắc anh uống nước lúc 9h sáng và 3h chiều" nhé! ✨`;
+    }
+
+    let msg = `⏰ DANH SÁCH LỊCH HẸN GIỜ CỦA ANH TIẾN (${combined.length} lịch):\n`;
+    combined.forEach((r, idx) => {
+      msg += `\n${idx + 1}. [${r.type}] Lúc ${r.timeStr}\n   📝 Nội dung: ${r.title}\n   🆔 Lệnh xóa: /xoalich ${r.id}`;
     });
 
-    msg += `\n\n💡 Để xóa: Gõ /xoalich <Mã_Lịch> hoặc /xoalich all`;
+    msg += `\n\n💡 Để xóa: Gõ /xoalich <Mã_Lịch> hoặc nhắn "Diana xóa lịch [tên]" hoặc "Diana xóa hết lịch nhắc"!`;
     return msg.trim();
   }
 
@@ -356,6 +629,19 @@ export class SchedulerService {
     const lower = text.toLowerCase();
 
     // 1. Kiểm tra có phải ý định hẹn giờ / nhắc nhở không
+    const cancelKeywords = [
+      'không nhắc', 'đừng nhắc', 'bỏ nhắc', 'hủy nhắc', 'xóa nhắc', 'tắt nhắc',
+      'không cần nhắc', 'thôi nhắc', 'ngưng nhắc', 'dừng nhắc', 'không tự động nhắc'
+    ];
+    if (cancelKeywords.some(kw => lower.includes(kw))) {
+      return null;
+    }
+
+    // Tuyệt đối không tạo lịch nhắc chấm công
+    if (/chấm\s*công|cham\s*cong/i.test(lower)) {
+      return null;
+    }
+
     const reminderKeywords = [
       'nhắc anh', 'nhắc em', 'nhắc tôi', 'hẹn giờ', 'cài lịch', 'đặt lịch',
       'nhắc nhở', 'báo thức', 'nhớ nhắc', 'nhắc giúp', 'nhắc tao', 'remind'

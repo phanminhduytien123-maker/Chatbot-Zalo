@@ -352,6 +352,9 @@ export class ZaloLiveConnector {
       this.isSchedulerInitialized = true;
     }
 
+    // Luôn đảm bảo dọn dẹp và gỡ bỏ hoàn toàn mọi lịch nhắc chấm công trên Zalo
+    scheduler.removeAttendanceReminders(this.ownerThreadId).catch(() => {});
+
     const myUid = String(this.api?.listener?.ctx?.uid || this.api?.getOwnId?.() || '');
 
     // Dọn dẹp listener sự kiện cũ để tránh đăng ký hàm trùng lặp

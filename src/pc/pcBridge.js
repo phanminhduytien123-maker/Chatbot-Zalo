@@ -156,15 +156,27 @@ export class PCBridgeService {
 
       case 'phone_mirror':
       case 'start_phone_mirror': {
-        const res = await WindowsController.startPhoneMirror(params?.target);
+        const res = await WindowsController.startPhoneMirror(params?.target, params?.mode || 'mirror');
         if (res && res.success) this.mirrorActive = true;
         return res;
       }
 
       case 'phone_mirror_toggle':
       case 'toggle_phone_mirror': {
-        const res = await WindowsController.togglePhoneMirror(params?.target);
-        this.mirrorActive = Boolean(res && res.isMirroring !== false && res.mode === 'scrcpy');
+        const res = await WindowsController.togglePhoneMirror(params?.target, params?.mode || 'mirror');
+        this.mirrorActive = Boolean(res && res.isMirroring !== false);
+        return res;
+      }
+
+      case 'start_phone_dual': {
+        const res = await WindowsController.startPhoneMirror(params?.target, 'dual');
+        if (res && res.success) this.mirrorActive = true;
+        return res;
+      }
+
+      case 'toggle_phone_dual': {
+        const res = await WindowsController.togglePhoneDualScreen(params?.target);
+        this.mirrorActive = Boolean(res && res.isMirroring !== false);
         return res;
       }
 
@@ -172,6 +184,72 @@ export class PCBridgeService {
         const res = WindowsController.stopPhoneMirror();
         this.mirrorActive = false;
         return res;
+      }
+
+      case 'bambu_status': {
+        const { bambuService } = await import('../services/bambuService.js');
+        if (!bambuService.connected && !bambuService.isConnecting && bambuService.config.accessCode) {
+          if (bambuService.config.ip) {
+            await bambuService.connect().catch(() => {});
+          }
+          if (!bambuService.connected) {
+            await bambuService.autoDiscoverAndConnect().catch(() => {});
+          }
+          await new Promise(r => setTimeout(r, 500));
+        }
+        return { success: true, status: bambuService.status, config: bambuService.config };
+      }
+
+      case 'bambu_config': {
+        const { bambuService } = await import('../services/bambuService.js');
+        return { success: true, config: bambuService.config };
+      }
+
+      case 'bambu_scan': {
+        const { bambuService } = await import('../services/bambuService.js');
+        return await bambuService.scanLanPrinters();
+      }
+
+      case 'bambu_connect': {
+        const { bambuService } = await import('../services/bambuService.js');
+        return await bambuService.connect(params);
+      }
+
+      case 'bambu_disconnect': {
+        const { bambuService } = await import('../services/bambuService.js');
+        return bambuService.disconnect();
+      }
+
+      case 'bambu_action': {
+        const { bambuService } = await import('../services/bambuService.js');
+        if (!bambuService.connected && !bambuService.isConnecting && bambuService.config?.ip && bambuService.config?.accessCode) {
+          await bambuService.connect().catch(() => {});
+        }
+        const act = params.action;
+        if (act === 'gcode') return await bambuService.sendGcode(params.gcode || '');
+        if (act === 'set_temp') {
+          if (params.target === 'nozzle') return await bambuService.setNozzleTemp(params.value);
+          return await bambuService.setBedTemp(params.value);
+        }
+        if (act === 'set_speed') return await bambuService.setPrintSpeed(params.level);
+        if (act === 'set_light') return await bambuService.setLight(params.state);
+        if (act === 'set_fan') return await bambuService.setFanSpeed(params.fanType || 'part', params.speed);
+        if (act === 'pause') return await bambuService.pausePrint();
+        if (act === 'resume') return await bambuService.resumePrint();
+        if (act === 'stop') return await bambuService.stopPrint();
+        if (act === 'jog') return await bambuService.jog(params.axis, params.distance);
+        if (act === 'home') return await bambuService.home(params.axes || 'all');
+        if (act === 'feed') return await bambuService.feedFilament(params.amount || 10);
+        if (act === 'skip_objects' || act === 'skip_part') return await bambuService.skipObjects(params.obj_list || params.objId || params.ids);
+        if (act === 'get_plate_info' || act === 'plate_info') return { success: true, plate_info: bambuService.getPlateInfo() };
+        if (act === 'fetch_plate' || act === 'refresh_plate') return await bambuService.fetchPlateInfoFromPrinter(params.force === true);
+        if (act === 'parse_3mf' && params.base64) {
+          const buf = Buffer.from(params.base64, 'base64');
+          return { success: true, plate_info: await bambuService.parse3mfBuffer(buf, params.fileName || 'custom.3mf') };
+        }
+        if (act === 'discover' || act === 'scan') return await bambuService.autoDiscoverAndConnect();
+        if (act === 'status') return { success: true, status: bambuService.status, config: bambuService.config, plate_info: bambuService.getPlateInfo() };
+        return { success: false, error: 'Hành động không hợp lệ' };
       }
 
       default:

@@ -1134,15 +1134,23 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
   static phoneMirrorTarget = '';
 
   /**
-   * Tự động quét toàn bộ  /**
-   * Khởi động Stream màn hình điện thoại lên máy tính và điều khiển trực tiếp
+   * Khởi động Stream màn hình điện thoại lên máy tính hoặc Màn hình ảo Song Song Độc Lập
    * @param {string} [targetDevice=''] Địa chỉ IP:Port hoặc Serial thiết bị ADB
+   * @param {'mirror'|'dual'} [mode='mirror'] Chế độ: 'mirror' (Chiếu gương) hoặc 'dual' (Màn hình phụ độc lập)
    */
-  static async startPhoneMirror(targetDevice = '') {
+  static async startPhoneMirror(targetDevice = '', mode = 'mirror') {
     return new Promise(async (resolve) => {
       // 0. Luôn tắt triệt để mọi tiến trình scrcpy cũ trước để không bao giờ bị mở đè 2 cửa sổ
+      if (WindowsController.phoneMirrorProcess) {
+        try {
+          WindowsController.phoneMirrorProcess.kill('SIGTERM');
+        } catch (_) {}
+        WindowsController.phoneMirrorProcess = null;
+      }
       try {
-        exec('taskkill /F /IM scrcpy.exe', { windowsHide: true }, () => {});
+        await new Promise((res) => {
+          exec('taskkill /F /IM scrcpy.exe', { windowsHide: true }, () => res());
+        });
       } catch (_) {}
 
       let target = (targetDevice && typeof targetDevice === 'string') ? targetDevice.trim() : (WindowsController.phoneMirrorTarget || '');
@@ -1232,31 +1240,54 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
         WindowsController.phoneMirrorProcess = null;
       }
 
-      // 3. Khởi động Scrcpy qua WScript.Shell cmd start (Ẩn 100% Terminal, triệt tiêu lỗi 0x800700e8)
+      // 3. Khởi động Scrcpy qua launcher VBScript (Ẩn 100% Terminal popups, bung cửa sổ Direct3D11 60 FPS)
+      const isDual = mode === 'dual';
+      const windowTitle = isDual ? 'Diana - Dien Thoai Song Song (Redmi K70)' : 'Diana - Man Hinh Dien Thoai (Redmi K70)';
       const scrcpyDir = path.dirname(scrcpyPath);
-      const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
-WshShell.CurrentDirectory = "${scrcpyDir.replace(/\\/g, '\\\\')}"
-WshShell.Run "cmd /c start """" scrcpy.exe -s ${target} --no-audio --video-codec=h264 --window-title ""📱 Diana - Màn hình Điện thoại (Redmi K70)"" --max-size 1440 --video-bit-rate 8M --max-fps 60 --stay-awake --always-on-top --push-target /sdcard/Pictures/", 0, False
-`;
-      const tempVbs = path.join(os.tmpdir(), `diana_scrcpy_${Date.now()}.vbs`);
+
+      // Đánh thức màn hình điện thoại trước
+      try {
+        execFile(adbPath, ['-s', target, 'shell', 'input', 'keyevent', '224'], { windowsHide: true }, () => {});
+      } catch (_) {}
 
       try {
-        fs.writeFileSync(tempVbs, vbsContent, 'utf8');
-        execFile('wscript.exe', [tempVbs], { windowsHide: true }, () => {
-          setTimeout(() => {
-            try { fs.unlinkSync(tempVbs); } catch (_) {}
-          }, 3000);
-        });
+        let extraArgs = '';
+        if (isDual) {
+          extraArgs = ' --new-display=1080x2400/440 --start-app=com.android.chrome';
+        }
+
+        const launcherVbs = path.resolve(scrcpyDir, 'launch_mirror.vbs');
+        const vbsCode = [
+          'Set objShell = CreateObject("Shell.Application")',
+          `strDir = "${scrcpyDir}"`,
+          'exePath = strDir & "\\scrcpy.exe"',
+          `args = "-s ${target} --no-audio --video-codec=h264 --window-title ""${windowTitle}"" --max-size=1080 --video-bit-rate=8M --max-fps=60 --stay-awake --always-on-top${extraArgs}"`,
+          'objShell.ShellExecute exePath, args, strDir, "open", 0'
+        ].join('\r\n');
+
+        fs.writeFileSync(launcherVbs, vbsCode, 'ascii');
+
+        // Khởi chạy ngầm không hiện bất kỳ cửa sổ CMD hay Terminal nào
+        exec(`wscript.exe "${launcherVbs}"`, { windowsHide: true });
+
+        WindowsController._lastMirrorCheckResult = true;
+        WindowsController._lastMirrorCheckTime = Date.now();
 
         // Hiển thị Toast thông báo trên Windows
-        WindowsController.showToastNotification('📱 Diana Phone Mirror', 'Đang truyền trực tiếp màn hình điện thoại lên máy tính!');
+        if (isDual) {
+          WindowsController.showToastNotification('⚡ Diana Điện Thoại Song Song', 'Đã mở màn hình ảo phụ trên PC! Điện thoại thật tự do 100%.');
+        } else {
+          WindowsController.showToastNotification('📱 Diana Phone Mirror', 'Đang truyền trực tiếp màn hình điện thoại lên máy tính!');
+        }
 
         resolve({
           success: true,
-          mode: 'scrcpy',
+          mode: isDual ? 'dual' : 'scrcpy',
           activeDevice: target,
           isMirroring: true,
-          message: `Đã kết nối và truyền màn hình ${target} lên máy tính thành công!`,
+          message: isDual
+            ? `Đã mở màn hình song song độc lập cho ${target} trên PC thành công!`
+            : `Đã kết nối và truyền màn hình ${target} lên máy tính thành công!`,
           target
         });
       } catch (err) {
@@ -1268,24 +1299,51 @@ WshShell.Run "cmd /c start """" scrcpy.exe -s ${target} --no-audio --video-codec
   /**
    * Bật/Tắt (Toggle) chiếu màn hình Scrcpy thông minh
    * @param {string} [targetDevice='']
+   * @param {'mirror'|'dual'} [mode='mirror']
    */
-  static async togglePhoneMirror(targetDevice = '') {
+  static _lastToggleTime = 0;
+  static async togglePhoneMirror(targetDevice = '', mode = 'mirror') {
+    const now = Date.now();
+    if (now - WindowsController._lastToggleTime < 2500) {
+      console.log(`[WindowsController] Debounce: Bỏ qua lệnh toggle mirror quá nhanh (${now - WindowsController._lastToggleTime}ms)`);
+      return { success: true, debounced: true, running: await WindowsController.isPhoneMirrorRunning() };
+    }
+    WindowsController._lastToggleTime = now;
     const isRunning = await WindowsController.isPhoneMirrorRunning();
     if (isRunning) {
       return WindowsController.stopPhoneMirror();
     } else {
-      return await WindowsController.startPhoneMirror(targetDevice);
+      return await WindowsController.startPhoneMirror(targetDevice, mode);
     }
   }
+
+  /**
+   * Bật/Tắt (Toggle) Màn hình song song độc lập (Dual Workspace)
+   * @param {string} [targetDevice='']
+   */
+  static async togglePhoneDualScreen(targetDevice = '') {
+    return await WindowsController.togglePhoneMirror(targetDevice, 'dual');
+  }
+
+  static _lastMirrorCheckTime = 0;
+  static _lastMirrorCheckResult = false;
 
   /**
    * Kiểm tra xem Scrcpy có đang chạy chiếu màn hình hay không
    * @returns {Promise<boolean>}
    */
   static async isPhoneMirrorRunning() {
+    if (WindowsController.phoneMirrorProcess) return true;
+    const now = Date.now();
+    if (now - WindowsController._lastMirrorCheckTime < 3000) {
+      return WindowsController._lastMirrorCheckResult;
+    }
+    WindowsController._lastMirrorCheckTime = now;
     return new Promise((resolve) => {
       exec('tasklist /FI "IMAGENAME eq scrcpy.exe" /NH', { windowsHide: true, timeout: 2000 }, (err, stdout) => {
-        resolve(Boolean(stdout && stdout.includes('scrcpy.exe')));
+        const res = Boolean(stdout && stdout.includes('scrcpy.exe'));
+        WindowsController._lastMirrorCheckResult = res;
+        resolve(res);
       });
     });
   }
@@ -1300,10 +1358,71 @@ WshShell.Run "cmd /c start """" scrcpy.exe -s ${target} --no-audio --video-codec
       } catch (_) {}
       WindowsController.phoneMirrorProcess = null;
     }
+    WindowsController._lastMirrorCheckResult = false;
     try {
       exec('taskkill /F /IM scrcpy.exe', { windowsHide: true }, () => {});
     } catch (_) {}
     return { success: true, isMirroring: false, message: 'Đã tắt stream màn hình điện thoại.' };
+  }
+
+  /**
+   * Kiểm tra xem Trạm Diana Central Station có đang chạy không
+   * @returns {Promise<boolean>}
+   */
+  static isDianaStationRunning() {
+    return new Promise((resolve) => {
+      exec('tasklist /FI "IMAGENAME eq Diana*" /NH', { windowsHide: true, timeout: 2000 }, (err, stdout) => {
+        let isRunning = Boolean(stdout && stdout.includes('Diana Central Station'));
+        if (isRunning) return resolve(true);
+        exec('tasklist /FI "IMAGENAME eq electron.exe" /NH', { windowsHide: true, timeout: 2000 }, (err2, stdout2) => {
+          resolve(Boolean(stdout2 && stdout2.includes('electron.exe')));
+        });
+      });
+    });
+  }
+
+  /**
+   * Khởi chạy Trạm Diana Central Station (giống như nhấn vào file exe trong win-unpacked)
+   */
+  static startDianaStation() {
+    try {
+      const vbsPath = path.resolve(__dirname, '../../Mo_Tram_Trung_Tam_Diana.vbs');
+      const exePath = path.resolve(__dirname, '../../dist/win-unpacked/Diana Central Station.exe');
+
+      if (fs.existsSync(vbsPath)) {
+        exec(`wscript.exe "${vbsPath}"`, { windowsHide: true });
+      } else if (fs.existsSync(exePath)) {
+        exec(`powershell -NoProfile -Command "Start-Process -FilePath '${exePath}' -WorkingDirectory '${path.dirname(exePath)}'"`, { windowsHide: true });
+      }
+      return { success: true, message: 'Đã mở Trạm Diana Central Station.' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Tắt Trạm Diana Central Station Desktop
+   */
+  static stopDianaStation() {
+    try {
+      exec('taskkill /F /IM "Diana Central Station.exe" /T', { windowsHide: true }, () => {});
+      exec('powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"CommandLine LIKE \'%desktop/main.cjs%\'\\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"', { windowsHide: true }, () => {});
+      return { success: true, message: 'Đã đóng Trạm Diana Central Station.' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Bật/Tắt (Toggle) Trạm Diana Central Station Desktop
+   */
+  static async toggleDianaStation() {
+    const isRunning = await WindowsController.isDianaStationRunning();
+    if (isRunning) {
+      return WindowsController.stopDianaStation();
+    } else {
+      return WindowsController.startDianaStation();
+    }
   }
 
   /**
@@ -1337,33 +1456,38 @@ WshShell.Run "cmd /c start """" scrcpy.exe -s ${target} --no-audio --video-codec
     }
   }
 
+  static _lastAirCheckTime = 0;
+  static _lastAirCheckResult = false;
+
   /**
    * Kiểm tra xem tiến trình Air Gesture AI có đang chạy hay không
    */
   static async isAirGestureRunning() {
+    const now = Date.now();
+    if (now - WindowsController._lastAirCheckTime < 3000) {
+      return WindowsController._lastAirCheckResult;
+    }
+    WindowsController._lastAirCheckTime = now;
+
     return new Promise((resolve) => {
       const pidFile = path.resolve(__dirname, '..', '..', '.air_gesture.pid');
-      if (fs.existsSync(pidFile)) {
-        try {
-          const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
-          if (pid && !isNaN(pid)) {
-            exec(`tasklist /FI "PID eq ${pid}" /NH`, { windowsHide: true, timeout: 2000 }, (err, stdout) => {
-              if (stdout && stdout.includes(String(pid)) && stdout.toLowerCase().includes('python')) return resolve(true);
-              checkByCmd();
-            });
-            return;
-          }
-        } catch (_) {}
+      if (!fs.existsSync(pidFile)) {
+        WindowsController._lastAirCheckResult = false;
+        return resolve(false);
       }
-      checkByCmd();
-
-      function checkByCmd() {
-        const psCmd = `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name LIKE 'python%' AND CommandLine LIKE '%air_gesture_controller.py%'\\" | Select-Object -ExpandProperty ProcessId"`;
-        exec(psCmd, { windowsHide: true, timeout: 3000 }, (err, stdout) => {
-          const hasPid = Boolean(stdout && stdout.trim().length > 0 && !isNaN(parseInt(stdout.trim(), 10)));
-          resolve(hasPid);
-        });
-      }
+      try {
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+        if (pid && !isNaN(pid)) {
+          exec(`tasklist /FI "PID eq ${pid}" /NH`, { windowsHide: true, timeout: 1500 }, (err, stdout) => {
+            const isRun = Boolean(stdout && stdout.includes(String(pid)) && stdout.toLowerCase().includes('python'));
+            WindowsController._lastAirCheckResult = isRun;
+            resolve(isRun);
+          });
+          return;
+        }
+      } catch (_) {}
+      WindowsController._lastAirCheckResult = false;
+      resolve(false);
     });
   }
 
