@@ -25,6 +25,7 @@ import subprocess
 import webbrowser
 import winsound
 import unicodedata
+import ctypes
 from datetime import datetime
 
 # Windows Win32 GUI & Desktop Integration
@@ -66,15 +67,16 @@ AUDIO_QUEUE = queue.Queue(maxsize=15)
 IS_SPEAKING = False
 
 # Regex nhận diện từ khóa đánh thức (Wake Words)
-# Mở rộng TOÀN BỘ các biến thể phát âm thực tế mà Google STT nhận diện được từ giọng nói tự nhiên
+# Mở rộng TOÀN BỘ các biến thể phát âm thực tế mà Google STT nhận diện được từ giọng nói tự nhiên:
+# - Có từ 'ơi': "Diana ơi", "Dina ơi", "Dana ơi", "Đan ơi", "Bé Na ơi", "Em ơi", "Đen ơi"...
+# - Có tiền tố chào hỏi: "Hey Diana", "Chào Diana", "Alo Diana", "Ê Diana", "Ok Diana"...
+# - Tên đứng một mình hoặc đứng đầu câu lệnh: "Diana", "Dana", "Dina", "Đan", "Bé Na", "Deana"...
 WAKE_REGEX = re.compile(
     r'\b(?:'
-    r'diana\s*ơi|ơi\s*diana|hey\s*diana|alo\s*diana|ê\s*diana|chào\s*diana|điana\s*ơi|di\s*a\s*na\s*ơi|đi\s*a\s*na\s*ơi|di\s*an\s*na|đi\s*an\s*na|'
-    r'dina\s*ơi|ơi\s*dina|hey\s*dina|alo\s*dina|đina\s*ơi|di\s*na\s*ơi|đi\s*na\s*ơi|deana\s*ơi|dyna\s*ơi|'
-    r'bé\s*na\s*ơi|bena\s*ơi|na\s*ơi|ơi\s*bé\s*na|ơi\s*na|'
-    r'đa\s*na\s*ơi|da\s*na\s*ơi|dana\s*ơi|'
-    r'đen\s*ơi|đan\s*ơi|đăng\s*ơi|thứ\s*ba\s*ơi|'
-    r'diana|điana|dina|đina|di\s*a\s*na|đi\s*a\s*na|di\s*na|đi\s*na|deana|deanna|dian|bé\s*na|bena'
+    r'(?:ơi\s+)?(?:diana|điana|dina|đina|di\s*na|đi\s*na|deana|deanna|dyna|dana|đa\s*na|da\s*na|bé\s*na|bena|na|đen|đan|đăng|thứ\s*ba|em)\s*ơi|'
+    r'(?:hey|alo|ê|chào|này|ok|em)\s+(?:diana|điana|dina|đina|di\s*na|đi\s*na|deana|deanna|dyna|dana|đa\s*na|da\s*na|bé\s*na|bena|na|đan|đen)|'
+    r'diana|điana|dina|đina|deana|deanna|dyna|dana|đa\s*na|da\s*na|bé\s*na|bena|'
+    r'di\s*a\s*na|đi\s*a\s*na|di\s*na|đi\s*na'
     r')\b',
     re.IGNORECASE | re.UNICODE
 )
@@ -251,51 +253,93 @@ def ensure_default_desktop():
 
 def restore_and_focus_window(title_kw):
     """
-    Tìm cửa sổ (kể cả đang thu nhỏ xuống taskbar hoặc ẩn trong system tray)
-    và kéo bật lên màn hình trước mặt (SW_RESTORE + SW_SHOW + SetForegroundWindow)
+    Tìm cửa sổ (kể cả đang thu nhỏ xuống taskbar hoặc ẩn trong system tray / Efficiency Mode)
+    và kéo bật lên màn hình trước mặt:
+    - Loại bỏ triệt để các tooltip, popup khay hệ thống siêu nhỏ (VD: Zalo 352x82 px)
+    - Luôn chọn cửa sổ chính lớn nhất (w >= 400 và h >= 250, sort area giảm dần)
+    - Sử dụng đồng thời ShowWindow + SwitchToThisWindow + SetForegroundWindow để phá bỏ chế độ tiết kiệm
     """
     if not HAS_WIN32:
         return False
     ensure_default_desktop()
     try:
-        found_hwnds = []
+        candidates = []
         kw = title_kw.lower().strip()
 
         def enum_cb(hwnd, _):
-            t = win32gui.GetWindowText(hwnd).lower().strip()
-            c = win32gui.GetClassName(hwnd).lower().strip()
+            t = win32gui.GetWindowText(hwnd).strip()
+            t_lower = t.lower()
+            c = win32gui.GetClassName(hwnd).strip()
+            c_lower = c.lower()
 
             # Tránh nhầm lẫn với IDE Antigravity / Zalo Bot đang làm việc
-            if 'antigravity' in t or 'zalo bot' in t:
+            if 'antigravity' in t_lower or 'zalo bot' in t_lower:
                 return True
 
+            matched = False
             if kw == 'zalo':
-                if t == 'zalo' or t.startswith('zalo (') or t.startswith('zalo -'):
-                    found_hwnds.append((hwnd, t, c))
+                if 'zalo' in t_lower and 'zalocap' not in t_lower:
+                    matched = True
             elif kw == 'chrome':
-                if 'google chrome' in t or t.endswith('- chrome') or (c == 'chrome_widgetwin_1' and 'google' in t):
-                    found_hwnds.append((hwnd, t, c))
+                if ('google chrome' in t_lower or t_lower.endswith('- chrome') or t_lower.endswith('google chrome') or (c_lower == 'chrome_widgetwin_1' and 'chrome' in t_lower)):
+                    matched = True
             elif kw == 'bambu':
-                if 'bambu' in t or 'bambu' in c:
-                    found_hwnds.append((hwnd, t, c))
+                if 'bambu' in t_lower or 'bambu' in c_lower:
+                    matched = True
+            elif kw in ['league of legends', 'lol', 'riot']:
+                if 'league of legends' in t_lower or 'riot client' in t_lower or c_lower == 'rclient':
+                    matched = True
             else:
-                if kw in t:
-                    found_hwnds.append((hwnd, t, c))
+                if kw in t_lower:
+                    matched = True
+
+            if matched:
+                try:
+                    r = win32gui.GetWindowRect(hwnd)
+                    w = r[2] - r[0]
+                    h = r[3] - r[1]
+                    # Chỉ lấy cửa sổ làm việc thực tế (bỏ qua tray popup / bubble nhỏ hơn 400x250)
+                    if w >= 400 and h >= 250:
+                        candidates.append({
+                            'hwnd': hwnd,
+                            'area': w * h,
+                            'width': w,
+                            'height': h,
+                            'title': t,
+                            'class': c
+                        })
+                except Exception:
+                    pass
             return True
 
         win32gui.EnumWindows(enum_cb, None)
-        if found_hwnds:
-            best_hwnd = found_hwnds[0][0]
-            win32gui.ShowWindow(best_hwnd, win32con.SW_RESTORE)
-            win32gui.ShowWindow(best_hwnd, win32con.SW_SHOW)
+        if candidates:
+            # Chọn cửa sổ có diện tích LỚN NHẤT (cửa sổ chính của ứng dụng)
+            candidates.sort(key=lambda x: x['area'], reverse=True)
+            best = candidates[0]
+            best_hwnd = best['hwnd']
+
+            user32 = ctypes.windll.user32
+            # 1. Khôi phục kích thước bình thường
+            user32.ShowWindow(best_hwnd, win32con.SW_RESTORE)
+            user32.ShowWindow(best_hwnd, win32con.SW_SHOWNORMAL)
+
+            # 2. SwitchToThisWindow: Kéo ứng dụng từ background / Efficiency Mode lên màn hình
+            try:
+                user32.SwitchToThisWindow(best_hwnd, True)
+            except Exception:
+                pass
+
+            # 3. Kích hoạt quyền ưu tiên Foreground bằng ALT key bypass
             try:
                 win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
-                win32gui.SetForegroundWindow(best_hwnd)
-                win32gui.BringWindowToTop(best_hwnd)
+                user32.SetForegroundWindow(best_hwnd)
+                user32.BringWindowToTop(best_hwnd)
                 win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
             except Exception:
                 pass
-            log(f"🪟 Đã khôi phục và đưa cửa sổ '{title_kw}' (HWND {best_hwnd}) lên trước màn hình!", 'SUCCESS')
+
+            log(f"🪟 Đã khôi phục và đưa cửa sổ '{title_kw}' (HWND {best_hwnd}, {best['width']}x{best['height']}) lên trước màn hình!", 'SUCCESS')
             return True
     except Exception as e:
         log(f"Lỗi khôi phục cửa sổ '{title_kw}': {e}", 'WARN')
@@ -327,10 +371,9 @@ def find_installed_shortcut(query):
 def launch_or_focus_app(app_name):
     """
     Khởi chạy hoặc đưa ứng dụng lên màn hình chính một cách chắc chắn:
-    1. Kiểm tra từ khóa đặc biệt (Bambu, Zalo, Chrome, Word, LOL, VS Code...)
-    2. Thử restore và đưa cửa sổ đang chạy lên foreground
-    3. Mở shortcut hoặc file thực thi
-    4. Fallback gửi lệnh mở tới local PC Agent API http://localhost:3000/api/pc/action
+    1. Kiểm tra nếu app đã mở -> restore và focus ngay lập tức
+    2. Nếu chưa mở -> Dùng explorer.exe / os.startfile để khởi chạy trực tiếp vào Desktop người dùng
+    3. Chờ 1.2s rồi gọi restore_and_focus_window để đưa lên Foreground
     """
     clean_name = app_name.strip()
     norm = remove_accents(clean_name)
@@ -338,7 +381,8 @@ def launch_or_focus_app(app_name):
 
     # 1. Xử lý Bambu Studio / Máy in 3D (Đặc biệt xử lý các biến thể STT: album studio, bảo bối studio, bản in studio)
     if any(k in norm for k in ['bambu', 'album studio', 'bao boi studio', 'ban in studio', 'may in', 'in 3d', 'studio']):
-        restore_and_focus_window('Bambu')
+        if restore_and_focus_window('Bambu'):
+            return "Dạ em đã đưa phần mềm in 3D Bambu Studio lên màn hình cho anh rồi ạ! 🖨️"
         bambu_paths = [
             r'C:\Users\Public\Desktop\Bambu Studio.lnk',
             r'D:\BambuStudio\Bambu Studio\bambu-studio.exe'
@@ -346,8 +390,8 @@ def launch_or_focus_app(app_name):
         for p in bambu_paths:
             if os.path.exists(p):
                 try:
-                    os.startfile(p)
-                    time.sleep(0.5)
+                    subprocess.Popen(['explorer.exe', p])
+                    time.sleep(1.5)
                     restore_and_focus_window('Bambu')
                     return "Dạ em đã mở phần mềm in 3D Bambu Studio cho anh rồi ạ! 🖨️"
                 except Exception:
@@ -356,7 +400,8 @@ def launch_or_focus_app(app_name):
 
     # 2. Xử lý Zalo
     if any(k in norm for k in ['zalo', 'gia lo', 'dalo']):
-        restore_and_focus_window('Zalo')
+        if restore_and_focus_window('Zalo'):
+            return "Dạ em đã đưa ứng dụng Zalo lên màn hình cho anh rồi ạ! 💬"
         zalo_paths = [
             os.path.expanduser(r'~\Desktop\Zalo.lnk'),
             os.path.expanduser(r'~\AppData\Local\Programs\Zalo\Zalo.exe')
@@ -364,44 +409,49 @@ def launch_or_focus_app(app_name):
         for p in zalo_paths:
             if os.path.exists(p):
                 try:
-                    os.startfile(p)
-                    time.sleep(0.5)
+                    subprocess.Popen(['explorer.exe', p])
+                    time.sleep(1.5)
                     restore_and_focus_window('Zalo')
                     return "Dạ em đã mở ứng dụng Zalo cho anh rồi ạ! 💬"
                 except Exception:
                     pass
         try:
             os.system('start zalo:')
+            time.sleep(1.5)
+            restore_and_focus_window('Zalo')
         except Exception:
             pass
         return "Dạ em đã mở ứng dụng Zalo cho anh rồi ạ! 💬"
 
     # 3. Xử lý Chrome / Trình duyệt web
     if any(k in norm for k in ['chrome', 'trinh duyet', 'google chrome', 'web', 'coc coc']):
-        restore_and_focus_window('Chrome')
-        chrome_paths = [
-            r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-            r'C:\Users\Public\Desktop\Google Chrome.lnk'
+        if restore_and_focus_window('Chrome'):
+            return "Dạ em đã đưa trình duyệt Chrome lên màn hình cho anh rồi ạ! 🌐"
+        chrome_shortcuts = [
+            os.path.expanduser(r'~\Desktop\Tiến - Chrome.lnk'),
+            r'C:\Users\Public\Desktop\Google Chrome.lnk',
+            r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Google Chrome.lnk',
+            r'C:\Program Files\Google\Chrome\Application\chrome.exe'
         ]
-        for p in chrome_paths:
+        for p in chrome_shortcuts:
             if os.path.exists(p):
                 try:
-                    if p.endswith('.exe'):
-                        subprocess.Popen([p, '--new-window', 'https://www.google.com'])
-                    else:
-                        os.startfile(p)
-                    time.sleep(0.5)
+                    subprocess.Popen(['explorer.exe', p])
+                    time.sleep(1.5)
                     restore_and_focus_window('Chrome')
                     return "Dạ em đã mở trình duyệt Chrome cho anh rồi ạ! 🌐"
                 except Exception:
                     pass
-        webbrowser.open('https://www.google.com')
+        try:
+            subprocess.Popen(['explorer.exe', 'https://www.google.com'])
+        except Exception:
+            pass
         return "Dạ em đã mở trình duyệt Chrome cho anh rồi ạ! 🌐"
 
     # 4. Xử lý Liên Minh Huyền Thoại / League of Legends / Riot
     if any(k in norm for k in ['lien minh', 'lol', 'lmht', 'riot', 'dau truong chan ly', 'dtcl']):
-        restore_and_focus_window('League of Legends')
-        restore_and_focus_window('Riot Client')
+        if restore_and_focus_window('League of Legends') or restore_and_focus_window('Riot Client'):
+            return "Dạ em đã đưa Liên Minh Huyền Thoại lên màn hình cho anh rồi ạ! 🎮"
         riot_paths = [
             r'C:\Users\Public\Desktop\Riot Client.lnk',
             r'C:\Riot Games\Riot Client\RiotClientServices.exe'
@@ -409,14 +459,17 @@ def launch_or_focus_app(app_name):
         for p in riot_paths:
             if os.path.exists(p):
                 try:
-                    os.startfile(p)
+                    subprocess.Popen(['explorer.exe', p])
+                    time.sleep(1.5)
+                    restore_and_focus_window('League of Legends')
                     return "Dạ em đã mở Liên Minh Huyền Thoại cho anh rồi ạ! Chúc anh leo rank vui vẻ! 🎮"
                 except Exception:
                     pass
 
     # 5. Xử lý VS Code
     if any(k in norm for k in ['vscode', 'vs code', 'code', 'visual studio code']):
-        restore_and_focus_window('Visual Studio Code')
+        if restore_and_focus_window('Visual Studio Code'):
+            return "Dạ em đã đưa Visual Studio Code lên màn hình cho anh rồi ạ! 💻"
         try:
             subprocess.Popen(['code'], shell=True)
             return "Dạ em đã mở Visual Studio Code để anh làm việc rồi ạ! 💻"
@@ -425,7 +478,8 @@ def launch_or_focus_app(app_name):
 
     # 6. Xử lý Word / Excel / PowerPoint
     if 'word' in norm:
-        restore_and_focus_window('Word')
+        if restore_and_focus_window('Word'):
+            return "Dạ em đã đưa Microsoft Word lên màn hình cho anh rồi ạ! 📄"
         try:
             subprocess.Popen(['cmd.exe', '/c', 'start', 'winword'], shell=True)
             return "Dạ em đã mở Microsoft Word cho anh rồi ạ! 📄"
@@ -433,7 +487,8 @@ def launch_or_focus_app(app_name):
             pass
 
     if 'excel' in norm:
-        restore_and_focus_window('Excel')
+        if restore_and_focus_window('Excel'):
+            return "Dạ em đã đưa Microsoft Excel lên màn hình cho anh rồi ạ! 📊"
         try:
             subprocess.Popen(['cmd.exe', '/c', 'start', 'excel'], shell=True)
             return "Dạ em đã mở Microsoft Excel cho anh rồi ạ! 📊"
@@ -441,7 +496,8 @@ def launch_or_focus_app(app_name):
             pass
 
     if 'powerpoint' in norm or 'ppt' in norm:
-        restore_and_focus_window('PowerPoint')
+        if restore_and_focus_window('PowerPoint'):
+            return "Dạ em đã đưa Microsoft PowerPoint lên màn hình cho anh rồi ạ! 📑"
         try:
             subprocess.Popen(['cmd.exe', '/c', 'start', 'powerpnt'], shell=True)
             return "Dạ em đã mở Microsoft PowerPoint cho anh rồi ạ! 📑"
@@ -492,12 +548,16 @@ def execute_voice_command(raw_query):
     if not query:
         return "Dạ em đây ạ! Anh cần em giúp gì không ạ? 🌸"
 
-    q_lower = query.lower()
     log(f"🎤 [Thực thi lệnh]: '{query}'", 'INFO')
     play_siri_ready()
 
+    # Chuẩn hóa loại bỏ các từ xưng hô và trợ từ đệm tiếng Việt (VD: "em mở...", "...lên cho anh đi")
+    clean_cmd = re.sub(r'^(?:em\s+ơi|ơi\s+em|em|bạn|diana|dina|dana|hãy)\s+', '', query, flags=re.IGNORECASE).strip()
+    clean_cmd = re.sub(r'\s+(?:lên\s+)?(?:cho\s+anh|hộ\s+anh|giúp\s+anh|giúp\s+em|đi|với|nhe|nhé|nha|ạ)$', '', clean_cmd, flags=re.IGNORECASE).strip()
+    q_lower = clean_cmd.lower()
+
     # 0. Bắt trực tiếp tên app / phần mềm mà người dùng yêu cầu mở
-    open_match = re.search(r'^(?:mở|bật|chạy|vào|khởi\s+chạy|open)\s+(.+)', query, flags=re.IGNORECASE)
+    open_match = re.search(r'^(?:mở|bật|chạy|vào|khởi\s+chạy|open)\s+(.+)', clean_cmd, flags=re.IGNORECASE)
     if open_match:
         app_target = open_match.group(1).strip()
         # Loại trừ nếu là mở youtube, google, facebook, portal đã có handler chuyên dụng bên dưới
@@ -508,10 +568,10 @@ def execute_voice_command(raw_query):
     if any(k in q_lower for k in ['album studio', 'bảo bối studio', 'bản in studio', 'bambu studio', 'bambu']):
         return launch_or_focus_app('bambu')
 
-    if any(k in q_lower for k in ['zalo cho anh', 'vào zalo', 'bật zalo', 'mở zalo']):
+    if any(k in q_lower for k in ['zalo cho anh', 'vào zalo', 'bật zalo', 'mở zalo', 'zalo']):
         return launch_or_focus_app('zalo')
 
-    if any(k in q_lower for k in ['chrome cho anh', 'vào chrome', 'bật chrome', 'mở chrome']):
+    if any(k in q_lower for k in ['chrome cho anh', 'vào chrome', 'bật chrome', 'mở chrome', 'chrome']):
         return launch_or_focus_app('chrome')
 
     # 1. Xem giờ / ngày tháng
