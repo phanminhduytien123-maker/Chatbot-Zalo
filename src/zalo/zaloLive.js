@@ -346,9 +346,7 @@ export class ZaloLiveConnector {
     // Khởi tạo hệ thống Hẹn giờ & Nhắc nhở (chỉ khởi tạo 1 lần)
     if (!this.isSchedulerInitialized) {
       scheduler.init(this);
-      monitor.setSender(async (alertMessage) => {
-        await this.broadcastAlert(alertMessage);
-      });
+      // Đã tắt hoàn toàn broadcastAlert từ monitor (Cổng trường) theo yêu cầu của anh Tiến
       this.isSchedulerInitialized = true;
     }
 

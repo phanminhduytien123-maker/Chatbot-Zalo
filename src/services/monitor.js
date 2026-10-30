@@ -77,12 +77,9 @@ export class BackgroundMonitor {
           ...freshSnapshot
         });
 
-        // Bắn tin nhắn thông báo về Zalo
-        if (this.zaloSenderCallback) {
-          await this.zaloSenderCallback(alertMessage);
-        } else {
-          console.log(chalk.yellow('[Monitor] Tin nhắn cảnh báo:'), '\n' + alertMessage);
-        }
+        // ĐÃ TẮT BẮN THÔNG BÁO TỰ ĐỘNG THEO YÊU CẦU CỦA ANH TIẾN
+        // Không gửi "🚨 BÁO ĐỘNG BIẾN ĐỘNG TỪ CỔNG TRƯỜNG!" về Zalo nữa
+        console.log(chalk.yellow('[Monitor] Biến động mới đã được lưu ngầm (Đã tắt thông báo tự động theo yêu cầu của anh Tiến).'));
       } else {
         console.log(chalk.gray(`[Monitor ${timestamp}] ✅ Không có biến động mới.`));
       }

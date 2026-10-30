@@ -10,7 +10,7 @@ const STOP_WORDS_SET = new Set([
   'và', 'với', 'đồng', 'thời', 'lúc', 'vào', 'lặp', 'lại', 'mỗi', 'ngày', 
   'hàng', 'hằng', 'hôm', 'nay', 'mai', 'tối', 'chiều', 'sáng', 'đêm', 'trưa', 
   'nhé', 'nha', 'ạ', 'đi', 'giúp', 'nhe', 'nhá', 'nghen', 'nhen', 'nhớ', 'ha', 
-  'nhắc', 'em', 'anh', 'tôi', 'mình', 'ơn', 'cài', 'hẹn', 'giờ', 'lịch'
+  'nhắc', 'nhở', 'tạo', 'đặt', 'em', 'anh', 'tôi', 'mình', 'ơn', 'cài', 'hẹn', 'giờ', 'lịch'
 ]);
 
 import weatherService from './weather.js';
@@ -370,39 +370,90 @@ export class SchedulerService {
   }
 
   /**
-   * Tìm và xóa lịch nhắc theo từ khóa, tên nội dung hoặc ID
-   * Hỗ trợ tìm kiếm thông minh tiếng Việt (cả có dấu và không dấu)
+   * Tìm và xóa lịch nhắc theo từ khóa, tên nội dung, mốc giờ hoặc ID
+   * Hỗ trợ tìm kiếm thông minh tiếng Việt (cả có dấu, không dấu và theo mốc thời gian)
    */
   async removeMatchingReminders(searchQuery, targetThreadId = null) {
     const threadId = targetThreadId || this.zaloLive?.ownerThreadId || '4150026493728653560';
     let removedCount = 0;
     const removedTitles = [];
-    const query = (searchQuery || '').trim();
+    let query = (searchQuery || '').trim();
 
-    if (!query || /^(?:all|tatca|tat\s*ca|toanbo|toan\s*bo|het|toàn\s*bộ|tất\s*cả)$/i.test(query)) {
+    // Làm sạch các từ đệm mở đầu câu lệnh xóa
+    query = query.replace(/^(?:diana\s+|em\s+|hãy\s+|làm\s*ơn\s+)?(?:xóa|hủy|bỏ|tắt|dẹp)\s+(?:lịch\s+nhắc\s+nhở|lịch\s+nhắc|nhắc\s+nhở|lịch|nhắc|hẹn\s+giờ|báo\s*thức)?\s*/i, '').trim();
+
+    if (!query || /^(?:all|tatca|tat\s*ca|toanbo|toan\s*bo|het|toàn\s*bộ|tất\s*cả|luôn)$/i.test(query)) {
       return await this.clearAll(threadId);
     }
 
     const normalize = (str) => (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-    const cleanQuery = normalize(query.replace(/^(?:lịch\s*nhắc|lịch|nhắc\s*nhở|nhắc|hẹn\s*giờ|báo\s*thức|việc)\s*/i, ''));
+    const cleanQuery = normalize(query);
 
-    const isMatch = (title, id, zaloReminderId) => {
-      if (!title && !id && !zaloReminderId) return false;
+    // Bóc tách mốc giờ nếu câu truy vấn chứa giờ (ví dụ: "20h", "20:00", "20h tối nay", "8h sáng", "17h30")
+    let targetHour = null;
+    let targetMin = null;
+    const timeMatch = query.match(/(?:(?:lúc|vào\s+lúc)\s+)?(\d{1,2})(?:[h:p](\d{1,2})?)?\s*(sáng|trưa|chiều|tối|đêm|am|pm)?/i);
+    if (timeMatch && (timeMatch[0].includes('h') || timeMatch[0].includes(':') || timeMatch[0].includes('p') || timeMatch[3])) {
+      let h = parseInt(timeMatch[1], 10);
+      let m = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+      const period = timeMatch[3] ? timeMatch[3].toLowerCase() : '';
+      if ((period === 'tối' || period === 'chiều' || period === 'đêm' || period === 'pm' || cleanQuery.includes('toi') || cleanQuery.includes('chieu')) && h < 12) {
+        h += 12;
+      } else if ((period === 'sáng' || period === 'am') && h === 12) {
+        h = 0;
+      }
+      if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+        targetHour = h;
+        targetMin = m;
+      }
+    }
+
+    const isMatch = (title, id, zaloReminderId, timeStr, startTime) => {
+      // 1. Khớp theo ID
       if (id && (id === query || id.endsWith(query))) return true;
       if (zaloReminderId && String(zaloReminderId) === query) return true;
+
+      // 2. Khớp theo MỐC THỜI GIAN (nếu câu xóa nhắc đến giờ như "20h", "20h tối nay", "8h sáng"...)
+      if (targetHour !== null) {
+        if (timeStr) {
+          const [th, tm] = timeStr.split(':').map(Number);
+          if (th === targetHour && (targetMin === null || targetMin === 0 || tm === targetMin)) {
+            return true;
+          }
+        }
+        if (startTime) {
+          const d = new Date(startTime);
+          const vnH = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour: 'numeric', hour12: false }).format(d), 10);
+          const vnM = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', minute: 'numeric' }).format(d), 10);
+          if (vnH === targetHour && (targetMin === null || targetMin === 0 || vnM === targetMin)) {
+            return true;
+          }
+        }
+      }
+
+      // 3. Khớp theo TIÊU ĐỀ
       const normTitle = normalize(title);
-      if (cleanQuery && (normTitle.includes(cleanQuery) || cleanQuery.includes(normTitle))) return true;
-      // Đặc biệt cho từ khóa chấm công
+      // Lấy từ khóa nội dung (bỏ các từ chỉ thời gian như 20h, tối nay...)
+      const titleKeyword = cleanQuery.replace(/\b\d{1,2}[hp:]\d{0,2}\b|\b(sang|trua|chieu|toi|dem|hom nay|nay|mai)\b/gi, '').trim();
+      if (titleKeyword && (normTitle.includes(titleKeyword) || titleKeyword.includes(normTitle))) {
+        return true;
+      }
+      if (cleanQuery && (normTitle.includes(cleanQuery) || cleanQuery.includes(normTitle))) {
+        return true;
+      }
+
+      // 4. Đặc biệt cho chấm công
       if (cleanQuery.includes('cham cong') || cleanQuery.includes('cham') || cleanQuery.includes('cong')) {
         if (/chấm\s*công|cham\s*cong|attendance/i.test(title || '')) return true;
       }
+
       return false;
     };
 
     // 1. Dọn dẹp trong danh sách reminders cục bộ
     const remainingReminders = [];
     for (const rem of this.reminders) {
-      if (isMatch(rem.title, rem.id, rem.zaloReminderId)) {
+      if (isMatch(rem.title, rem.id, rem.zaloReminderId, rem.timeStr, rem.targetTimestamp)) {
         rem.status = 'cancelled';
         if (this.cronJobs.has(rem.id)) {
           try { this.cronJobs.get(rem.id).stop(); } catch (_) {}
@@ -434,7 +485,7 @@ export class SchedulerService {
           for (const item of nativeReminders) {
             const rawTitle = item.params?.title || item.title || '';
             const reminderId = item.reminderId || item.id;
-            if (reminderId && isMatch(rawTitle, null, String(reminderId))) {
+            if (reminderId && isMatch(rawTitle, null, String(reminderId), null, item.startTime)) {
               try {
                 await this.zaloLive.api.removeReminder(String(reminderId), threadId, 0);
                 console.log(chalk.green(`🗑️ [Scheduler] Đã xóa Zalo Native Reminder: [ID ${reminderId}] "${rawTitle}"`));
@@ -458,151 +509,6 @@ export class SchedulerService {
     };
   }
 
-  /**
-   * Hủy và xóa hoàn toàn mọi lịch nhắc chấm công (cả local reminders và Zalo Native Reminders)
-   */
-  async removeAttendanceReminders(targetThreadId = null) {
-    const threadId = targetThreadId || this.zaloLive?.ownerThreadId || '4150026493728653560';
-    let removedCount = 0;
-
-    // 1. Dọn dẹp trong danh sách reminders cục bộ
-    const remainingReminders = [];
-    for (const rem of this.reminders) {
-      const isAttendanceTitle = /chấm\s*công|cham\s*cong|attendance/i.test(rem.title || '');
-      const isAttendanceTime = (rem.timeStr === '08:00' || rem.timeStr === '8:00' || rem.timeStr === '17:30') && 
-                               /công|chấm|cham|cong/i.test(rem.title || '');
-
-      if (isAttendanceTitle || isAttendanceTime) {
-        rem.status = 'cancelled';
-        if (this.cronJobs.has(rem.id)) {
-          try { this.cronJobs.get(rem.id).stop(); } catch (_) {}
-          this.cronJobs.delete(rem.id);
-        }
-        if (this.timeouts.has(rem.id)) {
-          clearTimeout(this.timeouts.get(rem.id));
-          this.timeouts.delete(rem.id);
-        }
-        if (rem.zaloReminderId && this.zaloLive?.api?.removeReminder) {
-          try {
-            await this.zaloLive.api.removeReminder(rem.zaloReminderId, rem.threadId || threadId, 0);
-          } catch (_) {}
-        }
-        removedCount++;
-      } else {
-        remainingReminders.push(rem);
-      }
-    }
-    this.reminders = remainingReminders;
-    this.saveReminders();
-
-    // 2. Dọn dẹp trực tiếp trên Zalo Native Reminders thông qua Zalo Live API
-    if (this.zaloLive?.api?.getListReminder && this.zaloLive?.api?.removeReminder) {
-      try {
-        console.log(chalk.cyan('🔍 [Scheduler] Đang quét Zalo Native Reminders để gỡ nhắc chấm công...'));
-        const nativeReminders = await this.zaloLive.api.getListReminder({ page: 1, count: 50 }, threadId, 0);
-        if (Array.isArray(nativeReminders)) {
-          for (const item of nativeReminders) {
-            const rawTitle = item.params?.title || item.title || '';
-            const reminderId = item.reminderId || item.id;
-            let isAttendance = /chấm\s*công|cham\s*cong|attendance/i.test(rawTitle);
-
-            // Kiểm tra mốc giờ theo múi giờ Việt Nam (8h sáng hoặc 17h30 chiều)
-            if (!isAttendance && item.startTime) {
-              const d = new Date(item.startTime);
-              const vnHour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour: 'numeric', hour12: false }).format(d), 10);
-              const vnMin = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', minute: 'numeric' }).format(d), 10);
-              if ((vnHour === 8 && vnMin === 0) || (vnHour === 17 && vnMin === 30)) {
-                if (/công|chấm|cham|cong/i.test(rawTitle)) {
-                  isAttendance = true;
-                }
-              }
-            }
-
-            if (isAttendance && reminderId) {
-              try {
-                await this.zaloLive.api.removeReminder(String(reminderId), threadId, 0);
-                console.log(chalk.green(`🗑️ [Scheduler] Đã xóa Zalo Native Reminder chấm công: [ID ${reminderId}] "${rawTitle}"`));
-                removedCount++;
-              } catch (delErr) {
-                console.warn(chalk.yellow(`⚠️ Không thể xóa native reminder [${reminderId}]:`), delErr.message);
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.warn(chalk.yellow('⚠️ Lỗi khi quét getListReminder từ Zalo:'), err.message);
-      }
-    }
-
-    console.log(chalk.green(`✅ [Scheduler] Đã hoàn tất gỡ bỏ nhắc chấm công (${removedCount} lịch đã xóa).`));
-    return { success: true, removedCount };
-  }
-
-  /**
-   * Format danh sách lịch hẹn đẹp mắt (đồng bộ cả Local và Zalo Native)
-   */
-  async formatRemindersList(targetThreadId = null) {
-    const threadId = targetThreadId || this.zaloLive?.ownerThreadId || '4150026493728653560';
-    const active = this.getActiveReminders();
-    
-    // Quét thêm danh sách từ Zalo Native
-    let nativeList = [];
-    if (this.zaloLive?.api?.getListReminder) {
-      try {
-        const res = await this.zaloLive.api.getListReminder({ page: 1, count: 50 }, threadId, 0);
-        if (Array.isArray(res)) {
-          nativeList = res;
-        }
-      } catch (_) {}
-    }
-
-    const combined = [];
-    const seenZaloIds = new Set();
-
-    for (const r of active) {
-      combined.push({
-        id: r.id,
-        zaloId: r.zaloReminderId,
-        title: r.title,
-        timeStr: r.timeStr,
-        type: r.type === 'daily' ? '🔁 Mỗi ngày' : '⏳ Một lần'
-      });
-      if (r.zaloReminderId) seenZaloIds.add(String(r.zaloReminderId));
-    }
-
-    for (const item of nativeList) {
-      const zId = String(item.reminderId || item.id || '');
-      if (zId && !seenZaloIds.has(zId)) {
-        let timeStr = 'Đã đặt';
-        if (item.startTime) {
-          const d = new Date(item.startTime);
-          const hh = String(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }).format(d)).padStart(2, '0');
-          const mm = String(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', minute: '2-digit' }).format(d)).padStart(2, '0');
-          timeStr = `${hh}:${mm}`;
-        }
-        combined.push({
-          id: zId,
-          zaloId: zId,
-          title: item.params?.title || item.title || 'Lịch Zalo',
-          timeStr: timeStr,
-          type: item.repeat === 1 ? '🔁 Mỗi ngày' : '⏳ Một lần'
-        });
-        seenZaloIds.add(zId);
-      }
-    }
-
-    if (combined.length === 0) {
-      return `⏰ Hiện tại anh Tiến chưa có lịch hẹn giờ nào ạ.\n👉 Anh có thể nhắn: "6h tối nhắc anh làm đồ án" hoặc "mỗi ngày nhắc anh uống nước lúc 9h sáng và 3h chiều" nhé! ✨`;
-    }
-
-    let msg = `⏰ DANH SÁCH LỊCH HẸN GIỜ CỦA ANH TIẾN (${combined.length} lịch):\n`;
-    combined.forEach((r, idx) => {
-      msg += `\n${idx + 1}. [${r.type}] Lúc ${r.timeStr}\n   📝 Nội dung: ${r.title}\n   🆔 Lệnh xóa: /xoalich ${r.id}`;
-    });
-
-    msg += `\n\n💡 Để xóa: Gõ /xoalich <Mã_Lịch> hoặc nhắn "Diana xóa lịch [tên]" hoặc "Diana xóa hết lịch nhắc"!`;
-    return msg.trim();
-  }
 
   /**
    * Format tin nhắn xác nhận đã tạo lịch thành công
@@ -748,18 +654,28 @@ export class SchedulerService {
 
     // 5. Bóc tách tiêu đề/nội dung cần nhắc
     let titleRaw = text;
-    titleRaw = titleRaw.replace(/^(diana|em ơi|alo|bot ơi|ơi|hãy|nhớ|làm ơn)\s*/i, '');
-    titleRaw = titleRaw.replace(/^.*?\b(nhớ nhắc anh|nhớ nhắc em|nhớ nhắc tôi|nhớ nhắc|nhắc anh|nhắc em|nhắc tôi|nhắc giúp|nhắc)\s*/i, '');
+    // Làm sạch từ mở đầu: "em tạo nhắc nhở...", "Diana nhắc anh...", "đặt lịch nhắc..."
+    titleRaw = titleRaw.replace(/^(?:diana|em\s*ơi|alo|bot\s*ơi|ơi|hãy|làm\s*ơn)?\s*(?:em\s+)?(?:tạo|đặt|cài|lập|hẹn|thêm)?\s*(?:lịch\s+nhắc\s+nhở|lịch\s+nhắc|nhắc\s+nhở|báo\s*thức|nhắc\s*anh|nhắc\s*em|nhắc\s*tôi|nhắc\s*giúp|nhớ\s*nhắc|hẹn\s*giờ|lịch|nhắc)\s*/i, '');
+    titleRaw = titleRaw.replace(/^.*?\b(?:tạo|đặt|cài|hẹn)\s+(?:lịch\s+nhắc|nhắc\s+nhở|báo\s+thức|lịch|giờ)\s*/i, '');
 
     for (const occ of timeOccurrences) {
       titleRaw = titleRaw.replace(occ, ' ');
     }
+    // Bỏ các từ thời gian phụ như "tối nay", "sáng nay", "chiều nay", "hôm nay", "ngày mai"
+    titleRaw = titleRaw.replace(/\b(?:sáng|trưa|chiều|tối|đêm)?\s*(?:hôm\s+nay|nay|mai|ngày\s+mai)\b/gi, ' ');
 
     const words = titleRaw.split(/[,\.\?!;:\s]+/).filter(w => w.trim().length > 0);
     while (words.length > 0 && STOP_WORDS_SET.has(words[0].toLowerCase())) {
       words.shift();
     }
     while (words.length > 0 && STOP_WORDS_SET.has(words[words.length - 1].toLowerCase())) {
+      const lastWord = words[words.length - 1].toLowerCase();
+      if (words.length > 1) {
+        const prevWord = words[words.length - 2].toLowerCase();
+        if ((lastWord === 'tối' || lastWord === 'sáng' || lastWord === 'trưa') && (prevWord === 'ăn' || prevWord === 'bữa' || prevWord === 'buổi')) {
+          break;
+        }
+      }
       words.pop();
     }
 
