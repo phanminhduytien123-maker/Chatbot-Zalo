@@ -20,6 +20,7 @@ import json
 import signal
 import asyncio
 import threading
+import queue
 import subprocess
 import webbrowser
 import winsound
@@ -60,10 +61,21 @@ CACHE_DIR = os.path.join(PROJECT_ROOT, 'data', 'wake_cache')
 LOCAL_VOICE_API = 'http://localhost:3000/api/voice'
 CLOUD_VOICE_API = 'https://diana-h73u.onrender.com/api/voice'
 
+# Hàng đợi âm thanh đa luồng để ghi âm liên tục 100%, không bao giờ mất tiếng khi chờ mạng STT
+AUDIO_QUEUE = queue.Queue(maxsize=15)
+IS_SPEAKING = False
+
 # Regex nhận diện từ khóa đánh thức (Wake Words)
-# Mở rộng các biến thể phát âm thực tế mà Google STT nhận diện được từ giọng nói tự nhiên
+# Mở rộng TOÀN BỘ các biến thể phát âm thực tế mà Google STT nhận diện được từ giọng nói tự nhiên
 WAKE_REGEX = re.compile(
-    r'\b(?:diana\s*ơi|ơi\s*diana|hey\s*diana|alo\s*diana|ê\s*diana|chào\s*diana|điana\s*ơi|di\s*a\s*na\s*ơi|đi\s*a\s*na\s*ơi|di\s*an\s*na|đi\s*an\s*na|bé\s*na\s*ơi|bena\s*ơi|đa\s*na\s*ơi|đen\s*ơi|đan\s*ơi|đăng\s*ơi|na\s*ơi|dian|deana|diana|điana)\b',
+    r'\b(?:'
+    r'diana\s*ơi|ơi\s*diana|hey\s*diana|alo\s*diana|ê\s*diana|chào\s*diana|điana\s*ơi|di\s*a\s*na\s*ơi|đi\s*a\s*na\s*ơi|di\s*an\s*na|đi\s*an\s*na|'
+    r'dina\s*ơi|ơi\s*dina|hey\s*dina|alo\s*dina|đina\s*ơi|di\s*na\s*ơi|đi\s*na\s*ơi|deana\s*ơi|dyna\s*ơi|'
+    r'bé\s*na\s*ơi|bena\s*ơi|na\s*ơi|ơi\s*bé\s*na|ơi\s*na|'
+    r'đa\s*na\s*ơi|da\s*na\s*ơi|dana\s*ơi|'
+    r'đen\s*ơi|đan\s*ơi|đăng\s*ơi|thứ\s*ba\s*ơi|'
+    r'diana|điana|dina|đina|di\s*a\s*na|đi\s*a\s*na|di\s*na|đi\s*na|deana|deanna|dian|bé\s*na|bena'
+    r')\b',
     re.IGNORECASE | re.UNICODE
 )
 
@@ -150,6 +162,8 @@ def play_cached_voice(name):
 
 def play_audio_file(file_path):
     """Phát file audio MP3/WAV an toàn qua pygame.mixer"""
+    global IS_SPEAKING
+    IS_SPEAKING = True
     try:
         if not pygame.mixer.get_init():
             pygame.mixer.init()
@@ -160,6 +174,9 @@ def play_audio_file(file_path):
         pygame.mixer.music.unload()
     except Exception as e:
         log(f"Lỗi phát audio {file_path}: {e}", 'WARN')
+    finally:
+        time.sleep(0.2)
+        IS_SPEAKING = False
 
 def speak_text(text):
     """Đọc văn bản bằng giọng tiếng Việt Hoài My Neural (Microsoft Edge-TTS)"""
@@ -664,16 +681,38 @@ def execute_voice_command(raw_query):
 # ---------------------------------------------------------------------------
 # VÒNG LẶP LẮNG NGHE TỪ KHÓA NỀN (CONTINUOUS WAKE WORD LOOP)
 # ---------------------------------------------------------------------------
+def audio_capture_worker(recognizer, microphone):
+    """Luồng ghi âm liên tục độc lập: Không bao giờ bị chặn hay gián đoạn bởi mạng STT hay TTS"""
+    global RUNNING
+    with microphone as source:
+        while RUNNING:
+            try:
+                # Ghi âm liên tục mỗi đoạn 3.5 - 4.5 giây
+                audio = recognizer.listen(source, timeout=1.0, phrase_time_limit=4.5)
+                if not IS_SPEAKING:
+                    try:
+                        AUDIO_QUEUE.put_nowait(audio)
+                    except queue.Full:
+                        try:
+                            AUDIO_QUEUE.get_nowait()
+                        except Exception:
+                            pass
+                        AUDIO_QUEUE.put_nowait(audio)
+            except sr.WaitTimeoutError:
+                continue
+            except Exception:
+                time.sleep(0.1)
+
 def wake_listener_loop():
     global RUNNING
     recognizer = sr.Recognizer()
     
     # SIÊU NHẠY: Bắt trọn giọng nói thì thầm, nói nhỏ hoặc ở xa, KHÔNG CẦN NÓI TO
     recognizer.dynamic_energy_threshold = False  # Cố định ngưỡng, tuyệt đối không tự ý tăng làm điếc mic
-    recognizer.energy_threshold = 60            # Ngưỡng 60 RMS siêu nhạy (bắt trọn âm lượng nói bình thường và nói nhỏ)
-    recognizer.pause_threshold = 0.55           # Phản hồi cực nhanh (550ms sau khi dứt câu)
+    recognizer.energy_threshold = 65            # Ngưỡng 65 RMS siêu nhạy (bắt trọn âm lượng nói bình thường và nói nhỏ)
+    recognizer.pause_threshold = 0.5            # Phản hồi cực nhanh (500ms sau khi dứt câu)
     recognizer.phrase_threshold = 0.15          # Bắt ngay cả các từ ngắn như "Ơi", "Na", "Nè"
-    recognizer.non_speaking_duration = 0.35
+    recognizer.non_speaking_duration = 0.3
 
     log("🎤 Đang khởi tạo Microphone...", 'INFO')
     try:
@@ -685,30 +724,37 @@ def wake_listener_loop():
     with microphone as source:
         log("🔄 Đang kiểm tra âm lượng Microphone...", 'INFO')
         recognizer.adjust_for_ambient_noise(source, duration=0.4)
-        # Giữ ngưỡng năng lượng luôn trong vùng siêu nhạy (50 - 75 RMS)
-        recognizer.energy_threshold = min(max(recognizer.energy_threshold, 50), 75)
+        # Giữ ngưỡng năng lượng luôn trong vùng siêu nhạy (50 - 80 RMS)
+        recognizer.energy_threshold = min(max(recognizer.energy_threshold, 50), 80)
         recognizer.dynamic_energy_threshold = False
         log(f"✅ Microphone đã sẵn sàng! (Ngưỡng siêu nhạy: {int(recognizer.energy_threshold)} RMS - Nói nhỏ vẫn nghe rõ)", 'SUCCESS')
 
     log("🌸 DIANA STATION ĐANG CHẠY NGẦM VÀ LẮNG NGHE 'Diana ơi'...", 'SUCCESS')
     broadcast_wake_event('ready', reply='Diana luôn lắng nghe...')
 
+    # Khởi động luồng ghi âm ngầm liên tục 100% (không bao giờ drop tiếng của người dùng)
+    capture_thread = threading.Thread(target=audio_capture_worker, args=(recognizer, microphone), daemon=True)
+    capture_thread.start()
+
     awaiting_command_until = 0
 
     while RUNNING:
         try:
-            with microphone as source:
-                # Lắng nghe âm thanh từ microphone (tối đa mỗi đoạn 6 giây để xử lý tức thì)
-                audio = recognizer.listen(source, timeout=None, phrase_time_limit=6)
+            try:
+                audio = AUDIO_QUEUE.get(timeout=1.0)
+            except queue.Empty:
+                continue
 
-            # Thử nhận diện bằng Google Speech Recognition tiếng Việt
+            if IS_SPEAKING:
+                continue
+
+            # Nhận diện bằng Google Speech Recognition tiếng Việt
             try:
                 text = recognizer.recognize_google(audio, language="vi-VN")
             except sr.UnknownValueError:
                 continue
             except sr.RequestError as e:
-                # Mạng chập chờn
-                time.sleep(1)
+                time.sleep(0.5)
                 continue
 
             clean_text = text.strip()
@@ -718,7 +764,7 @@ def wake_listener_loop():
             wake_match = WAKE_REGEX.search(clean_text)
 
             # -------------------------------------------------------------
-            # TRƯỜNG HỢP 1: PHÁT HIỆN TỪ KHÓA ĐÁNH THỨC "DIANA ƠI"
+            # TRƯỜNG HỢP 1: PHÁT HIỆN TỪ KHÓA ĐÁNH THỨC "DIANA ƠI" / "DINA ƠI"
             # -------------------------------------------------------------
             if wake_match:
                 log(f"✨ [WAKE TRIGGER]: Phát hiện từ khóa '{wake_match.group(0)}'!", 'SUCCESS')
@@ -739,7 +785,7 @@ def wake_listener_loop():
                 else:
                     # Người dùng gọi "Diana ơi" -> Mở phiên chờ lệnh trong 15 giây
                     awaiting_command_until = now + 15.0
-                    log("🌸 Người dùng gọi 'Diana ơi' -> Đang chào 'Dạ em nghe ạ!' (Cửa sổ nhận lệnh 15s mở)...", 'INFO')
+                    log("🌸 Người dùng gọi -> Đang chào 'Dạ em nghe ạ!' (Cửa sổ nhận lệnh 15s mở)...", 'INFO')
                     broadcast_wake_event('listening_for_command', query='Diana ơi', reply='Dạ em nghe ạ!')
                     play_cached_voice('hear_you')
 
@@ -756,7 +802,6 @@ def wake_listener_loop():
                 speak_text(reply)
 
             else:
-                # Không có từ khóa và không trong phiên chờ lệnh -> Bỏ qua
                 continue
 
         except Exception as e:
