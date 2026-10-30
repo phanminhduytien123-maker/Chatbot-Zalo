@@ -343,6 +343,7 @@ def force_foreground_window(hwnd):
     """
     Đưa cửa sổ lên trên cùng màn hình (Topmost Pulse + ALT bypass):
     - Đảm bảo app hiển thị ngay trên màn hình chính, không bị chìm hay ẩn dưới taskbar
+    - Tự động nhận diện và kích hoạt cả các hộp thoại popup con (như Microsoft Office Activation Wizard)
     - Tuyệt đối không dùng AttachThreadInput để tránh xung đột với các game và Anti-Cheat (như Riot Vanguard)
     """
     if not HAS_WIN32 or not hwnd:
@@ -352,27 +353,42 @@ def force_foreground_window(hwnd):
         if not user32.IsWindow(hwnd):
             return False
 
-        # 1. Khôi phục nếu đang thu nhỏ
+        # Kiểm tra xem có hộp thoại modal popup con (như Activation Wizard của Office) hay không
+        popup_hwnd = user32.GetLastActivePopup(hwnd)
+        target_hwnd = popup_hwnd if (popup_hwnd and user32.IsWindow(popup_hwnd) and popup_hwnd != hwnd) else hwnd
+
+        # 1. Khôi phục kích thước và hiển thị cửa sổ chính
         if user32.IsIconic(hwnd):
             user32.ShowWindow(hwnd, win32con.SW_RESTORE)
-        else:
-            user32.ShowWindow(hwnd, win32con.SW_SHOW)
+        user32.ShowWindow(hwnd, win32con.SW_SHOW)
 
-        # 2. Xung Topmost: Tạm thời đưa lên TOPMOST rồi trả về NOTOPMOST
-        # Buộc Desktop Window Manager (DWM) của Windows 11 đưa cửa sổ lên trên cùng
+        # 2. Khôi phục hiển thị popup con nếu có
+        if target_hwnd != hwnd:
+            if user32.IsIconic(target_hwnd):
+                user32.ShowWindow(target_hwnd, win32con.SW_RESTORE)
+            user32.ShowWindow(target_hwnd, win32con.SW_SHOW)
+
+        # 3. Xung Topmost: Tạm thời đưa lên TOPMOST rồi trả về NOTOPMOST
         HWND_TOPMOST = -1
         HWND_NOTOPMOST = -2
-        SWP_NOMOVE = 0x0002
-        SWP_NOSIZE = 0x0001
-        SWP_SHOWWINDOW = 0x0040
-        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
-        user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        flags = win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW
+        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+        user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
 
-        # 3. Kích hoạt quyền ưu tiên Foreground bằng ALT key bypass
+        if target_hwnd != hwnd:
+            user32.SetWindowPos(target_hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+            user32.SetWindowPos(target_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+
+        # 4. Kích hoạt quyền ưu tiên Foreground bằng ALT key bypass
         win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
-        user32.SetForegroundWindow(hwnd)
         user32.BringWindowToTop(hwnd)
-        user32.SwitchToThisWindow(hwnd, True)
+        if target_hwnd != hwnd:
+            user32.BringWindowToTop(target_hwnd)
+            user32.SetForegroundWindow(target_hwnd)
+            user32.SwitchToThisWindow(target_hwnd, True)
+        else:
+            user32.SetForegroundWindow(hwnd)
+            user32.SwitchToThisWindow(hwnd, True)
         win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
         return True
     except Exception as e:
@@ -407,6 +423,10 @@ def restore_and_focus_window(title_kw):
             if 'antigravity' in t_lower or 'zalo bot' in t_lower:
                 return True
 
+            # Bỏ qua màn hình splash loading
+            if 'splash' in c_lower or 'msosplash' in c_lower:
+                return True
+
             matched = False
             if kw == 'zalo':
                 if 'zalo' in t_lower and 'zalocap' not in t_lower:
@@ -418,13 +438,13 @@ def restore_and_focus_window(title_kw):
                 if 'bambu' in t_lower or 'bambu' in c_lower:
                     matched = True
             elif kw == 'word':
-                if 'word' in t_lower or 'winword' in t_lower or 'opusapp' in c_lower:
+                if 'opusapp' in c_lower or ('word' in t_lower and 'diana' not in t_lower):
                     matched = True
             elif kw == 'excel':
-                if 'excel' in t_lower or 'xlmain' in c_lower or 'xldesk' in c_lower:
+                if 'xlmain' in c_lower or 'xldesk' in c_lower or ('excel' in t_lower and 'diana' not in t_lower):
                     matched = True
             elif kw == 'powerpoint':
-                if 'powerpoint' in t_lower or 'pptframeclass' in c_lower or 'pp9frameclass' in c_lower:
+                if 'pptframeclass' in c_lower or 'pp9frameclass' in c_lower or 'powerpoint' in t_lower:
                     matched = True
             elif kw in ['league of legends', 'lol', 'riot']:
                 if 'league of legends' in t_lower or 'riot client' in t_lower or c_lower == 'rclient':
@@ -580,14 +600,14 @@ def launch_or_focus_app(app_name):
     if any(k in norm for k in ['chrome', 'trinh duyet', 'google chrome', 'web', 'coc coc']):
         if restore_and_focus_window('Chrome'):
             return "Dạ em đã đưa trình duyệt Chrome lên màn hình cho anh rồi ạ!"
-        chrome_paths = [
-            r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-            r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
-            r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Google Chrome.lnk',
-            r'C:\Users\Public\Desktop\Google Chrome.lnk'
-        ]
-        target = next((p for p in chrome_paths if os.path.exists(p)), 'chrome.exe')
-        launch_app_native(target, "https://www.google.com")
+        chrome_lnk = r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Google Chrome.lnk'
+        chrome_exe = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
+        if os.path.exists(chrome_lnk):
+            launch_app_native(chrome_lnk, "https://www.google.com")
+        elif os.path.exists(chrome_exe):
+            launch_app_native(chrome_exe, "https://www.google.com")
+        else:
+            launch_app_native('chrome.exe', "https://www.google.com")
         wait_and_focus_window('Chrome', max_wait=3.0)
         return "Dạ em đã mở trình duyệt Chrome cho anh rồi ạ!"
 
@@ -616,37 +636,44 @@ def launch_or_focus_app(app_name):
     if 'word' in norm:
         if restore_and_focus_window('Word'):
             return "Dạ em đã đưa Microsoft Word lên màn hình cho anh rồi ạ!"
-        word_paths = [
-            r'C:\Program Files\Microsoft Office\Office16\WINWORD.EXE',
-            r'C:\Program Files (x86)\Microsoft Office\Office16\WINWORD.EXE'
-        ]
-        target = next((p for p in word_paths if os.path.exists(p)), 'winword.exe')
-        launch_app_native(target, "")
-        wait_and_focus_window('Word', max_wait=3.0)
+        word_exe = r'C:\Program Files\Microsoft Office\Office16\WINWORD.EXE'
+        word_lnk = r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Word 2016.lnk'
+        # Dùng tham số /w để chắc chắn Word mở ra một cửa sổ văn bản Document1 hoàn chỉnh ngay trên Desktop
+        if os.path.exists(word_exe):
+            launch_app_native(word_exe, "/w")
+        elif os.path.exists(word_lnk):
+            launch_app_native(word_lnk, "")
+        else:
+            launch_app_native('winword.exe', "/w")
+        wait_and_focus_window('Word', max_wait=3.5)
         return "Dạ em đã mở Microsoft Word cho anh rồi ạ!"
 
     if 'excel' in norm:
         if restore_and_focus_window('Excel'):
             return "Dạ em đã đưa Microsoft Excel lên màn hình cho anh rồi ạ!"
-        excel_paths = [
-            r'C:\Program Files\Microsoft Office\Office16\EXCEL.EXE',
-            r'C:\Program Files (x86)\Microsoft Office\Office16\EXCEL.EXE'
-        ]
-        target = next((p for p in excel_paths if os.path.exists(p)), 'excel.exe')
-        launch_app_native(target, "")
-        wait_and_focus_window('Excel', max_wait=3.0)
+        excel_lnk = r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Excel 2016.lnk'
+        excel_exe = r'C:\Program Files\Microsoft Office\Office16\EXCEL.EXE'
+        if os.path.exists(excel_lnk):
+            launch_app_native(excel_lnk, "")
+        elif os.path.exists(excel_exe):
+            launch_app_native(excel_exe, "")
+        else:
+            launch_app_native('excel.exe', "")
+        wait_and_focus_window('Excel', max_wait=3.5)
         return "Dạ em đã mở Microsoft Excel cho anh rồi ạ!"
 
     if 'powerpoint' in norm or 'ppt' in norm:
         if restore_and_focus_window('PowerPoint'):
             return "Dạ em đã đưa Microsoft PowerPoint lên màn hình cho anh rồi ạ!"
-        ppt_paths = [
-            r'C:\Program Files\Microsoft Office\Office16\POWERPNT.EXE',
-            r'C:\Program Files (x86)\Microsoft Office\Office16\POWERPNT.EXE'
-        ]
-        target = next((p for p in ppt_paths if os.path.exists(p)), 'powerpnt.exe')
-        launch_app_native(target, "")
-        wait_and_focus_window('PowerPoint', max_wait=3.0)
+        ppt_lnk = r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\PowerPoint 2016.lnk'
+        ppt_exe = r'C:\Program Files\Microsoft Office\Office16\POWERPNT.EXE'
+        if os.path.exists(ppt_lnk):
+            launch_app_native(ppt_lnk, "")
+        elif os.path.exists(ppt_exe):
+            launch_app_native(ppt_exe, "")
+        else:
+            launch_app_native('powerpnt.exe', "")
+        wait_and_focus_window('PowerPoint', max_wait=3.5)
         return "Dạ em đã mở Microsoft PowerPoint cho anh rồi ạ!"
 
     # 7. Xử lý Máy tính (Calc) & Notepad
@@ -694,9 +721,9 @@ def execute_voice_command(raw_query):
     log(f"🎤 [Thực thi lệnh]: '{query}'", 'INFO')
     play_siri_ready()
 
-    # Chuẩn hóa loại bỏ các từ xưng hô và trợ từ đệm tiếng Việt (VD: "em mở...", "...lên cho anh đi")
+    # Chuẩn hóa loại bỏ các từ xưng hô và trợ từ đệm tiếng Việt (VD: "em mở...", "...lên cho anh đi", "...cho anh được không")
     clean_cmd = re.sub(r'^(?:em\s+ơi|ơi\s+em|em|bạn|diana|dina|dana|hãy)\s+', '', query, flags=re.IGNORECASE).strip()
-    clean_cmd = re.sub(r'\s+(?:lên\s+)?(?:cho\s+anh|hộ\s+anh|giúp\s+anh|giúp\s+em|đi|với|nhe|nhé|nha|ạ)$', '', clean_cmd, flags=re.IGNORECASE).strip()
+    clean_cmd = re.sub(r'(?:\s+(?:lên|cho\s+anh|hộ\s+anh|giúp\s+anh|giúp\s+em|đi|với|nhe|nhé|nha|ạ|được\s+không|được\s+ko|đc\s+ko|được\s+chăng|nào))+$', '', clean_cmd, flags=re.IGNORECASE).strip()
     q_lower = clean_cmd.lower()
 
     # 0. Bắt trực tiếp tên app / phần mềm mà người dùng yêu cầu mở
