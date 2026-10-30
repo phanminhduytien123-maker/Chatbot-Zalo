@@ -204,7 +204,13 @@ def clean_for_speech(text):
     return re.sub(r'\s+', ' ', t).strip()
 
 def speak_text(text):
-    """Đọc văn bản bằng giọng tiếng Việt Hoài My Neural (Microsoft Edge-TTS)"""
+    """
+    Đọc văn bản bằng giọng tiếng Việt Hoài My Neural (Microsoft Edge-TTS):
+    - Ưu tiên 1: Tra cứu MD5 hash trong data/wake_cache/h_{md5}.mp3 -> Phát ngay 0ms, 100% chuẩn tiếng Việt Hoài My
+    - Ưu tiên 2: Tạo giọng nói động mới qua [sys.executable, '-m', 'edge_tts', '--voice', 'vi-VN-HoaiMyNeural', ...]
+    - Ưu tiên 3: Nếu mất mạng / lỗi Edge-TTS -> Phát general_ack.mp3 ("Dạ em đã nhận được lệnh từ anh Tiến rồi ạ!")
+    - TUYỆT ĐỐI KHÔNG dùng Windows SAPI SpVoice (để không bao giờ bị biến thành giọng nam tiếng Anh Microsoft David)
+    """
     if not text or not text.strip():
         return
 
@@ -212,30 +218,66 @@ def speak_text(text):
     if not clean_text:
         return
 
-    temp_path = os.path.join(CACHE_DIR, f"temp_{int(time.time() * 1000)}.mp3")
-    try:
-        async def _speak():
-            comm = edge_tts.Communicate(clean_text, 'vi-VN-HoaiMyNeural', rate='+10%')
-            await comm.save(temp_path)
-        asyncio.run(_speak())
+    ensure_cache_dir()
+    import hashlib
+    text_hash = hashlib.md5(clean_text.encode('utf-8')).hexdigest()
+    cached_hash_file = os.path.join(CACHE_DIR, f"h_{text_hash}.mp3")
 
-        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 500:
-            play_audio_file(temp_path)
-    except Exception as e:
-        log(f"Lỗi đọc TTS Edge: {e}. Thử SAPI fallback...", 'WARN')
-        # Fallback Windows SAPI
+    # 1. Phát ngay lập tức 0ms nếu câu thoại đã có sẵn trong Cache
+    if os.path.exists(cached_hash_file) and os.path.getsize(cached_hash_file) > 1000:
+        log(f"⚡ [Voice Cache Hit]: '{clean_text[:35]}...' -> {os.path.basename(cached_hash_file)}", 'INFO')
+        play_audio_file(cached_hash_file)
+        return
+
+    # 2. Tạo giọng nói động (kết hợp cả in-process async và subprocess độc lập để chắc chắn 100%)
+    temp_txt = os.path.join(CACHE_DIR, f"_speak_{int(time.time() * 1000)}.txt")
+    temp_mp3 = os.path.join(CACHE_DIR, f"_speak_{int(time.time() * 1000)}.mp3")
+    generated = False
+    try:
+        # Cách 1: Thử trực tiếp edge_tts in-process
         try:
-            import win32com.client
-            speaker = win32com.client.Dispatch("SAPI.SpVoice")
-            speaker.Speak(clean_text)
+            async def _dyn_tts():
+                comm = edge_tts.Communicate(clean_text, 'vi-VN-HoaiMyNeural', rate='+10%')
+                await comm.save(temp_mp3)
+            asyncio.run(_dyn_tts())
+            if os.path.exists(temp_mp3) and os.path.getsize(temp_mp3) > 1000:
+                generated = True
         except Exception:
             pass
-    finally:
-        if os.path.exists(temp_path):
+
+        # Cách 2: Nếu Cách 1 gặp lỗi Proactor, gọi qua subprocess python độc lập
+        if not generated:
             try:
-                os.remove(temp_path)
+                with open(temp_txt, 'w', encoding='utf-8') as tf:
+                    tf.write(clean_text)
+                cmd = [sys.executable, '-m', 'edge_tts', '--voice', 'vi-VN-HoaiMyNeural', '--file', temp_txt, '--write-media', temp_mp3]
+                res = subprocess.run(cmd, capture_output=True, timeout=12, creationflags=0x08000000)
+                if res.returncode == 0 and os.path.exists(temp_mp3) and os.path.getsize(temp_mp3) > 1000:
+                    generated = True
             except Exception:
                 pass
+
+        if generated:
+            try:
+                import shutil
+                shutil.copyfile(temp_mp3, cached_hash_file)
+            except Exception:
+                pass
+            play_audio_file(temp_mp3)
+            return
+    except Exception as e:
+        log(f"Ngoại lệ khi gọi TTS: {e}", 'WARN')
+    finally:
+        for tmp_f in [temp_txt, temp_mp3]:
+            if os.path.exists(tmp_f):
+                try:
+                    os.remove(tmp_f)
+                except Exception:
+                    pass
+
+    # 3. Fallback AN TOÀN TUYỆT ĐỐI: Giọng tiếng Việt Hoài My chuẩn đã có sẵn
+    log("⚠️ Không thể tạo dynamic TTS, phát câu phản hồi tiếng Việt Hoài My dự phòng general_ack...", 'INFO')
+    play_cached_voice('general_ack')
 
 # ---------------------------------------------------------------------------
 # THÔNG BÁO SỰ KIỆN CHO DIANA STATION & PC AGENT
@@ -274,13 +316,75 @@ def ensure_default_desktop():
     except Exception:
         pass
 
+def disable_efficiency_mode_for_process():
+    """Tắt hoàn toàn chế độ EcoQoS / Efficiency Mode cho tiến trình Diana để không bị Windows bóp nghẽn hoặc ép chạy ngầm"""
+    try:
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetCurrentProcess()
+        # Thiết lập NORMAL_PRIORITY_CLASS (0x00000020)
+        kernel32.SetPriorityClass(handle, 0x00000020)
+        
+        class PROCESS_POWER_THROTTLING_STATE(ctypes.Structure):
+            _fields_ = [
+                ("Version", ctypes.c_ulong),
+                ("ControlMask", ctypes.c_ulong),
+                ("StateMask", ctypes.c_ulong),
+            ]
+        state = PROCESS_POWER_THROTTLING_STATE()
+        state.Version = 1
+        state.ControlMask = 1 # PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+        state.StateMask = 0   # 0 = OFF
+        kernel32.SetProcessInformation(handle, 4, ctypes.byref(state), ctypes.sizeof(state))
+        log("🚀 Đã vô hiệu hóa chế độ Efficiency Mode (EcoQoS) cho tiến trình Diana", 'INFO')
+    except Exception as e:
+        log(f"Không thể chỉnh PowerThrottling: {e}", 'DEBUG')
+
+def force_foreground_window(hwnd):
+    """
+    Đưa cửa sổ lên trên cùng màn hình (Topmost Pulse + ALT bypass):
+    - Đảm bảo app hiển thị ngay trên màn hình chính, không bị chìm hay ẩn dưới taskbar
+    - Tuyệt đối không dùng AttachThreadInput để tránh xung đột với các game và Anti-Cheat (như Riot Vanguard)
+    """
+    if not HAS_WIN32 or not hwnd:
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        if not user32.IsWindow(hwnd):
+            return False
+
+        # 1. Khôi phục nếu đang thu nhỏ
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, win32con.SW_RESTORE)
+        else:
+            user32.ShowWindow(hwnd, win32con.SW_SHOW)
+
+        # 2. Xung Topmost: Tạm thời đưa lên TOPMOST rồi trả về NOTOPMOST
+        # Buộc Desktop Window Manager (DWM) của Windows 11 đưa cửa sổ lên trên cùng
+        HWND_TOPMOST = -1
+        HWND_NOTOPMOST = -2
+        SWP_NOMOVE = 0x0002
+        SWP_NOSIZE = 0x0001
+        SWP_SHOWWINDOW = 0x0040
+        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+
+        # 3. Kích hoạt quyền ưu tiên Foreground bằng ALT key bypass
+        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+        user32.SetForegroundWindow(hwnd)
+        user32.BringWindowToTop(hwnd)
+        user32.SwitchToThisWindow(hwnd, True)
+        win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+        return True
+    except Exception as e:
+        log(f"Lỗi force_foreground_window (HWND {hwnd}): {e}", 'WARN')
+        return False
+
 def restore_and_focus_window(title_kw):
     """
-    Tìm cửa sổ (kể cả đang thu nhỏ xuống taskbar hoặc ẩn trong system tray / Efficiency Mode)
+    Tìm cửa sổ (kể cả đang thu nhỏ xuống taskbar hoặc ẩn trong system tray)
     và kéo bật lên màn hình trước mặt:
-    - Loại bỏ triệt để các tooltip, popup khay hệ thống siêu nhỏ (VD: Zalo 352x82 px)
-    - Luôn chọn cửa sổ chính lớn nhất (w >= 400 và h >= 250, sort area giảm dần)
-    - Sử dụng đồng thời ShowWindow + SwitchToThisWindow + SetForegroundWindow để phá bỏ chế độ tiết kiệm
+    - Nhận diện cả qua Title và Window Class Name (OpusApp cho Word, XLMAIN cho Excel, Chrome_WidgetWin_1 cho Chrome)
+    - Luôn chọn cửa sổ chính lớn nhất
     """
     if not HAS_WIN32:
         return False
@@ -290,6 +394,10 @@ def restore_and_focus_window(title_kw):
         kw = title_kw.lower().strip()
 
         def enum_cb(hwnd, _):
+            if not win32gui.IsWindow(hwnd) or not win32gui.IsWindowVisible(hwnd):
+                if not win32gui.IsIconic(hwnd):
+                    return True
+
             t = win32gui.GetWindowText(hwnd).strip()
             t_lower = t.lower()
             c = win32gui.GetClassName(hwnd).strip()
@@ -309,8 +417,23 @@ def restore_and_focus_window(title_kw):
             elif kw == 'bambu':
                 if 'bambu' in t_lower or 'bambu' in c_lower:
                     matched = True
+            elif kw == 'word':
+                if 'word' in t_lower or 'winword' in t_lower or 'opusapp' in c_lower:
+                    matched = True
+            elif kw == 'excel':
+                if 'excel' in t_lower or 'xlmain' in c_lower or 'xldesk' in c_lower:
+                    matched = True
+            elif kw == 'powerpoint':
+                if 'powerpoint' in t_lower or 'pptframeclass' in c_lower or 'pp9frameclass' in c_lower:
+                    matched = True
             elif kw in ['league of legends', 'lol', 'riot']:
                 if 'league of legends' in t_lower or 'riot client' in t_lower or c_lower == 'rclient':
+                    matched = True
+            elif kw == 'calculator':
+                if 'calculator' in t_lower or 'máy tính' in t_lower or 'calc' in c_lower:
+                    matched = True
+            elif kw == 'notepad':
+                if 'notepad' in t_lower or 'ghi chú' in t_lower:
                     matched = True
             else:
                 if kw in t_lower:
@@ -322,8 +445,7 @@ def restore_and_focus_window(title_kw):
                     w = r[2] - r[0]
                     h = r[3] - r[1]
                     is_iconic = bool(win32gui.IsIconic(hwnd))
-                    # Lấy cửa sổ làm việc thực tế (chấp nhận cửa sổ đang minimized hoặc có kích thước >= 400x250)
-                    if is_iconic or (w >= 400 and h >= 250):
+                    if is_iconic or (w >= 300 and h >= 200):
                         area = (1920 * 1080) if is_iconic else (w * h)
                         candidates.append({
                             'hwnd': hwnd,
@@ -340,43 +462,58 @@ def restore_and_focus_window(title_kw):
 
         win32gui.EnumWindows(enum_cb, None)
         if candidates:
-            # Chọn cửa sổ có diện tích LỚN NHẤT (cửa sổ chính của ứng dụng)
             candidates.sort(key=lambda x: x['area'], reverse=True)
             best = candidates[0]
             best_hwnd = best['hwnd']
-
-            user32 = ctypes.windll.user32
-            # 1. Khôi phục kích thước bình thường và hiển thị
-            user32.ShowWindow(best_hwnd, win32con.SW_RESTORE)
-            user32.ShowWindow(best_hwnd, win32con.SW_SHOWMAXIMIZED)
-
-            # 2. SwitchToThisWindow: Kéo ứng dụng từ background / Efficiency Mode lên màn hình
-            try:
-                user32.SwitchToThisWindow(best_hwnd, True)
-            except Exception:
-                pass
-
-            # 3. Kích hoạt quyền ưu tiên Foreground bằng ALT key bypass + AttachThreadInput
-            try:
-                fg_hwnd = user32.GetForegroundWindow()
-                fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None)
-                cur_thread = win32api.GetCurrentThreadId()
-                if fg_thread and fg_thread != cur_thread:
-                    user32.AttachThreadInput(cur_thread, fg_thread, True)
-                win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
-                user32.SetForegroundWindow(best_hwnd)
-                user32.BringWindowToTop(best_hwnd)
-                win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
-                if fg_thread and fg_thread != cur_thread:
-                    user32.AttachThreadInput(cur_thread, fg_thread, False)
-            except Exception:
-                pass
-
-            log(f"🪟 Đã khôi phục và đưa cửa sổ '{title_kw}' (HWND {best_hwnd}, {best['width']}x{best['height']}) lên trước màn hình!", 'SUCCESS')
-            return True
+            if force_foreground_window(best_hwnd):
+                log(f"🪟 Đã khôi phục và đưa cửa sổ '{title_kw}' (HWND {best_hwnd}, {best['width']}x{best['height']}) lên trước màn hình!", 'SUCCESS')
+                return True
     except Exception as e:
         log(f"Lỗi khôi phục cửa sổ '{title_kw}': {e}", 'WARN')
     return False
+
+def wait_and_focus_window(title_kw, max_wait=3.0, interval=0.35):
+    """Vòng lặp chờ cửa sổ của ứng dụng vừa khởi chạy xuất hiện và kéo bật lên Foreground"""
+    start = time.time()
+    time.sleep(0.3)
+    while time.time() - start < max_wait:
+        if restore_and_focus_window(title_kw):
+            return True
+        time.sleep(interval)
+    return False
+
+def launch_app_native(target_path, args=""):
+    """
+    Khởi chạy ứng dụng trực tiếp thông qua Explorer Shell COM:
+    - Bàn giao tiến trình cho explorer.exe khởi chạy thay vì python chạy ngầm
+    - Vượt qua hoàn toàn chế độ EcoQoS / Efficiency Mode của Windows 11 (không bị dán nhãn lá cây xanh)
+    - Ứng dụng khởi động ở Normal Interactive Priority và bung cửa sổ GUI lên màn hình chính
+    """
+    try:
+        import win32com.client
+        shell = win32com.client.Dispatch("Shell.Application")
+        shell.ShellExecute(target_path, args, "", "open", 1) # 1 = SW_SHOWNORMAL
+        log(f"🚀 [ShellExecute OK]: {target_path} (args: '{args}')", 'SUCCESS')
+        return True
+    except Exception as e:
+        log(f"ShellExecute error with '{target_path}': {e}. Thử os.startfile...", 'WARN')
+        try:
+            if args:
+                os.system(f'start "" "{target_path}" {args}')
+            else:
+                os.startfile(target_path)
+            return True
+        except Exception as e2:
+            log(f"os.startfile error: {e2}. Thử subprocess...", 'WARN')
+            try:
+                cmd = [target_path]
+                if args:
+                    cmd.append(args)
+                subprocess.Popen(cmd)
+                return True
+            except Exception as e3:
+                log(f"subprocess error: {e3}", 'ERROR')
+                return False
 
 def find_installed_shortcut(query):
     """Tìm file shortcut .lnk hoặc .exe trong Desktop và Start Menu"""
@@ -403,36 +540,28 @@ def find_installed_shortcut(query):
 
 def launch_or_focus_app(app_name):
     """
-    Khởi chạy hoặc đưa ứng dụng lên màn hình chính một cách chắc chắn:
+    Khởi chạy hoặc đưa ứng dụng lên màn hình chính:
     1. Kiểm tra nếu app đã mở -> restore và focus ngay lập tức
-    2. Nếu chưa mở -> Dùng explorer.exe / os.startfile để khởi chạy trực tiếp vào Desktop người dùng
-    3. Chờ 1.2s rồi gọi restore_and_focus_window để đưa lên Foreground
+    2. Nếu chưa mở -> Dùng Shell.Application khởi chạy qua Explorer (phá bỏ hoàn toàn Efficiency Mode)
+    3. Chờ app bung window và dùng Topmost Pulse đưa lên trước mặt
     """
     clean_name = app_name.strip()
     norm = remove_accents(clean_name)
     log(f"🚀 [Khởi chạy ứng dụng]: '{clean_name}' (norm: '{norm}')", 'INFO')
 
-    # 1. Xử lý Bambu Studio / Máy in 3D (Đặc biệt xử lý các biến thể STT: album studio, bảo bối studio, bản in studio)
+    # 1. Xử lý Bambu Studio / Máy in 3D
     if any(k in norm for k in ['bambu', 'album studio', 'bao boi studio', 'ban in studio', 'may in', 'in 3d', 'studio']):
         if restore_and_focus_window('Bambu'):
             return "Dạ em đã đưa phần mềm in 3D Bambu Studio lên màn hình cho anh rồi ạ!"
         bambu_paths = [
+            r'D:\BambuStudio\Bambu Studio\bambu-studio.exe',
             r'C:\Users\Public\Desktop\Bambu Studio.lnk',
-            r'D:\BambuStudio\Bambu Studio\bambu-studio.exe'
+            r'C:\Program Files\Bambu Studio\bambu-studio.exe'
         ]
-        for p in bambu_paths:
-            if os.path.exists(p):
-                try:
-                    if p.endswith('.lnk'):
-                        os.startfile(p)
-                    else:
-                        subprocess.Popen([p])
-                    time.sleep(1.5)
-                    restore_and_focus_window('Bambu')
-                    return "Dạ em đã mở phần mềm in 3D Bambu Studio cho anh rồi ạ!"
-                except Exception:
-                    pass
-        return "Dạ em đã mở Bambu Studio cho anh rồi ạ!"
+        target = next((p for p in bambu_paths if os.path.exists(p)), 'bambu-studio.exe')
+        launch_app_native(target, "")
+        wait_and_focus_window('Bambu', max_wait=3.0)
+        return "Dạ em đã mở phần mềm in 3D Bambu Studio cho anh rồi ạ!"
 
     # 2. Xử lý Zalo
     if any(k in norm for k in ['zalo', 'gia lo', 'dalo']):
@@ -442,56 +571,24 @@ def launch_or_focus_app(app_name):
             os.path.expanduser(r'~\Desktop\Zalo.lnk'),
             os.path.expanduser(r'~\AppData\Local\Programs\Zalo\Zalo.exe')
         ]
-        for p in zalo_paths:
-            if os.path.exists(p):
-                try:
-                    if p.endswith('.lnk'):
-                        os.startfile(p)
-                    else:
-                        subprocess.Popen([p])
-                    time.sleep(1.5)
-                    restore_and_focus_window('Zalo')
-                    return "Dạ em đã mở ứng dụng Zalo cho anh rồi ạ!"
-                except Exception:
-                    pass
-        try:
-            os.system('start zalo:')
-            time.sleep(1.5)
-            restore_and_focus_window('Zalo')
-        except Exception:
-            pass
+        target = next((p for p in zalo_paths if os.path.exists(p)), 'zalo.exe')
+        launch_app_native(target, "")
+        wait_and_focus_window('Zalo', max_wait=3.0)
         return "Dạ em đã mở ứng dụng Zalo cho anh rồi ạ!"
 
     # 3. Xử lý Chrome / Trình duyệt web
     if any(k in norm for k in ['chrome', 'trinh duyet', 'google chrome', 'web', 'coc coc']):
         if restore_and_focus_window('Chrome'):
             return "Dạ em đã đưa trình duyệt Chrome lên màn hình cho anh rồi ạ!"
-        chrome_shortcuts = [
-            r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Google Chrome.lnk',
-            r'C:\Users\Public\Desktop\Google Chrome.lnk',
+        chrome_paths = [
             r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-            r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
+            r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+            r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Google Chrome.lnk',
+            r'C:\Users\Public\Desktop\Google Chrome.lnk'
         ]
-        launched = False
-        for p in chrome_shortcuts:
-            if os.path.exists(p):
-                try:
-                    if p.endswith('.lnk'):
-                        os.startfile(p)
-                    else:
-                        subprocess.Popen([p, '--start-maximized', 'https://www.google.com'])
-                    launched = True
-                    break
-                except Exception as e:
-                    log(f"Lỗi khởi chạy Chrome từ {p}: {e}", 'WARN')
-        if not launched:
-            try:
-                subprocess.Popen(['cmd.exe', '/c', 'start', 'chrome', 'https://www.google.com'])
-                launched = True
-            except Exception:
-                pass
-        time.sleep(1.8)
-        restore_and_focus_window('Chrome')
+        target = next((p for p in chrome_paths if os.path.exists(p)), 'chrome.exe')
+        launch_app_native(target, "https://www.google.com")
+        wait_and_focus_window('Chrome', max_wait=3.0)
         return "Dạ em đã mở trình duyệt Chrome cho anh rồi ạ!"
 
     # 4. Xử lý Liên Minh Huyền Thoại / League of Legends / Riot
@@ -502,82 +599,79 @@ def launch_or_focus_app(app_name):
             r'C:\Users\Public\Desktop\Riot Client.lnk',
             r'C:\Riot Games\Riot Client\RiotClientServices.exe'
         ]
-        for p in riot_paths:
-            if os.path.exists(p):
-                try:
-                    if p.endswith('.lnk'):
-                        os.startfile(p)
-                    else:
-                        subprocess.Popen([p])
-                    time.sleep(1.5)
-                    restore_and_focus_window('League of Legends')
-                    return "Dạ em đã mở Liên Minh Huyền Thoại cho anh rồi ạ! Chúc anh leo rank vui vẻ!"
-                except Exception:
-                    pass
+        target = next((p for p in riot_paths if os.path.exists(p)), 'RiotClientServices.exe')
+        launch_app_native(target, "")
+        wait_and_focus_window('League of Legends', max_wait=3.0)
+        return "Dạ em đã mở Liên Minh Huyền Thoại cho anh rồi ạ! Chúc anh leo rank vui vẻ!"
 
     # 5. Xử lý VS Code
     if any(k in norm for k in ['vscode', 'vs code', 'code', 'visual studio code']):
         if restore_and_focus_window('Visual Studio Code'):
             return "Dạ em đã đưa Visual Studio Code lên màn hình cho anh rồi ạ!"
-        try:
-            subprocess.Popen(['code'], shell=True)
-            return "Dạ em đã mở Visual Studio Code để anh làm việc rồi ạ!"
-        except Exception:
-            pass
+        launch_app_native('cmd.exe', '/c code')
+        wait_and_focus_window('Visual Studio Code', max_wait=3.0)
+        return "Dạ em đã mở Visual Studio Code để anh làm việc rồi ạ!"
 
-    # 6. Xử lý Word / Excel / PowerPoint
+    # 6. Xử lý Word / Excel / PowerPoint (Office 16 confirmed paths)
     if 'word' in norm:
         if restore_and_focus_window('Word'):
             return "Dạ em đã đưa Microsoft Word lên màn hình cho anh rồi ạ!"
-        try:
-            subprocess.Popen(['cmd.exe', '/c', 'start', 'winword'], shell=True)
-            return "Dạ em đã mở Microsoft Word cho anh rồi ạ!"
-        except Exception:
-            pass
+        word_paths = [
+            r'C:\Program Files\Microsoft Office\Office16\WINWORD.EXE',
+            r'C:\Program Files (x86)\Microsoft Office\Office16\WINWORD.EXE'
+        ]
+        target = next((p for p in word_paths if os.path.exists(p)), 'winword.exe')
+        launch_app_native(target, "")
+        wait_and_focus_window('Word', max_wait=3.0)
+        return "Dạ em đã mở Microsoft Word cho anh rồi ạ!"
 
     if 'excel' in norm:
         if restore_and_focus_window('Excel'):
             return "Dạ em đã đưa Microsoft Excel lên màn hình cho anh rồi ạ!"
-        try:
-            subprocess.Popen(['cmd.exe', '/c', 'start', 'excel'], shell=True)
-            return "Dạ em đã mở Microsoft Excel cho anh rồi ạ!"
-        except Exception:
-            pass
+        excel_paths = [
+            r'C:\Program Files\Microsoft Office\Office16\EXCEL.EXE',
+            r'C:\Program Files (x86)\Microsoft Office\Office16\EXCEL.EXE'
+        ]
+        target = next((p for p in excel_paths if os.path.exists(p)), 'excel.exe')
+        launch_app_native(target, "")
+        wait_and_focus_window('Excel', max_wait=3.0)
+        return "Dạ em đã mở Microsoft Excel cho anh rồi ạ!"
 
     if 'powerpoint' in norm or 'ppt' in norm:
         if restore_and_focus_window('PowerPoint'):
             return "Dạ em đã đưa Microsoft PowerPoint lên màn hình cho anh rồi ạ!"
-        try:
-            subprocess.Popen(['cmd.exe', '/c', 'start', 'powerpnt'], shell=True)
-            return "Dạ em đã mở Microsoft PowerPoint cho anh rồi ạ!"
-        except Exception:
-            pass
+        ppt_paths = [
+            r'C:\Program Files\Microsoft Office\Office16\POWERPNT.EXE',
+            r'C:\Program Files (x86)\Microsoft Office\Office16\POWERPNT.EXE'
+        ]
+        target = next((p for p in ppt_paths if os.path.exists(p)), 'powerpnt.exe')
+        launch_app_native(target, "")
+        wait_and_focus_window('PowerPoint', max_wait=3.0)
+        return "Dạ em đã mở Microsoft PowerPoint cho anh rồi ạ!"
 
     # 7. Xử lý Máy tính (Calc) & Notepad
     if any(k in norm for k in ['may tinh', 'calculator', 'calc']):
-        restore_and_focus_window('Calculator')
-        try:
-            subprocess.Popen(['calc.exe'])
+        if restore_and_focus_window('Calculator'):
             return "Dạ em đã bật ứng dụng Máy tính Calculator cho anh rồi ạ!"
-        except Exception:
-            pass
+        launch_app_native('calc.exe', '')
+        wait_and_focus_window('Calculator', max_wait=2.0)
+        return "Dạ em đã bật ứng dụng Máy tính Calculator cho anh rồi ạ!"
 
     if any(k in norm for k in ['notepad', 'ghi chu']):
-        restore_and_focus_window('Notepad')
-        try:
-            subprocess.Popen(['notepad.exe'])
+        if restore_and_focus_window('Notepad'):
             return "Dạ em đã mở Notepad cho anh ghi chú rồi ạ!"
-        except Exception:
-            pass
+        launch_app_native('notepad.exe', '')
+        wait_and_focus_window('Notepad', max_wait=2.0)
+        return "Dạ em đã mở Notepad cho anh ghi chú rồi ạ!"
 
     # 8. Thử quét shortcut trong Desktop & Start Menu
     shortcut = find_installed_shortcut(clean_name)
     if shortcut:
         try:
-            os.startfile(shortcut)
+            launch_app_native(shortcut, '')
             return f"Dạ em đã mở {clean_name} cho anh rồi ạ!"
         except Exception as e:
-            log(f"Lỗi startfile {shortcut}: {e}", 'WARN')
+            log(f"Lỗi khởi chạy {shortcut}: {e}", 'WARN')
 
     # 9. Fallback: Gửi tới local PC Agent (WindowsController)
     try:
@@ -951,6 +1045,9 @@ def main():
 
     # Ghi PID
     write_pid()
+
+    # Vô hiệu hóa chế độ tiết kiệm EcoQoS / Efficiency Mode của Windows 11
+    disable_efficiency_mode_for_process()
 
     # Pre-cache các câu prompt phổ biến
     try:
