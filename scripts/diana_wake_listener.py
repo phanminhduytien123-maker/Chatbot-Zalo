@@ -180,12 +180,35 @@ def play_audio_file(file_path):
         time.sleep(0.2)
         IS_SPEAKING = False
 
+def clean_for_speech(text):
+    """
+    Chuẩn hóa văn bản trước khi đọc bằng Microsoft Edge-TTS:
+    - Loại bỏ triệt để markdown (*, _, #, `, ~, >)
+    - Loại bỏ hoàn toàn tất cả emoji unicode (SMP, Dingbats, pictographs, variation selectors)
+      để tránh trường hợp Edge-TTS đọc to tên tiếng Việt của emoji:
+      Ví dụ: 🌐 đọc thành 'Quả địa cầu có đường kinh tuyến' ('đường kim tuyến')
+             ✨ đọc thành 'Ánh sáng lấp lánh' / 'Đường kim tuyến'
+    """
+    if not text:
+        return ""
+    t = re.sub(r'[\*\_#`~>]', '', text)
+    emoji_pattern = re.compile(
+        r'[\U00010000-\U0010ffff]'  # SMP emojis (🌐, 🌸, 🖨️, 💬, 🎮, 🌙, etc.)
+        r'|[\u2600-\u27bf]'          # Dingbats, Miscellaneous Symbols (✨, ⚡, ❄️, etc.)
+        r'|[\u2300-\u23ff]'          # Technical symbols
+        r'|[\u2b50-\u2b55]'          # Stars
+        r'|[\ufe00-\ufe0f]'          # Variation selectors
+        r'|[\u200d]'                 # Zero-width joiner
+    )
+    t = emoji_pattern.sub('', t)
+    return re.sub(r'\s+', ' ', t).strip()
+
 def speak_text(text):
     """Đọc văn bản bằng giọng tiếng Việt Hoài My Neural (Microsoft Edge-TTS)"""
     if not text or not text.strip():
         return
 
-    clean_text = re.sub(r'[\*\_#`~]', '', text).strip()
+    clean_text = clean_for_speech(text)
     if not clean_text:
         return
 
@@ -298,15 +321,18 @@ def restore_and_focus_window(title_kw):
                     r = win32gui.GetWindowRect(hwnd)
                     w = r[2] - r[0]
                     h = r[3] - r[1]
-                    # Chỉ lấy cửa sổ làm việc thực tế (bỏ qua tray popup / bubble nhỏ hơn 400x250)
-                    if w >= 400 and h >= 250:
+                    is_iconic = bool(win32gui.IsIconic(hwnd))
+                    # Lấy cửa sổ làm việc thực tế (chấp nhận cửa sổ đang minimized hoặc có kích thước >= 400x250)
+                    if is_iconic or (w >= 400 and h >= 250):
+                        area = (1920 * 1080) if is_iconic else (w * h)
                         candidates.append({
                             'hwnd': hwnd,
-                            'area': w * h,
+                            'area': area,
                             'width': w,
                             'height': h,
                             'title': t,
-                            'class': c
+                            'class': c,
+                            'is_iconic': is_iconic
                         })
                 except Exception:
                     pass
@@ -320,9 +346,9 @@ def restore_and_focus_window(title_kw):
             best_hwnd = best['hwnd']
 
             user32 = ctypes.windll.user32
-            # 1. Khôi phục kích thước bình thường
+            # 1. Khôi phục kích thước bình thường và hiển thị
             user32.ShowWindow(best_hwnd, win32con.SW_RESTORE)
-            user32.ShowWindow(best_hwnd, win32con.SW_SHOWNORMAL)
+            user32.ShowWindow(best_hwnd, win32con.SW_SHOWMAXIMIZED)
 
             # 2. SwitchToThisWindow: Kéo ứng dụng từ background / Efficiency Mode lên màn hình
             try:
@@ -330,12 +356,19 @@ def restore_and_focus_window(title_kw):
             except Exception:
                 pass
 
-            # 3. Kích hoạt quyền ưu tiên Foreground bằng ALT key bypass
+            # 3. Kích hoạt quyền ưu tiên Foreground bằng ALT key bypass + AttachThreadInput
             try:
+                fg_hwnd = user32.GetForegroundWindow()
+                fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, None)
+                cur_thread = win32api.GetCurrentThreadId()
+                if fg_thread and fg_thread != cur_thread:
+                    user32.AttachThreadInput(cur_thread, fg_thread, True)
                 win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
                 user32.SetForegroundWindow(best_hwnd)
                 user32.BringWindowToTop(best_hwnd)
                 win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+                if fg_thread and fg_thread != cur_thread:
+                    user32.AttachThreadInput(cur_thread, fg_thread, False)
             except Exception:
                 pass
 
@@ -382,7 +415,7 @@ def launch_or_focus_app(app_name):
     # 1. Xử lý Bambu Studio / Máy in 3D (Đặc biệt xử lý các biến thể STT: album studio, bảo bối studio, bản in studio)
     if any(k in norm for k in ['bambu', 'album studio', 'bao boi studio', 'ban in studio', 'may in', 'in 3d', 'studio']):
         if restore_and_focus_window('Bambu'):
-            return "Dạ em đã đưa phần mềm in 3D Bambu Studio lên màn hình cho anh rồi ạ! 🖨️"
+            return "Dạ em đã đưa phần mềm in 3D Bambu Studio lên màn hình cho anh rồi ạ!"
         bambu_paths = [
             r'C:\Users\Public\Desktop\Bambu Studio.lnk',
             r'D:\BambuStudio\Bambu Studio\bambu-studio.exe'
@@ -390,18 +423,21 @@ def launch_or_focus_app(app_name):
         for p in bambu_paths:
             if os.path.exists(p):
                 try:
-                    subprocess.Popen(['explorer.exe', p])
+                    if p.endswith('.lnk'):
+                        os.startfile(p)
+                    else:
+                        subprocess.Popen([p])
                     time.sleep(1.5)
                     restore_and_focus_window('Bambu')
-                    return "Dạ em đã mở phần mềm in 3D Bambu Studio cho anh rồi ạ! 🖨️"
+                    return "Dạ em đã mở phần mềm in 3D Bambu Studio cho anh rồi ạ!"
                 except Exception:
                     pass
-        return "Dạ em đã mở Bambu Studio cho anh rồi ạ! 🖨️"
+        return "Dạ em đã mở Bambu Studio cho anh rồi ạ!"
 
     # 2. Xử lý Zalo
     if any(k in norm for k in ['zalo', 'gia lo', 'dalo']):
         if restore_and_focus_window('Zalo'):
-            return "Dạ em đã đưa ứng dụng Zalo lên màn hình cho anh rồi ạ! 💬"
+            return "Dạ em đã đưa ứng dụng Zalo lên màn hình cho anh rồi ạ!"
         zalo_paths = [
             os.path.expanduser(r'~\Desktop\Zalo.lnk'),
             os.path.expanduser(r'~\AppData\Local\Programs\Zalo\Zalo.exe')
@@ -409,10 +445,13 @@ def launch_or_focus_app(app_name):
         for p in zalo_paths:
             if os.path.exists(p):
                 try:
-                    subprocess.Popen(['explorer.exe', p])
+                    if p.endswith('.lnk'):
+                        os.startfile(p)
+                    else:
+                        subprocess.Popen([p])
                     time.sleep(1.5)
                     restore_and_focus_window('Zalo')
-                    return "Dạ em đã mở ứng dụng Zalo cho anh rồi ạ! 💬"
+                    return "Dạ em đã mở ứng dụng Zalo cho anh rồi ạ!"
                 except Exception:
                     pass
         try:
@@ -421,37 +460,44 @@ def launch_or_focus_app(app_name):
             restore_and_focus_window('Zalo')
         except Exception:
             pass
-        return "Dạ em đã mở ứng dụng Zalo cho anh rồi ạ! 💬"
+        return "Dạ em đã mở ứng dụng Zalo cho anh rồi ạ!"
 
     # 3. Xử lý Chrome / Trình duyệt web
     if any(k in norm for k in ['chrome', 'trinh duyet', 'google chrome', 'web', 'coc coc']):
         if restore_and_focus_window('Chrome'):
-            return "Dạ em đã đưa trình duyệt Chrome lên màn hình cho anh rồi ạ! 🌐"
+            return "Dạ em đã đưa trình duyệt Chrome lên màn hình cho anh rồi ạ!"
         chrome_shortcuts = [
-            os.path.expanduser(r'~\Desktop\Tiến - Chrome.lnk'),
-            r'C:\Users\Public\Desktop\Google Chrome.lnk',
             r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Google Chrome.lnk',
-            r'C:\Program Files\Google\Chrome\Application\chrome.exe'
+            r'C:\Users\Public\Desktop\Google Chrome.lnk',
+            r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+            r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
         ]
+        launched = False
         for p in chrome_shortcuts:
             if os.path.exists(p):
                 try:
-                    subprocess.Popen(['explorer.exe', p])
-                    time.sleep(1.5)
-                    restore_and_focus_window('Chrome')
-                    return "Dạ em đã mở trình duyệt Chrome cho anh rồi ạ! 🌐"
-                except Exception:
-                    pass
-        try:
-            subprocess.Popen(['explorer.exe', 'https://www.google.com'])
-        except Exception:
-            pass
-        return "Dạ em đã mở trình duyệt Chrome cho anh rồi ạ! 🌐"
+                    if p.endswith('.lnk'):
+                        os.startfile(p)
+                    else:
+                        subprocess.Popen([p, '--start-maximized', 'https://www.google.com'])
+                    launched = True
+                    break
+                except Exception as e:
+                    log(f"Lỗi khởi chạy Chrome từ {p}: {e}", 'WARN')
+        if not launched:
+            try:
+                subprocess.Popen(['cmd.exe', '/c', 'start', 'chrome', 'https://www.google.com'])
+                launched = True
+            except Exception:
+                pass
+        time.sleep(1.8)
+        restore_and_focus_window('Chrome')
+        return "Dạ em đã mở trình duyệt Chrome cho anh rồi ạ!"
 
     # 4. Xử lý Liên Minh Huyền Thoại / League of Legends / Riot
     if any(k in norm for k in ['lien minh', 'lol', 'lmht', 'riot', 'dau truong chan ly', 'dtcl']):
         if restore_and_focus_window('League of Legends') or restore_and_focus_window('Riot Client'):
-            return "Dạ em đã đưa Liên Minh Huyền Thoại lên màn hình cho anh rồi ạ! 🎮"
+            return "Dạ em đã đưa Liên Minh Huyền Thoại lên màn hình cho anh rồi ạ!"
         riot_paths = [
             r'C:\Users\Public\Desktop\Riot Client.lnk',
             r'C:\Riot Games\Riot Client\RiotClientServices.exe'
@@ -459,48 +505,51 @@ def launch_or_focus_app(app_name):
         for p in riot_paths:
             if os.path.exists(p):
                 try:
-                    subprocess.Popen(['explorer.exe', p])
+                    if p.endswith('.lnk'):
+                        os.startfile(p)
+                    else:
+                        subprocess.Popen([p])
                     time.sleep(1.5)
                     restore_and_focus_window('League of Legends')
-                    return "Dạ em đã mở Liên Minh Huyền Thoại cho anh rồi ạ! Chúc anh leo rank vui vẻ! 🎮"
+                    return "Dạ em đã mở Liên Minh Huyền Thoại cho anh rồi ạ! Chúc anh leo rank vui vẻ!"
                 except Exception:
                     pass
 
     # 5. Xử lý VS Code
     if any(k in norm for k in ['vscode', 'vs code', 'code', 'visual studio code']):
         if restore_and_focus_window('Visual Studio Code'):
-            return "Dạ em đã đưa Visual Studio Code lên màn hình cho anh rồi ạ! 💻"
+            return "Dạ em đã đưa Visual Studio Code lên màn hình cho anh rồi ạ!"
         try:
             subprocess.Popen(['code'], shell=True)
-            return "Dạ em đã mở Visual Studio Code để anh làm việc rồi ạ! 💻"
+            return "Dạ em đã mở Visual Studio Code để anh làm việc rồi ạ!"
         except Exception:
             pass
 
     # 6. Xử lý Word / Excel / PowerPoint
     if 'word' in norm:
         if restore_and_focus_window('Word'):
-            return "Dạ em đã đưa Microsoft Word lên màn hình cho anh rồi ạ! 📄"
+            return "Dạ em đã đưa Microsoft Word lên màn hình cho anh rồi ạ!"
         try:
             subprocess.Popen(['cmd.exe', '/c', 'start', 'winword'], shell=True)
-            return "Dạ em đã mở Microsoft Word cho anh rồi ạ! 📄"
+            return "Dạ em đã mở Microsoft Word cho anh rồi ạ!"
         except Exception:
             pass
 
     if 'excel' in norm:
         if restore_and_focus_window('Excel'):
-            return "Dạ em đã đưa Microsoft Excel lên màn hình cho anh rồi ạ! 📊"
+            return "Dạ em đã đưa Microsoft Excel lên màn hình cho anh rồi ạ!"
         try:
             subprocess.Popen(['cmd.exe', '/c', 'start', 'excel'], shell=True)
-            return "Dạ em đã mở Microsoft Excel cho anh rồi ạ! 📊"
+            return "Dạ em đã mở Microsoft Excel cho anh rồi ạ!"
         except Exception:
             pass
 
     if 'powerpoint' in norm or 'ppt' in norm:
         if restore_and_focus_window('PowerPoint'):
-            return "Dạ em đã đưa Microsoft PowerPoint lên màn hình cho anh rồi ạ! 📑"
+            return "Dạ em đã đưa Microsoft PowerPoint lên màn hình cho anh rồi ạ!"
         try:
             subprocess.Popen(['cmd.exe', '/c', 'start', 'powerpnt'], shell=True)
-            return "Dạ em đã mở Microsoft PowerPoint cho anh rồi ạ! 📑"
+            return "Dạ em đã mở Microsoft PowerPoint cho anh rồi ạ!"
         except Exception:
             pass
 
@@ -509,7 +558,7 @@ def launch_or_focus_app(app_name):
         restore_and_focus_window('Calculator')
         try:
             subprocess.Popen(['calc.exe'])
-            return "Dạ em đã bật ứng dụng Máy tính Calculator cho anh rồi ạ! 🔢"
+            return "Dạ em đã bật ứng dụng Máy tính Calculator cho anh rồi ạ!"
         except Exception:
             pass
 
@@ -517,7 +566,7 @@ def launch_or_focus_app(app_name):
         restore_and_focus_window('Notepad')
         try:
             subprocess.Popen(['notepad.exe'])
-            return "Dạ em đã mở Notepad cho anh ghi chú rồi ạ! 📝"
+            return "Dạ em đã mở Notepad cho anh ghi chú rồi ạ!"
         except Exception:
             pass
 
@@ -526,7 +575,7 @@ def launch_or_focus_app(app_name):
     if shortcut:
         try:
             os.startfile(shortcut)
-            return f"Dạ em đã mở {clean_name} cho anh rồi ạ! 🌸"
+            return f"Dạ em đã mở {clean_name} cho anh rồi ạ!"
         except Exception as e:
             log(f"Lỗi startfile {shortcut}: {e}", 'WARN')
 
@@ -534,11 +583,11 @@ def launch_or_focus_app(app_name):
     try:
         res = requests.post('http://localhost:3000/api/pc/action', json={'action': 'open', 'target': clean_name}, timeout=4)
         if res.status_code == 200 and res.json().get('success'):
-            return f"Dạ em đã mở {clean_name} cho anh rồi ạ! 🌸"
+            return f"Dạ em đã mở {clean_name} cho anh rồi ạ!"
     except Exception:
         pass
 
-    return f"Dạ em đang khởi chạy {clean_name} cho anh ạ! 🌸"
+    return f"Dạ em đang khởi chạy {clean_name} cho anh ạ!"
 
 # ---------------------------------------------------------------------------
 # XỬ LÝ LỆNH THOẠI TRÊN MÁY TÍNH (LOCAL FAST COMMANDS + AI CLOUD)
@@ -546,7 +595,7 @@ def launch_or_focus_app(app_name):
 def execute_voice_command(raw_query):
     query = raw_query.strip()
     if not query:
-        return "Dạ em đây ạ! Anh cần em giúp gì không ạ? 🌸"
+        return "Dạ em đây ạ! Anh cần em giúp gì không ạ?"
 
     log(f"🎤 [Thực thi lệnh]: '{query}'", 'INFO')
     play_siri_ready()
@@ -584,7 +633,7 @@ def execute_voice_command(raw_query):
     if any(k in q_lower for k in ['khóa máy', 'khóa màn hình', 'lock pc', 'khóa pc', 'khóa máy tính']):
         try:
             subprocess.run(['rundll32.exe', 'user32.dll,LockWorkStation'], check=False)
-            return "Dạ em đã khóa màn hình máy tính của anh rồi ạ! 🌸"
+            return "Dạ em đã khóa màn hình máy tính của anh rồi ạ!"
         except Exception as e:
             return f"Dạ có lỗi khi khóa máy: {e}"
 
@@ -593,7 +642,7 @@ def execute_voice_command(raw_query):
         try:
             ps_cmd = 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false)'
             subprocess.run(['powershell', '-NoProfile', '-Command', ps_cmd], check=False)
-            return "Dạ chúc anh Tiến ngủ ngon ạ! Em đang đưa máy vào chế độ Sleep đây ạ! 🌙"
+            return "Dạ chúc anh Tiến ngủ ngon ạ! Em đang đưa máy vào chế độ Sleep đây ạ!"
         except Exception as e:
             return f"Lỗi đưa vào sleep: {e}"
 
@@ -604,10 +653,10 @@ def execute_voice_command(raw_query):
         if target_song and target_song not in ['nhạc', 'video', 'youtube']:
             url = f"https://www.youtube.com/results?search_query={target_song.replace(' ', '+')}"
             webbrowser.open(url)
-            return f"Dạ em đã mở tìm kiếm '{target_song}' trên YouTube cho anh rồi ạ! 🎵"
+            return f"Dạ em đã mở tìm kiếm '{target_song}' trên YouTube cho anh rồi ạ!"
         else:
             webbrowser.open('https://www.youtube.com')
-            return "Dạ em đã mở YouTube cho anh rồi ạ! 🌸"
+            return "Dạ em đã mở YouTube cho anh rồi ạ!"
 
     # 5. Mở Google / Tìm kiếm Google
     if 'google' in q_lower or q_lower.startswith('tìm kiếm') or q_lower.startswith('tra cứu'):
@@ -615,30 +664,30 @@ def execute_voice_command(raw_query):
         if search_kw:
             url = f"https://www.google.com/search?q={search_kw.replace(' ', '+')}"
             webbrowser.open(url)
-            return f"Dạ em đã tìm kiếm '{search_kw}' trên Google cho anh rồi ạ! 🔍"
+            return f"Dạ em đã tìm kiếm '{search_kw}' trên Google cho anh rồi ạ!"
         else:
             webbrowser.open('https://www.google.com')
-            return "Dạ em đã mở Google cho anh rồi ạ! 🌸"
+            return "Dạ em đã mở Google cho anh rồi ạ!"
 
     # 6. Mở Facebook
     if 'facebook' in q_lower or 'fb' in q_lower:
         webbrowser.open('https://www.facebook.com')
-        return "Dạ em đã mở Facebook cho anh rồi ạ! 🌸"
+        return "Dạ em đã mở Facebook cho anh rồi ạ!"
 
     # 7. Mở GitHub
     if 'github' in q_lower:
         webbrowser.open('https://github.com')
-        return "Dạ em đã mở GitHub cho anh rồi ạ! 💻"
+        return "Dạ em đã mở GitHub cho anh rồi ạ!"
 
     # 8. Mở ChatGPT
     if 'chatgpt' in q_lower or 'chat gpt' in q_lower:
         webbrowser.open('https://chatgpt.com')
-        return "Dạ em đã mở ChatGPT cho anh rồi ạ! ✨"
+        return "Dạ em đã mở ChatGPT cho anh rồi ạ!"
 
     # 9. Mở Cổng thông tin trường TDTU (Portal sinh viên)
     if any(k in q_lower for k in ['cổng trường', 'portal', 'xem điểm', 'thời khóa biểu']):
         webbrowser.open('https://portal.tdtu.edu.vn')
-        return "Dạ em đã mở Cổng thông tin sinh viên TDTU cho anh Tiến rồi ạ! 🎓"
+        return "Dạ em đã mở Cổng thông tin sinh viên TDTU cho anh Tiến rồi ạ!"
 
     # 10. Mở Trình duyệt Chrome / Web
     if any(k in q_lower for k in ['chrome', 'trình duyệt', 'google chrome', 'mở web', 'cốc cốc']):
@@ -676,7 +725,7 @@ def execute_voice_command(raw_query):
             station_path = os.path.join(PROJECT_ROOT, 'Mo_Diana_Station.bat')
             if os.path.exists(station_path):
                 subprocess.Popen(['cmd.exe', '/c', station_path], cwd=PROJECT_ROOT)
-            return "Dạ em đã mở giao diện Trạm Trung Tâm Diana cho anh rồi ạ! 🌸"
+            return "Dạ em đã mở giao diện Trạm Trung Tâm Diana cho anh rồi ạ!"
         except Exception:
             pass
 
@@ -686,7 +735,7 @@ def execute_voice_command(raw_query):
             import pyautogui
             for _ in range(5):
                 pyautogui.press('volumeup')
-            return "Dạ em đã tăng âm lượng rồi ạ! 🔊"
+            return "Dạ em đã tăng âm lượng rồi ạ!"
         except Exception:
             pass
 
@@ -695,7 +744,7 @@ def execute_voice_command(raw_query):
             import pyautogui
             for _ in range(5):
                 pyautogui.press('volumedown')
-            return "Dạ em đã giảm âm lượng rồi ạ! 🔉"
+            return "Dạ em đã giảm âm lượng rồi ạ!"
         except Exception:
             pass
 
@@ -703,7 +752,7 @@ def execute_voice_command(raw_query):
         try:
             import pyautogui
             pyautogui.press('volumemute')
-            return "Dạ em đã tắt tiếng rồi ạ! 🔇"
+            return "Dạ em đã tắt tiếng rồi ạ!"
         except Exception:
             pass
 
@@ -711,7 +760,7 @@ def execute_voice_command(raw_query):
         try:
             import pyautogui
             pyautogui.press('playpause')
-            return "Dạ em đã thực hiện lệnh phát/dừng nhạc cho anh rồi ạ! ⏯️"
+            return "Dạ em đã thực hiện lệnh phát hoặc dừng nhạc cho anh rồi ạ!"
         except Exception:
             pass
 
@@ -736,7 +785,7 @@ def execute_voice_command(raw_query):
         except Exception:
             continue
 
-    return f"Dạ em đã nhận được lệnh '{query}' từ anh Tiến rồi ạ! 🌸"
+    return f"Dạ em đã nhận được lệnh '{query}' từ anh Tiến rồi ạ!"
 
 # ---------------------------------------------------------------------------
 # VÒNG LẶP LẮNG NGHE TỪ KHÓA NỀN (CONTINUOUS WAKE WORD LOOP)
