@@ -41,4 +41,7 @@ android/local.properties
 
 
 *.apk
+.diana_wake.pid
+.diana_wake_event.json
+data/wake_cache/
 

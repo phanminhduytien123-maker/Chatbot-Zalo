@@ -9,3 +9,6 @@ WshShell.CurrentDirectory = strCurrentDir
 
 ' Chay node pcAgent.js an 100% khong bat terminal
 WshShell.Run "powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File """ & strCurrentDir & "\scripts\pc_agent_manager.ps1"" start", 0, False
+
+' Chay luon tinh nang lang nghe "Diana oi" (Siri Mode) chay ngam ngay khi khoi dong may
+WshShell.Run "wscript.exe """ & strCurrentDir & "\Lang_Nghe_Diana_Oi_Chay_Ngam.vbs""", 0, False

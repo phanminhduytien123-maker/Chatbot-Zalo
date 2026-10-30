@@ -83,9 +83,22 @@ function createWindow() {
     }
   });
 
+  mainWindow.webContents.on('did-finish-load', async () => {
+    try {
+      const data = await bambuApi('/api/bambu/status');
+      if (data && data.status) {
+        mainWindow.webContents.send('bambu-status-update', data.status);
+        if (data.connected) {
+          mainWindow.webContents.send('bambu-connected', data.status);
+        }
+      }
+    } catch (_) {}
+  });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.maximize();
     mainWindow.show();
+    mainWindow.focus();
   });
 
   mainWindow.on('close', (event) => {
@@ -145,6 +158,27 @@ function createTray() {
   tray = new Tray(trayIcon);
   tray.setToolTip('🌸 Diana Central Station (Trạm Trung Tâm Diana)');
 
+  updateTrayMenu();
+
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    }
+  });
+}
+
+async function updateTrayMenu() {
+  if (!tray) return;
+  let isWakeRunning = false;
+  try {
+    isWakeRunning = await isWakeListenerRunning();
+  } catch (_) {}
+
   const contextMenu = Menu.buildFromTemplate([
     {
       label: '🌸 Mở Trạm Trung Tâm Diana',
@@ -156,6 +190,15 @@ function createTray() {
       }
     },
     { type: 'separator' },
+    {
+      label: isWakeRunning ? '🎤 "Diana ơi" [ĐANG BẬT] - Bấm để tắt' : '🎤 "Diana ơi" [ĐÃ TẮT] - Bấm để bật',
+      type: 'checkbox',
+      checked: isWakeRunning,
+      click: async () => {
+        await toggleWakeListener();
+        updateTrayMenu();
+      }
+    },
     {
       label: '📱 Chiếu Màn Hình Điện Thoại (60 FPS)',
       click: () => {
@@ -177,24 +220,15 @@ function createTray() {
     { type: 'separator' },
     {
       label: '❌ Thoát Hoàn Toàn',
-      click: () => {
+      click: async () => {
         isQuitting = true;
+        await stopWakeListener();
         app.quit();
       }
     }
   ]);
 
   tray.setContextMenu(contextMenu);
-  tray.on('double-click', () => {
-    if (mainWindow) {
-      if (mainWindow.isVisible()) {
-        mainWindow.hide();
-      } else {
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    }
-  });
 }
 
 // -------------------------------------------------------------
@@ -321,8 +355,8 @@ ipcMain.handle('get-adb-devices', async () => {
   return await autoDiscoverAndConnect();
 });
 
-// Bắt đầu hoặc tắt chiếu màn hình Scrcpy 60 FPS (Toggle Switch thông minh)
-function launchPhoneMirror(targetInput = '') {
+// Bắt đầu hoặc tắt chiếu màn hình Scrcpy 60 FPS hoặc Mở Màn hình Song Song Độc Lập
+function launchPhoneMirror(targetInput = '', mode = 'mirror') {
   return new Promise(async (resolve) => {
     const scrcpyExe = resolveToolPath('scrcpy.exe');
     const adbExe = resolveToolPath('adb.exe');
@@ -363,7 +397,8 @@ function launchPhoneMirror(targetInput = '') {
       const candidates = [
         target,
         '192.168.100.225:5555',
-        '192.168.100.148:5555'
+        '192.168.100.148:5555',
+        '192.168.1.78:5555'
       ].filter(Boolean);
 
       for (const cand of candidates) {
@@ -401,22 +436,33 @@ function launchPhoneMirror(targetInput = '') {
 
     // 4. KHỞI CHẠY SCRCPY 60 FPS (ẨN HOÀN TOÀN CỬA SỔ TERMINAL ĐEN, TRIỆT TIÊU LỖI 0x800700e8)
     if (isOnline) {
-      exec('taskkill /F /IM scrcpy.exe', { windowsHide: true }, () => {});
+      await new Promise(res => exec('taskkill /F /IM scrcpy.exe', { windowsHide: true }, () => setTimeout(res, 500)));
 
+      const isDual = mode === 'dual';
+      const windowTitle = isDual ? 'Diana - Dien Thoai Song Song (Redmi K70)' : 'Diana - Man Hinh Dien Thoai (Redmi K70)';
       const scrcpyDir = path.dirname(scrcpyExe);
-      const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
-WshShell.CurrentDirectory = "${scrcpyDir.replace(/\\/g, '\\\\')}"
-WshShell.Run "cmd /c start """" scrcpy.exe -s ${target} --no-audio --video-codec=h264 --window-title ""📱 Diana - Màn hình Điện thoại (Redmi K70)"" --max-size 1440 --video-bit-rate 8M --max-fps 60 --stay-awake --always-on-top --push-target /sdcard/Pictures/", 0, False
-`;
-      const tempVbs = path.join(os.tmpdir(), `diana_desk_scrcpy_${Date.now()}.vbs`);
 
       try {
-        fs.writeFileSync(tempVbs, vbsContent, 'utf8');
-        execFile('wscript.exe', [tempVbs], { windowsHide: true }, () => {
-          setTimeout(() => {
-            try { fs.unlinkSync(tempVbs); } catch (_) {}
-          }, 3000);
-        });
+        execFile(adbExe, ['-s', target, 'shell', 'input', 'keyevent', '224'], { windowsHide: true }, () => {});
+      } catch (_) {}
+
+      try {
+        let extraArgs = '';
+        if (isDual) {
+          extraArgs = ' --new-display=1080x2400/440 --start-app=com.android.chrome';
+        }
+
+        const launcherVbs = path.resolve(scrcpyDir, 'launch_mirror.vbs');
+        const vbsCode = [
+          'Set objShell = CreateObject("Shell.Application")',
+          `strDir = "${scrcpyDir}"`,
+          'exePath = strDir & "\\scrcpy.exe"',
+          `args = "-s ${target} --no-audio --video-codec=h264 --window-title ""${windowTitle}"" --max-size=1080 --video-bit-rate=8M --max-fps=60 --stay-awake --always-on-top${extraArgs}"`,
+          'objShell.ShellExecute exePath, args, strDir, "open", 0'
+        ].join('\r\n');
+
+        fs.writeFileSync(launcherVbs, vbsCode, 'ascii');
+        exec(`wscript.exe "${launcherVbs}"`, { windowsHide: true });
 
         setTimeout(() => {
           exec('tasklist /FI "IMAGENAME eq scrcpy.exe" /NH', { windowsHide: true }, (e, out) => {
@@ -425,9 +471,11 @@ WshShell.Run "cmd /c start """" scrcpy.exe -s ${target} --no-audio --video-codec
                 success: true,
                 action: 'started',
                 isMirroring: true,
-                mode: 'scrcpy',
+                mode: isDual ? 'dual' : 'scrcpy',
                 activeDevice: target,
-                message: `Đã kết nối Scrcpy 60 FPS siêu mượt với ${target}!`
+                message: isDual
+                  ? `Đã mở Màn hình Song Song Độc Lập cho ${target}!`
+                  : `Đã kết nối Scrcpy 60 FPS siêu mượt với ${target}!`
               });
             } else {
               resolve({
@@ -450,12 +498,20 @@ WshShell.Run "cmd /c start """" scrcpy.exe -s ${target} --no-audio --video-codec
   });
 }
 
-ipcMain.handle('start-phone-mirror', async (event, targetIp) => {
-  return await launchPhoneMirror(targetIp);
+ipcMain.handle('start-phone-mirror', async (event, targetIp, mode = 'mirror') => {
+  return await launchPhoneMirror(targetIp, mode);
 });
 
-ipcMain.handle('toggle-phone-mirror', async (event, targetIp) => {
-  return await launchPhoneMirror(targetIp);
+ipcMain.handle('toggle-phone-mirror', async (event, targetIp, mode = 'mirror') => {
+  return await launchPhoneMirror(targetIp, mode);
+});
+
+ipcMain.handle('start-phone-dual', async (event, targetIp) => {
+  return await launchPhoneMirror(targetIp, 'dual');
+});
+
+ipcMain.handle('toggle-phone-dual', async (event, targetIp) => {
+  return await launchPhoneMirror(targetIp, 'dual');
 });
 
 ipcMain.handle('stop-phone-mirror', async () => {
@@ -623,6 +679,149 @@ ipcMain.handle('sleep-pc', async () => {
   });
 });
 
+// -------------------------------------------------------------
+// ALWAYS-LISTENING "DIANA ƠI" WAKE WORD DAEMON (SIRI-MODE)
+// -------------------------------------------------------------
+function getWakeListenerPid() {
+  const pidFile = path.join('d:\\Zalo Bot', '.diana_wake.pid');
+  if (fs.existsSync(pidFile)) {
+    try {
+      const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+      if (pid && !isNaN(pid)) return pid;
+    } catch (_) {}
+  }
+  return null;
+}
+
+function isWakeListenerRunning() {
+  return new Promise((resolve) => {
+    const pid = getWakeListenerPid();
+    if (pid) {
+      exec(`tasklist /FI "PID eq ${pid}" /NH`, { windowsHide: true, timeout: 2000 }, (err, stdout) => {
+        if (stdout && stdout.includes(String(pid)) && stdout.toLowerCase().includes('python')) {
+          return resolve(true);
+        }
+        checkByCmd();
+      });
+    } else {
+      checkByCmd();
+    }
+
+    function checkByCmd() {
+      const psCmd = `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name LIKE 'python%' AND CommandLine LIKE '%diana_wake_listener.py%'\\" | Select-Object -ExpandProperty ProcessId"`;
+      exec(psCmd, { windowsHide: true, timeout: 3000 }, (err, stdout) => {
+        const hasPid = Boolean(stdout && stdout.trim().length > 0 && !isNaN(parseInt(stdout.trim(), 10)));
+        resolve(hasPid);
+      });
+    }
+  });
+}
+
+function startWakeListener() {
+  return new Promise(async (resolve) => {
+    const running = await isWakeListenerRunning();
+    if (running) {
+      updateTrayMenu();
+      return resolve({ success: true, active: true, message: 'Diana Wake Listener đang hoạt động.' });
+    }
+
+    const candidates = [
+      path.join('d:\\Zalo Bot', 'scripts', 'diana_wake_listener.py'),
+      path.resolve(__dirname, '..', 'scripts', 'diana_wake_listener.py')
+    ];
+    const scriptPath = candidates.find(p => fs.existsSync(p));
+    if (!scriptPath) return resolve({ success: false, error: 'Không tìm thấy scripts/diana_wake_listener.py' });
+
+    const pythonExe = resolvePythonExe();
+
+    try {
+      const child = spawn(pythonExe, [scriptPath], {
+        cwd: path.dirname(scriptPath),
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true
+      });
+      child.unref();
+
+      const pidFile = path.join('d:\\Zalo Bot', '.diana_wake.pid');
+      try {
+        fs.writeFileSync(pidFile, String(child.pid), 'utf8');
+      } catch (_) {}
+
+      setTimeout(() => updateTrayMenu(), 1000);
+
+      resolve({
+        success: true,
+        active: true,
+        pid: child.pid,
+        message: 'Đã kích hoạt chế độ luôn lắng nghe "Diana ơi" thành công!'
+      });
+    } catch (err) {
+      resolve({ success: false, error: err.message });
+    }
+  });
+}
+
+function stopWakeListener() {
+  return new Promise((resolve) => {
+    const pid = getWakeListenerPid();
+    if (pid) {
+      exec(`taskkill /F /PID ${pid}`, { windowsHide: true }, () => {});
+    }
+    const psKill = `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"CommandLine LIKE '%diana_wake_listener.py%'\\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"`;
+    exec(psKill, { windowsHide: true }, () => {
+      const pidFile = path.join('d:\\Zalo Bot', '.diana_wake.pid');
+      if (fs.existsSync(pidFile)) {
+        try { fs.unlinkSync(pidFile); } catch (_) {}
+      }
+      setTimeout(() => updateTrayMenu(), 500);
+      resolve({ success: true, active: false, message: 'Đã dừng chế độ lắng nghe "Diana ơi".' });
+    });
+  });
+}
+
+async function toggleWakeListener() {
+  const running = await isWakeListenerRunning();
+  if (running) {
+    return await stopWakeListener();
+  } else {
+    return await startWakeListener();
+  }
+}
+
+function setupWakeEventWatcher() {
+  const eventFile = path.join('d:\\Zalo Bot', '.diana_wake_event.json');
+  let lastMtime = 0;
+  setInterval(() => {
+    if (!fs.existsSync(eventFile)) return;
+    try {
+      const stat = fs.statSync(eventFile);
+      if (stat.mtimeMs > lastMtime) {
+        lastMtime = stat.mtimeMs;
+        const raw = fs.readFileSync(eventFile, 'utf8');
+        const data = JSON.parse(raw);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('diana-wake-event', data);
+        }
+        if (data.event === 'completed' && data.reply && (!mainWindow || !mainWindow.isVisible())) {
+          tray?.displayBalloon?.({
+            title: '🌸 Diana - Đã thực hiện',
+            content: data.reply
+          });
+        }
+      }
+    } catch (_) {}
+  }, 400);
+}
+
+ipcMain.handle('start-wake-listener', async () => await startWakeListener());
+ipcMain.handle('stop-wake-listener', async () => await stopWakeListener());
+ipcMain.handle('toggle-wake-listener', async () => await toggleWakeListener());
+ipcMain.handle('get-wake-listener-status', async () => {
+  const running = await isWakeListenerRunning();
+  return { success: true, active: running };
+});
+
 // Đọc log của PC Agent / Server
 ipcMain.handle('read-logs', async () => {
   const candidates = [
@@ -661,6 +860,96 @@ ipcMain.on('window-devtools', () => {
 });
 
 // -------------------------------------------------------------
+// BAMBU LAB A1 3D PRINTER INTEGRATION (HTTP ROUTING TO PC AGENT)
+// -------------------------------------------------------------
+const BAMBU_API_BASE = 'http://localhost:3000';
+
+async function bambuApi(endpoint, body = null, method = 'GET') {
+  try {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(`${BAMBU_API_BASE}${endpoint}`, opts);
+    if (res.ok) return await res.json();
+  } catch (_) {}
+  return null;
+}
+
+ipcMain.handle('bambu-get-status', async () => {
+  const data = await bambuApi('/api/bambu/status');
+  if (data && data.status) return data.status;
+  return { connected: false, online: false };
+});
+
+ipcMain.handle('bambu-get-config', async () => {
+  const data = await bambuApi('/api/bambu/config');
+  return data?.config || {};
+});
+
+ipcMain.handle('bambu-save-config', async (event, newConfig) => {
+  return await bambuApi('/api/bambu/config', newConfig, 'POST') || { success: true };
+});
+
+ipcMain.handle('bambu-connect', async (event, credentials) => {
+  return await bambuApi('/api/bambu/connect', credentials, 'POST') || { success: false, error: 'PC Agent offline' };
+});
+
+ipcMain.handle('bambu-disconnect', async () => {
+  return await bambuApi('/api/bambu/disconnect', {}, 'POST') || { success: true };
+});
+
+ipcMain.handle('bambu-send-gcode', async (event, gcode) => {
+  return await bambuApi('/api/bambu/action', { action: 'gcode', gcode }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-set-temp', async (event, target, value) => {
+  return await bambuApi('/api/bambu/action', { action: 'set_temp', target, value }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-set-speed', async (event, level) => {
+  return await bambuApi('/api/bambu/action', { action: 'set_speed', level }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-set-light', async (event, state) => {
+  return await bambuApi('/api/bambu/action', { action: 'set_light', state }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-set-fan', async (event, fanType, speed) => {
+  return await bambuApi('/api/bambu/action', { action: 'set_fan', fanType, speed }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-control-print', async (event, action) => {
+  return await bambuApi('/api/bambu/action', { action }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-jog', async (event, axis, distance) => {
+  return await bambuApi('/api/bambu/action', { action: 'jog', axis, distance }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-home', async (event, axes) => {
+  return await bambuApi('/api/bambu/action', { action: 'home', axes }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-feed-filament', async (event, amount) => {
+  return await bambuApi('/api/bambu/action', { action: 'feed', amount }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-skip-objects', async (event, objList) => {
+  return await bambuApi('/api/bambu/action', { action: 'skip_objects', obj_list: objList }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-get-plate-info', async () => {
+  return await bambuApi('/api/bambu/plate') || await bambuApi('/api/bambu/action', { action: 'get_plate_info' }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-fetch-plate', async (event, force = false) => {
+  return await bambuApi('/api/bambu/action', { action: 'fetch_plate', force }, 'POST') || { success: false };
+});
+
+ipcMain.handle('bambu-scan-lan', async () => {
+  return await bambuApi('/api/bambu/scan') || await bambuApi('/api/bambu/action', { action: 'discover' }, 'POST') || { success: false };
+});
+
+// -------------------------------------------------------------
 // APP LIFECYCLE
 // -------------------------------------------------------------
 app.on('second-instance', () => {
@@ -674,14 +963,16 @@ app.on('second-instance', () => {
 app.whenReady().then(() => {
   createWindow();
   createTray();
+  startWakeListener();
+  setupWakeEventWatcher();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-      // Giữ app chạy ngầm trong khay hệ thống
-    }
-  });
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    // Giữ app chạy ngầm trong khay hệ thống
+  }
+});

@@ -1567,6 +1567,119 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
       return await WindowsController.startAirGesture();
     }
   }
+
+  /**
+   * Kiểm tra tiến trình Wake Listener "Diana ơi" có đang chạy không
+   */
+  static isWakeListenerRunning() {
+    return new Promise((resolve) => {
+      const pidFile = path.resolve(__dirname, '..', '..', '.diana_wake.pid');
+      if (fs.existsSync(pidFile)) {
+        try {
+          const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+          if (pid) {
+            return exec(`tasklist /FI "PID eq ${pid}" /NH`, { windowsHide: true, timeout: 2000 }, (err, stdout) => {
+              if (stdout && stdout.includes(String(pid)) && stdout.toLowerCase().includes('python')) {
+                return resolve(true);
+              }
+              checkByCmd();
+            });
+          }
+        } catch (_) {}
+      }
+      checkByCmd();
+
+      function checkByCmd() {
+        const psCmd = `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name LIKE 'python%' AND CommandLine LIKE '%diana_wake_listener.py%'\\" | Select-Object -ExpandProperty ProcessId"`;
+        exec(psCmd, { windowsHide: true, timeout: 3000 }, (err, stdout) => {
+          const hasPid = Boolean(stdout && stdout.trim().length > 0 && !isNaN(parseInt(stdout.trim(), 10)));
+          resolve(hasPid);
+        });
+      }
+    });
+  }
+
+  /**
+   * Khởi động chế độ luôn lắng nghe "Diana ơi"
+   */
+  static async startWakeListener() {
+    const isRunning = await WindowsController.isWakeListenerRunning();
+    if (isRunning) {
+      return { success: true, active: true, message: 'Chế độ luôn lắng nghe "Diana ơi" đang hoạt động.' };
+    }
+
+    const scriptPath = path.resolve(__dirname, '..', '..', 'scripts', 'diana_wake_listener.py');
+    if (!fs.existsSync(scriptPath)) {
+      return { success: false, error: 'Không tìm thấy file scripts/diana_wake_listener.py' };
+    }
+
+    const pythonCandidates = [
+      'C:\\Users\\ADMIN\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'python.exe'),
+      'python.exe',
+      'python'
+    ];
+    const pythonExe = pythonCandidates.find(p => fs.existsSync(p)) || 'python';
+
+    try {
+      const child = spawn(pythonExe, [scriptPath], {
+        cwd: path.dirname(scriptPath),
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true
+      });
+      child.unref();
+
+      const pidFile = path.resolve(__dirname, '..', '..', '.diana_wake.pid');
+      try {
+        fs.writeFileSync(pidFile, String(child.pid), 'utf8');
+      } catch (_) {}
+
+      WindowsController.showToastNotification('🎤 Diana Voice Assistant', 'Đã bật chế độ luôn lắng nghe "Diana ơi"!');
+      return { success: true, active: true, message: 'Đã kích hoạt chế độ lắng nghe "Diana ơi" thành công!' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Tắt chế độ luôn lắng nghe "Diana ơi"
+   */
+  static async stopWakeListener() {
+    try {
+      const pidFile = path.resolve(__dirname, '..', '..', '.diana_wake.pid');
+      if (fs.existsSync(pidFile)) {
+        try {
+          const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+          if (pid) exec(`taskkill /F /PID ${pid}`, { windowsHide: true }, () => {});
+        } catch (_) {}
+      }
+
+      const psKill = `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"CommandLine LIKE '%diana_wake_listener.py%'\\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"`;
+      exec(psKill, { windowsHide: true }, () => {
+        if (fs.existsSync(pidFile)) {
+          try { fs.unlinkSync(pidFile); } catch (_) {}
+        }
+      });
+
+      WindowsController.showToastNotification('🎤 Diana Voice Assistant', 'Đã tắt chế độ luôn lắng nghe "Diana ơi".');
+      return { success: true, active: false, message: 'Đã tắt chế độ lắng nghe "Diana ơi".' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Bật / Tắt (Toggle) chế độ lắng nghe "Diana ơi"
+   */
+  static async toggleWakeListener() {
+    const isRunning = await WindowsController.isWakeListenerRunning();
+    if (isRunning) {
+      return await WindowsController.stopWakeListener();
+    } else {
+      return await WindowsController.startWakeListener();
+    }
+  }
 }
 
 export default WindowsController;

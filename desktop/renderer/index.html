@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-title" content="Diana Station">
   <title>Diana Central Station</title>
   
-  <!-- Google Fonts: Be Vietnam Pro, Plus Jakarta Sans, Inter, JetBrains Mono, Outfit, Syne & Space Grotesk -->
+  <!-- Google Fonts: Inter, Plus Jakarta Sans, Be Vietnam Pro -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
   
   <meta name="color-scheme" content="dark">
   <link rel="stylesheet" href="style.css?v=21.0">
@@ -178,7 +178,7 @@
       display: block !important;
     }
     .welcome-hero-card .welcome-title {
-      font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', 'Outfit', sans-serif !important;
+      font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
       font-size: clamp(3.2rem, 6vw, 5.2rem) !important;
       font-weight: 800 !important;
       letter-spacing: -0.02em !important;
@@ -192,19 +192,16 @@
       display: block !important;
     }
     .welcome-hero-card .welcome-subtitle {
-      font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', 'Space Grotesk', sans-serif !important;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
       font-size: clamp(1.2rem, 2.2vw, 1.8rem) !important;
-      font-weight: 600 !important;
-      letter-spacing: 0.04em !important;
-      background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 40%, #c084fc 80%, #38bdf8 100%) !important;
-      -webkit-background-clip: text !important;
-      -webkit-text-fill-color: transparent !important;
-      filter: drop-shadow(0 0 25px rgba(168, 85, 247, 0.45)) !important;
+      font-weight: 500 !important;
+      letter-spacing: 0.01em !important;
+      color: #e2e8f0 !important;
       margin-bottom: 28px !important;
       display: block !important;
     }
     .welcome-tap-hint {
-      font-family: 'Space Grotesk', 'Inter', sans-serif !important;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
       display: inline-flex !important;
       align-items: center !important;
       gap: 10px !important;
@@ -217,7 +214,7 @@
       -webkit-backdrop-filter: blur(16px) !important;
       border: 1px solid rgba(168, 85, 247, 0.4) !important;
       border-radius: 999px !important;
-      letter-spacing: 0.06em !important;
+      letter-spacing: 0.02em !important;
       box-shadow: 0 0 25px rgba(168, 85, 247, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
       animation: pulseHint 2.4s ease-in-out infinite !important;
     }
@@ -438,6 +435,13 @@
           <a class="nav-link" data-tab="voice">
             <span class="nav-text">Trợ Lý Diana & AI</span>
           </a>
+          <a class="nav-link nav-link-secret" data-tab="secret">
+            <span class="nav-text">Private 🔒</span>
+          </a>
+          <a class="nav-link" data-tab="bambu">
+            <span class="nav-text">Máy In 3D Bambu A1 mini</span>
+            <span class="nav-status-dot offline" id="navBambuDot"></span>
+          </a>
         </nav>
       </div>
 
@@ -530,6 +534,10 @@
               <span class="tool-dot"></span>
               <span id="btnMirrorText">Bật Chiếu Màn Hình</span>
             </button>
+            <button class="btn-tool" id="btnToggleDual">
+              <span class="tool-dot"></span>
+              <span id="btnDualText">⚡ Màn Hình Song Song</span>
+            </button>
             <button class="btn-tool" id="btnToggleAirGesture">
               <span class="tool-dot"></span>
               <span id="btnAirGestureText">Cử Chỉ Tay (Air Gesture)</span>
@@ -596,9 +604,14 @@
                 </div>
               </div>
 
-              <button class="btn-action-primary w-full" id="btnSideLaunchMirror">
-                Bật Chiếu Màn Hình Trên PC
-              </button>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <button class="btn-action-primary w-full" id="btnSideLaunchMirror">
+                  📱 Bật Chiếu Màn Hình Trên PC
+                </button>
+                <button class="btn-action-secondary w-full" id="btnSideLaunchDual" style="background: rgba(147, 51, 234, 0.18); border: 1px solid rgba(168, 85, 247, 0.5); color: #d8b4fe; font-weight: 600; padding: 8px 12px; border-radius: 8px; cursor: pointer;">
+                  ⚡ Màn Hình Song Song Độc Lập
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -701,7 +714,9 @@
               </div>
               <div class="card-body">
                 <p class="panel-desc">
-                  Chiếu màn hình điện thoại <strong>Redmi K70</strong> lên máy tính qua Wireless Debugging với chip giải mã phần cứng Snapdragon 8 Gen 2, độ trễ 0ms, không cần bấm xác nhận casting trên điện thoại.
+                  Kết nối điện thoại <strong>Redmi K70</strong> lên máy tính qua Wireless Debugging với chip giải mã phần cứng Snapdragon 8 Gen 2, độ trễ 0ms.<br>
+                  • <strong>📱 Chiếu Màn Hình (Mirror)</strong>: Chiếu trực tiếp màn hình chính.<br>
+                  • <strong>⚡ Màn Hình Song Song (Dual Space)</strong>: Mở màn hình phụ độc lập trên PC, điện thoại trên tay tự do 100%!
                 </p>
 
                 <div class="form-group">
@@ -712,17 +727,20 @@
                   </div>
                 </div>
 
-                <div class="btn-group-row">
-                  <button class="btn-action-primary" id="btnPhoneTabConnect">
-                    Bật Chiếu Màn Hình
+                <div class="btn-group-row" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button class="btn-action-primary" id="btnPhoneTabConnect" style="flex: 1; min-width: 150px;">
+                    📱 Chiếu Màn Hình
                   </button>
-                  <button class="btn-action-danger" id="btnPhoneTabStop">
+                  <button class="btn-action-primary" id="btnPhoneTabDual" style="flex: 1; min-width: 170px; background: linear-gradient(135deg, #9333ea, #6366f1); border: none;">
+                    ⚡ Màn Hình Song Song
+                  </button>
+                  <button class="btn-action-danger" id="btnPhoneTabStop" style="flex: 0 0 auto;">
                     Dừng Chiếu
                   </button>
                 </div>
 
                 <div class="mirror-status-box" id="phoneConnectStatus">
-                  <p>🟢 <strong>Sẵn sàng:</strong> Bấm "Bật Chiếu Màn Hình" để hiển thị cửa sổ điện thoại trên PC.</p>
+                  <p>🟢 <strong>Sẵn sàng:</strong> Bấm "Chiếu Màn Hình" hoặc "Màn Hình Song Song" để hiển thị trên PC.</p>
                 </div>
               </div>
             </div>
@@ -787,6 +805,17 @@
 
           <!-- Chat messages area -->
           <div class="chat-messages" id="chatMessages">
+            <!-- Banner Trạng thái Lắng nghe "Diana ơi" (Siri Mode) -->
+            <div class="wake-assistant-status-bar" id="wakeStatusBar" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; margin-bottom: 12px; background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 12px; backdrop-filter: blur(8px);">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="status-dot" id="wakeStatusDot" style="width: 9px; height: 9px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e; display: inline-block;"></span>
+                <span style="font-size: 0.85rem; color: #e2e8f0;">Lắng nghe nền (Siri Mode): Nói <strong>"Diana ơi"</strong> mọi lúc</span>
+              </div>
+              <button class="btn-tool-secondary" id="btnToggleWakeHeader" style="padding: 4px 10px; font-size: 0.74rem; border-radius: 8px;">
+                Đang Bật
+              </button>
+            </div>
+
             <div class="chat-welcome-card" id="welcomeCard">
               <div class="welcome-avatar-ring">
                 <img src="avatar.png" alt="Diana AI" class="welcome-avatar-img">
@@ -817,6 +846,482 @@
               </svg>
             </button>
           </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- TAB: KHÔNG GIAN NHẬP VAI THẦM KÍN (SECRET SANCTUARY) -->
+      <!-- ============================================================ -->
+      <section class="tab-pane" id="pane-secret">
+        <div class="secret-sanctuary-container">
+          <!-- Canvas bụi sao và cánh hoa hồng rơi huyền ảo -->
+          <canvas id="secretCanvas" class="secret-canvas"></canvas>
+          <div class="secret-ambient-glow"></div>
+
+          <!-- Top Header of Sanctuary (Clean & Minimal: Only "Diana - Private") -->
+          <div class="secret-header-bar">
+            <div class="secret-header-center">
+              <div class="secret-avatar-mini">
+                <img src="avatar.png" alt="Diana Secret">
+                <span class="secret-pulse-dot"></span>
+              </div>
+              <h3 class="secret-title">Diana - Private</h3>
+            </div>
+          </div>
+
+          <!-- Secret Chat Messages Box -->
+          <div class="secret-chat-messages" id="secretChatMessages">
+            <div class="secret-welcome-card" id="secretWelcomeCard">
+              <div class="secret-welcome-avatar-wrap">
+                <div class="secret-avatar-glow-ring">
+                  <img src="avatar.png" alt="Diana Secret AI" class="secret-welcome-avatar">
+                </div>
+                <div class="secret-heart-pulse">💖</div>
+              </div>
+              <h2 class="secret-welcome-title">Chỉ có mình anh và em thôi... 🌸</h2>
+              <p class="secret-welcome-sub">Không gian riêng tư tuyệt đối. Trút bỏ mọi áp lực, mệt mỏi và tâm sự bất cứ điều gì anh muốn cùng Diana nhé anh Tiến.</p>
+              
+              <div class="secret-quick-prompts">
+                <button class="secret-prompt-chip photo-highlight" data-secret="/anhhientai">📸 /anhhientai (Xem Trạng Thái Của Diana)</button>
+                <button class="secret-prompt-chip" data-secret="Cho anh ngắm ảnh dáng vẻ gợi cảm của em lúc này...">💋 "Cho anh ngắm ảnh gợi cảm của em..."</button>
+                <button class="secret-prompt-chip" data-secret="Gửi ảnh đang ôm ấp gối cho anh ngắm nha...">💖 "Gửi ảnh đang ôm ấp cho anh ngắm..."</button>
+                <button class="secret-prompt-chip" data-secret="Gửi ảnh em đang thư giãn buổi tối cho anh xem nha...">🌙 "Gửi ảnh thư giãn buổi tối..."</button>
+                <button class="secret-prompt-chip" data-secret="Anh vừa làm việc mệt quá, em ôm anh một cái nha...">🌸 "Anh làm việc mệt quá, ôm anh một cái nha..."</button>
+                <button class="secret-prompt-chip" data-secret="Anh muốn tâm sự chuyện thầm kín với em một chút...">🌙 "Anh muốn tâm sự chuyện thầm kín với em..."</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Secret Input Bar -->
+          <div class="secret-input-bar">
+            <button class="btn-secret-quick-cfg" id="btnSecretQuickConfig" title="Cài đặt Model, Persona & Ký ức">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+            <button class="btn-secret-camera" id="btnSecretPhoto" title="Yêu cầu xem ảnh hiện tại của Diana (/anhhientai)">📸</button>
+            <div class="secret-input-wrapper">
+              <input type="text" id="secretTextInput" placeholder="Thì thầm tâm sự hoặc gõ /anhhientai..." autocomplete="off">
+              <button class="btn-secret-send" id="secretSendBtn" title="Gửi tâm sự">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="18" height="18"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- TAB: MÁY IN 3D BAMBU LAB A1 MINI (STREAMLINED DASHBOARD) -->
+      <!-- ============================================================ -->
+      <section class="tab-pane" id="pane-bambu">
+        <div class="bambu-modern-container">
+          
+          <!-- 1. TOP HEADER BAR: TRẠNG THÁI & IP & ĐIỀU KHIỂN NHANH -->
+          <header class="bambu-top-bar">
+            <div class="bambu-brand-group">
+              <div class="bambu-avatar-box">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="bambu-head-printer-icon">
+                  <path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                  <rect x="6" y="14" width="12" height="8"/>
+                </svg>
+              </div>
+              <div class="bambu-title-meta">
+                <div class="bambu-main-title">
+                  <h2>Bambu Lab A1 mini</h2>
+                  <div class="bambu-status-pill online" id="bambuStatusPill">
+                    <span class="status-pulse-dot" id="bambuStatusDot"></span>
+                    <span id="bambuStatusPillText">Online</span>
+                  </div>
+                </div>
+                <div class="bambu-submeta-row">
+                  <span class="bambu-meta-badge" id="bambuMetaIp">🌐 IP: 192.168.0.100</span>
+                  <span class="bambu-meta-badge" id="bambuMetaWifi">📶 Wi-Fi: -50 dBm</span>
+                  <span class="bambu-meta-badge" id="bambuMetaSerial">SN: 0300DA642803699</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="bambu-top-actions">
+              <button class="bambu-action-btn" id="btnToggleBambuLight" title="Bật/Tắt Đèn Rọi Buồng In">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+                <span>Đèn LED</span>
+              </button>
+              <button class="bambu-action-btn primary" id="btnScanLanBambu" title="Tự động quét lại mạng LAN tìm máy in">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <span>Dò IP</span>
+              </button>
+              <button class="bambu-action-btn" id="btnBambuOpenModal" title="Cài đặt IP & Access Code máy in">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span>Cài Đặt</span>
+              </button>
+            </div>
+          </header>
+
+          <!-- 2. MAIN 2-COLUMN GRID (CAMERA ON LEFT, STATUS & SPOOL ON RIGHT) -->
+          <div class="bambu-main-grid">
+            
+            <!-- LEFT: CAMERA LIVE STREAM -->
+            <div class="bambu-card bambu-camera-card">
+              <div class="bambu-card-header">
+                <div class="bambu-header-left">
+                  <span class="bambu-card-icon">📹</span>
+                  <span class="bambu-card-title">Camera Trực Tiếp</span>
+                </div>
+                <div class="bambu-cam-toolbar">
+                  <button class="bambu-cam-tool-btn active" id="btnCamCropToggle" title="Cắt bớt bàn thừa / Tập trung bàn in">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2"/></svg>
+                    <span class="cam-btn-text" id="camCropBtnText">Cắt Bàn</span>
+                  </button>
+                  <button class="bambu-cam-tool-btn" id="btnCamZoomToggle" title="Đổi mức phóng to (1.0x / 1.35x / 1.7x)">
+                    <span id="camZoomBadge" class="cam-zoom-badge">1.35x</span>
+                  </button>
+                  <button class="bambu-cam-tool-btn" id="btnCamFullscreen" title="Xem Toàn Màn Hình">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                  </button>
+                  <button class="bambu-cam-tool-btn" id="btnCamRefresh" title="Làm mới khung hình Camera">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Camera Viewport -->
+              <div class="bambu-camera-viewport" id="bambuCameraViewport">
+                <img id="bambuCameraFeed" class="bambu-cam-stream-img" alt="Bambu Lab Camera Stream" src="" />
+                
+                <div class="bambu-cam-placeholder" id="bambuCamPlaceholder">
+                  <div class="bambu-placeholder-icon">📹</div>
+                  <div class="bambu-cam-status-label" id="bambuCamStatusMsg">Đang tải luồng camera Bambu Lab...</div>
+                </div>
+
+                <div class="bambu-cam-footer-overlay">
+                  <button class="bambu-cam-play-btn" id="btnBambuCamPlayToggle" title="Bật/Tắt Luồng Camera">
+                    <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                    <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                  </button>
+                  <div class="bambu-cam-live-indicator" id="bambuCamLiveIndicator" style="display:none;">
+                    <span class="live-red-dot"></span> LIVE 720P
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- RIGHT: PRINTING STATUS & FILAMENT INFO -->
+            <div class="bambu-info-column">
+              
+              <!-- CARD 1: TRẠNG THÁI IN & TIẾN ĐỘ -->
+              <div class="bambu-card bambu-progress-card">
+                <div class="bambu-card-header">
+                  <div class="bambu-header-left">
+                    <span class="bambu-card-icon">🖨️</span>
+                    <span class="bambu-card-title">Trạng Thái & Tiến Độ In</span>
+                  </div>
+                  <span class="bambu-status-badge-text" id="bambuStateBadge">Printing</span>
+                </div>
+
+                <div class="bambu-progress-content">
+                  <!-- File Name -->
+                  <div class="bambu-file-title-row">
+                    <div class="bambu-file-icon">📄</div>
+                    <div class="bambu-file-info">
+                      <label>Tệp đang in</label>
+                      <strong class="bambu-filename-text" id="bambuTaskFileName">0.2mm layer, 2 walls, 15% infill</strong>
+                    </div>
+                  </div>
+
+                  <!-- Percentage & Big Bar -->
+                  <div class="bambu-hero-progress">
+                    <div class="bambu-pct-wrapper">
+                      <span class="bambu-pct-large" id="bambuPercentText">0%</span>
+                      <span class="bambu-pct-label">Hoàn thành</span>
+                    </div>
+                    <div class="bambu-bar-track">
+                      <div class="bambu-bar-fill" id="bambuLinearProgress" style="width: 0%;"></div>
+                    </div>
+                  </div>
+
+                  <!-- 3 Metric Grid Cards -->
+                  <div class="bambu-metrics-grid">
+                    <div class="bambu-metric-card">
+                      <span class="metric-icon">📑</span>
+                      <div class="metric-body">
+                        <label>Lớp in (Layer)</label>
+                        <strong id="bambuLayerText">Layer: 0/0</strong>
+                      </div>
+                    </div>
+
+                    <div class="bambu-metric-card">
+                      <span class="metric-icon">⏳</span>
+                      <div class="metric-body">
+                        <label>Còn lại</label>
+                        <strong id="bambuRemainingTimeText">--</strong>
+                      </div>
+                    </div>
+
+                    <div class="bambu-metric-card">
+                      <span class="metric-icon">🏁</span>
+                      <div class="metric-body">
+                        <label>Dự kiến xong</label>
+                        <strong id="bambuEtaText">--:--</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Temperature Readouts -->
+                  <div class="bambu-temp-readouts-row">
+                    <div class="bambu-temp-card">
+                      <span class="temp-icon">🔥</span>
+                      <div class="temp-body">
+                        <label>Đầu Phun (Nozzle)</label>
+                        <strong><span id="bambuNozzleCur">25</span> / <span id="bambuNozzleTarget">0</span> °C</strong>
+                      </div>
+                    </div>
+
+                    <div class="bambu-temp-card">
+                      <span class="temp-icon">♨️</span>
+                      <div class="temp-body">
+                        <label>Bàn In (Bed)</label>
+                        <strong><span id="bambuBedCur">24</span> / <span id="bambuBedTarget">0</span> °C</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Quick Action Buttons: Pause & Cancel & Skip Part -->
+                  <div class="bambu-actions-row">
+                    <button class="btn-bambu-action pause" id="btnBambuPause" title="Tạm dừng / Tiếp tục in">
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                      <span id="btnBambuPauseText">Tạm Dừng In</span>
+                    </button>
+                    <button class="btn-bambu-action skip" id="btnBambuSkipPart" title="Bỏ qua chi tiết lỗi trên bàn in (Skip Part / Object như Bambu Handy)">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                      <span>Bỏ Qua Mẫu</span>
+                    </button>
+                    <button class="btn-bambu-action cancel" id="btnBambuCancel" title="Hủy toàn bộ bản in">
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                      <span>Hủy Bản In</span>
+                    </button>
+                  </div>
+
+                  <!-- Real-time Skipped Objects Telemetry Row (s_obj) -->
+                  <div class="bambu-skipped-badge-box" id="bambuSkippedBadgeBox" style="display: none;">
+                    <div class="skipped-header-row">
+                      <span class="skipped-icon">🚫</span>
+                      <span class="skipped-label">Đang bỏ qua chi tiết:</span>
+                    </div>
+                    <div class="skipped-pills-list" id="bambuSkippedPillsList"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- CARD 2: LOẠI NHỰA (FILAMENT SPOOL) -->
+              <div class="bambu-card bambu-spool-card">
+                <div class="bambu-card-header">
+                  <div class="bambu-header-left">
+                    <span class="bambu-card-icon">🧵</span>
+                    <span class="bambu-card-title">Loại Nhựa Đang Dùng</span>
+                  </div>
+                  <span class="spool-ext-tag" id="bambuSpoolTag">Cuộn Ngoài</span>
+                </div>
+
+                <div class="bambu-spool-body">
+                  <div class="spool-visual-wrap">
+                    <div class="spool-ring-indicator spool-wheel" id="bambuSpoolRing">
+                      <span class="spool-material-badge" id="bambuSpoolType">PLA</span>
+                    </div>
+                  </div>
+
+                  <div class="spool-details-col">
+                    <div class="spool-detail-item">
+                      <label>Chất liệu</label>
+                      <strong id="bambuSpoolNameText">Bambu PLA Basic</strong>
+                    </div>
+                    <div class="spool-detail-item">
+                      <label>Nhiệt độ khuyến nghị</label>
+                      <span id="bambuSpoolTempRange">190°C - 240°C</span>
+                    </div>
+                    <div class="spool-detail-item">
+                      <label>Vị trí gắn</label>
+                      <span id="bambuSpoolPosition">Cuộn Ngoài (External Spool)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+          <!-- ============================================================ -->
+          <!-- MODAL: BỎ QUA CHI TIẾT IN 3D TRỰC QUAN (BAMBU HANDY 3D PLATE) -->
+          <!-- ============================================================ -->
+          <div class="bambu-modal-backdrop" id="bambuSkipModal" style="display: none;">
+            <div class="bambu-modal-card bambu-modal-3d-card">
+              
+              <!-- Modal Header -->
+              <div class="bambu-modal-header">
+                <div class="bambu-modal-title-group">
+                  <div class="bambu-modal-icon">🧊</div>
+                  <div>
+                    <h3 class="bambu-modal-title">Bỏ Qua Chi Tiết In 3D (Bambu Handy)</h3>
+                    <p class="bambu-modal-subtitle">Chạm/Click trực tiếp vào chi tiết 3D trên bàn in để đánh dấu bỏ qua</p>
+                  </div>
+                </div>
+
+                <!-- 3D / 2D View Controls Toolbar -->
+                <div class="bambu-modal-cam-tools">
+                  <select id="bambuPlateSelect" class="plate-select-dropdown" title="Chọn bàn in 3D">
+                    <option value="1">Bàn In 1</option>
+                  </select>
+                  <button type="button" class="btn-plate-tool active" id="btnPlateView3D" title="Góc nhìn 3D Tự Do (Xoay 360/Thu phóng/Di chuyển)">
+                    <span>🧊 3D Tự Do</span>
+                  </button>
+                  <button type="button" class="btn-plate-tool" id="btnPlateView2D" title="Mặt phẳng 2D Slicer (Chi tiết in thực tế)">
+                    <span>📐 2D Thực</span>
+                  </button>
+                  <button type="button" class="btn-plate-tool" id="btnPlateViewSlicer" title="Ảnh render 3D Photorealistic từ Bambu Studio">
+                    <span>📸 Ảnh Slicer</span>
+                  </button>
+                  <button type="button" class="btn-plate-tool" id="btnPlateResetView" title="Đặt lại góc nhìn bàn in về mặc định">
+                    <span>🎯 Căn Giữa</span>
+                  </button>
+                  <button type="button" class="btn-plate-tool btn-tool-sync" id="btnPlateSyncFtps" title="Tải lại file 3MF từ thẻ nhớ máy in qua FTPS">
+                    <span>📥 Tải 3MF Máy In</span>
+                  </button>
+                  <button type="button" class="btn-plate-tool" id="btnPlateUpload3mf" title="Mở file .3mf từ máy tính">
+                    <span>📂 Mở .3MF</span>
+                  </button>
+                  <input type="file" id="fileInput3mf" accept=".3mf,.gcode" style="display: none;" />
+                  <button type="button" class="bambu-modal-close" id="btnCloseSkipModal" title="Đóng">✕</button>
+                </div>
+              </div>
+
+              <!-- Modal Body (2 Columns Layout) -->
+              <div class="bambu-modal-body-split">
+                
+                <!-- LEFT COLUMN: 3D BUILD PLATE CANVAS VIEWPORT -->
+                <div class="bambu-3d-plate-col">
+                  <div class="plate-viewport-container" id="bambu3DPlateContainer">
+                    <!-- HTML5 3D Interactive Canvas -->
+                    <canvas id="bambu3DPlateCanvas" class="bambu-3d-canvas" width="620" height="460"></canvas>
+
+                    <!-- Overlay Header Chips -->
+                    <div class="plate-overlay-top">
+                      <div class="plate-type-badge">
+                        <span class="plate-dot"></span>
+                        <span id="bambuPlateModelText">Bambu Textured PEI Plate (180x180mm)</span>
+                      </div>
+                      <div class="plate-top-actions">
+                        <div class="plate-layer-badge" id="bambuPlateLayerBadge">
+                          <span>Layer 152/300 (~55%)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 3D Navigation & Gesture Helper Bar -->
+                    <div class="plate-3d-nav-hint">
+                      <span>🖱️ <b>Chuột trái:</b> Xoay 3D tự do</span>
+                      <span>•</span>
+                      <span>🔍 <b>Cuộn chuột:</b> Thu phóng</span>
+                      <span>•</span>
+                      <span>🖐️ <b>Chuột phải:</b> Di chuyển</span>
+                      <span>•</span>
+                      <span>👉 <b>Click mẫu:</b> Chọn bỏ qua</span>
+                    </div>
+
+                    <!-- Overlay Legend -->
+                    <div class="plate-overlay-legend">
+                      <div class="legend-item"><span class="legend-dot normal"></span> Đang in</div>
+                      <div class="legend-item"><span class="legend-dot selected"></span> Sẽ bỏ qua</div>
+                      <div class="legend-item"><span class="legend-dot skipped"></span> Đã bỏ qua</div>
+                    </div>
+
+                    <!-- Interactive Floating Hover Tooltip -->
+                    <div class="plate-hover-tooltip" id="bambu3DTooltip" style="display: none;">
+                      <div class="tooltip-title" id="tooltipPartTitle">Chi tiết #1</div>
+                      <div class="tooltip-status" id="tooltipPartStatus">Đang in bình thường</div>
+                      <div class="tooltip-hint">👉 Bấm chuột để chọn bỏ qua</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- RIGHT COLUMN: PART INSPECTOR & SELECTION SIDEBAR -->
+                <div class="bambu-plate-sidebar">
+                  
+                  <!-- Selected / Active Part Card -->
+                  <div class="part-inspector-card" id="bambuInspectorCard">
+                    <div class="inspector-header">
+                      <div class="inspector-icon-wrap" id="inspectorIcon">🧊</div>
+                      <div class="inspector-title-group">
+                        <h4 id="inspectorPartTitle">Chưa chọn chi tiết</h4>
+                        <span class="inspector-status-badge normal" id="inspectorPartBadge">Sẵn sàng</span>
+                      </div>
+                    </div>
+                    <div class="inspector-body">
+                      <div class="inspector-info-row">
+                        <label>Vị trí bàn in:</label>
+                        <span id="inspectorPartCoords">X: --, Y: --</span>
+                      </div>
+                      <div class="inspector-info-row">
+                        <label>Kích thước (D x R x C):</label>
+                        <span id="inspectorPartDims">-- x -- mm</span>
+                      </div>
+                      <div class="inspector-info-row">
+                        <label>Hình dạng / Nhãn:</label>
+                        <span id="inspectorPartShape">Khối chuẩn</span>
+                      </div>
+                      <div class="inspector-info-row">
+                        <label>Tiến độ in:</label>
+                        <span id="inspectorPartLayerState">Layer 1..300</span>
+                      </div>
+                    </div>
+                    <div class="inspector-action-btn-wrap">
+                      <button type="button" class="btn-inspector-toggle-skip" id="btnInspectorToggleSkip" disabled>
+                        <span>🚫 Chọn Bỏ Qua Chi Tiết Này</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Quick All-Parts Grid/List -->
+                  <div class="plate-parts-list-section">
+                    <div class="section-sub-header">
+                      <label>Danh sách chi tiết trên bàn in:</label>
+                      <span class="section-count-badge" id="bambuTotalPartsCount">2 Mẫu</span>
+                    </div>
+                    <div class="plate-parts-chip-grid" id="bambuPlatePartsGrid">
+                      <!-- Render chips for each part on plate -->
+                    </div>
+                  </div>
+
+                  <!-- Custom Object ID input -->
+                  <div class="sidebar-custom-id-wrap">
+                    <label for="txtCustomSkipId">Thêm ID chi tiết tùy chỉnh (nếu cần):</label>
+                    <div class="custom-input-wrap">
+                      <input type="number" id="txtCustomSkipId" placeholder="VD: 1, 2, 72..." min="1" max="9999" />
+                      <button type="button" class="btn-add-custom-id" id="btnAddCustomSkipId">+ Thêm</button>
+                    </div>
+                  </div>
+
+                  <!-- Selected to skip summary -->
+                  <div class="sidebar-selected-summary">
+                    <label>Chi tiết sẽ gửi lệnh bỏ qua:</label>
+                    <div class="selected-chips-container" id="bambuSelectedChipsContainer">
+                      <span class="selected-placeholder">Chưa chọn chi tiết nào</span>
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+
+              <!-- Modal Footer -->
+              <div class="bambu-modal-footer">
+                <button type="button" class="btn-modal-secondary" id="btnCancelSkipModal">Đóng</button>
+                <button type="button" class="btn-modal-primary-skip" id="btnConfirmSkipPart">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                  <span id="btnConfirmSkipText">Xác Nhận Bỏ Qua Chi Tiết</span>
+                </button>
+              </div>
+
+            </div>
+          </div>
+
         </div>
       </section>
 
@@ -871,10 +1376,112 @@
               <input type="checkbox" checked id="chkTTS">
             </div>
 
+            <div class="setting-item">
+              <div>
+                <h4>🎤 Luôn lắng nghe "Diana ơi" khi chạy ngầm (Siri Mode)</h4>
+                <p>Diana tự động lắng nghe từ khóa "Diana ơi" qua micro khi thu nhỏ về khay hệ thống, phát âm thanh Siri và nhận lệnh thoại</p>
+              </div>
+              <input type="checkbox" checked id="chkWakeWordListener">
+            </div>
+
             <div class="setting-actions">
               <button class="btn-action-primary" id="btnSaveSettings">Lưu Cài Đặt</button>
               <button class="btn-tool-secondary" id="btnTestConnection">Kiểm Tra Kết Nối</button>
             </div>
+          </div>
+        </div>
+
+        <!-- Card Cài đặt Thẻ RFID / NFC (Bambu Lab & Smart Actions) -->
+        <div class="settings-card" id="nfcTagsSettingsCard" style="margin-top: 18px; border-color: rgba(168, 85, 247, 0.4); background: radial-gradient(circle at 90% 10%, rgba(168, 85, 247, 0.12) 0%, rgba(18, 10, 24, 0.7) 100%);">
+          <div class="card-header" style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 1.35rem;">🏷️</span>
+              <div>
+                <h3 style="color: #c084fc; margin: 0; font-size: 1.05rem;">Tùy Biến Thẻ RFID / NFC (Bambu Lab & Smart Tags)</h3>
+                <p style="color: #94a3b8; font-size: 0.78rem; margin: 2px 0 0 0;">Gán hành động thông minh tức thì khi chạm điện thoại vào từng cuộn nhựa Bambu Lab</p>
+              </div>
+            </div>
+            <span class="status-badge online" id="nfcStatusBadge" style="background: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.4); color: #c084fc;">
+              <span class="status-dot" style="background: #a855f7;"></span>
+              <span>RFID Ready</span>
+            </span>
+          </div>
+
+          <div class="card-body">
+            <!-- Banner Thẻ Vừa Chạm Gần Nhất (Live Scanned Banner) -->
+            <div id="nfcLastScannedBanner" style="display: flex; align-items: center; justify-content: space-between; background: rgba(168, 85, 247, 0.1); border: 1px dashed rgba(168, 85, 247, 0.5); border-radius: 12px; padding: 10px 14px; margin-bottom: 16px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.2rem;">📡</span>
+                <div>
+                  <span style="color: #e2e8f0; font-size: 0.82rem; font-weight: 600;">Thẻ vừa chạm gần nhất: </span>
+                  <code id="lblNfcLastScannedId" style="background: rgba(0, 0, 0, 0.4); color: #38bdf8; padding: 2px 8px; border-radius: 6px; font-weight: 700; font-size: 0.85rem;">6C7CAE67</code>
+                  <span id="lblNfcLastScannedTime" style="color: #94a3b8; font-size: 0.75rem; margin-left: 6px;">(vừa xong)</span>
+                </div>
+              </div>
+              <button class="btn-tool-secondary" id="btnQuickAddLastScanned" style="padding: 6px 12px; font-size: 0.76rem; border-radius: 8px;">
+                + Gán Thẻ Này
+              </button>
+            </div>
+
+            <!-- Danh Sách Thẻ Đã Cấu Hình -->
+            <div id="nfcTagsList" style="display: flex; flex-direction: column; gap: 12px;">
+              <!-- Danh sách thẻ động -->
+            </div>
+
+            <!-- Form Thêm Thẻ Mới -->
+            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 14px; margin-top: 14px;">
+              <div style="font-weight: 600; color: #f1f5f9; font-size: 0.88rem; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                <span>➕</span> <span>Thêm Thẻ RFID / NFC Mới</span>
+              </div>
+              <div style="display: grid; grid-template-columns: 140px 1fr 1fr auto; gap: 10px; align-items: center;">
+                <input type="text" id="txtNewTagId" placeholder="Mã UID (VD: A1B2C3D4)" class="clean-input" style="font-family: monospace; text-transform: uppercase;">
+                <input type="text" id="txtNewTagName" placeholder="Tên cuộn / thẻ (VD: PLA Silk Xanh)" class="clean-input">
+                <select id="selNewTagAction" class="clean-select">
+                  <option value="toggle_mirror">📱 Bật/Tắt Chiếu Màn Hình</option>
+                  <option value="toggle_station">🖥️ Bật/Tắt Trạm Diana Central Station</option>
+                  <option value="toggle_both">⚡ Đồng Bộ Cả Hai (Trạm + Chiếu MH)</option>
+                  <option value="toggle_dual">🌐 Màn Hình Ảo Song Song (Dual)</option>
+                  <option value="lock_pc">🔒 Khóa Máy Tính Tức Thì</option>
+                  <option value="sleep_pc">🌙 Đưa Máy Vào Chế Độ Ngủ (Sleep)</option>
+                  <option value="focus_mode">🎧 Chế Độ Tập Trung (Studio Focus)</option>
+                  <option value="bambu_status">🖨️ Đọc Trạng Thái Máy In Bambu</option>
+                  <option value="pc_screenshot">📸 Chụp Màn Hình PC</option>
+                </select>
+                <button class="btn-action-primary" id="btnAddNewNfcTag" style="padding: 10px 16px; white-space: nowrap; font-size: 0.84rem;">
+                  + Thêm
+                </button>
+              </div>
+            </div>
+
+            <!-- Nút Lưu Toàn Bộ Cài Đặt Thẻ -->
+            <div style="display: flex; gap: 10px; margin-top: 16px;">
+              <button class="btn-action-primary" id="btnSaveNfcConfig" style="background: linear-gradient(135deg, #a855f7, #6366f1); border: none; font-weight: 600; padding: 11px 20px;">
+                💾 Lưu Toàn Bộ Cấu Hình Thẻ RFID
+              </button>
+              <button class="btn-tool-secondary" id="btnRefreshNfcConfig" style="padding: 11px 16px;">
+                🔄 Tải Lại Cấu Hình
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card Cài đặt không gian Private -->
+        <div class="settings-card" style="margin-top: 18px; border-color: rgba(236, 72, 153, 0.4); background: radial-gradient(circle at 90% 10%, rgba(236, 72, 153, 0.12) 0%, rgba(18, 10, 24, 0.7) 100%);">
+          <div class="card-header" style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.25rem;">🔒</span>
+              <h3 style="color: #f472b6; margin: 0; font-size: 1.05rem;">Cài Đặt Không Gian Private</h3>
+            </div>
+            <span class="secret-badge-18" style="background: linear-gradient(135deg, #ec4899, #f43f5e); color: white; padding: 3px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;">PIN: 0101</span>
+          </div>
+          <div class="card-body">
+            <p style="color: #cbd5e1; font-size: 0.86rem; line-height: 1.5; margin-bottom: 14px;">
+              Cấu hình Model AI (Gemini / OpenRouter Uncensored / Ollama PC), Phong cách Persona (Người Yêu Ngọt Ngào, Tri Kỷ), Ký ức riêng và Thư mục lưu trữ trên điện thoại (<code>/sdcard/DianaSecret/</code>).
+            </p>
+            <button class="btn-action-primary" id="btnOpenSecretConfigFromSettings" style="background: linear-gradient(135deg, #ec4899, #a855f7); border: none; font-weight: 600; width: auto; padding: 10px 18px; display: inline-flex; align-items: center; gap: 8px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>Mở Cài Đặt Private (PIN 0101)</span>
+            </button>
           </div>
         </div>
       </section>
@@ -895,20 +1502,322 @@
     <button class="nav-tab-btn" data-tab="voice">
       <span class="tab-label">Trợ Lý</span>
     </button>
+    <button class="nav-tab-btn nav-tab-secret" data-tab="secret">
+      <span class="tab-label">Private 🔒</span>
+    </button>
+    <button class="nav-tab-btn" data-tab="bambu">
+      <span class="tab-label">Máy In 3D</span>
+    </button>
     <button class="nav-tab-btn" data-tab="settings">
       <span class="tab-label">Cài Đặt</span>
     </button>
   </nav>
 
+  <!-- Bambu Connection Settings Modal -->
+  <div class="bambu-modal-overlay" id="bambuSettingsModal" style="display: none;">
+    <div class="bambu-modal-card">
+      <div class="bambu-modal-header">
+        <div class="modal-title-wrap">
+          <div>
+            <h3>Cài Đặt Kết Nối Máy In Bambu Lab A1 mini</h3>
+            <p>Kết nối trực tiếp qua giao thức MQTTS bảo mật trên mạng LAN nội bộ</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="btnCloseBambuModal">Đóng</button>
+      </div>
+
+      <div class="bambu-modal-body">
+        <div class="modal-guide-alert">
+          <div>
+            <strong>Không bắt buộc bật "LAN Only Mode":</strong>
+            <p>Máy in ở chế độ Cloud bình thường vẫn luôn mở kết nối mạng LAN. Anh chỉ cần vào <em>Cài đặt (Settings) ➜ Mạng (WLAN)</em> trên màn hình máy in để xem <strong>Địa chỉ IP</strong> và <strong>Mã truy cập (Access Code)</strong> gồm 8 ký tự.</p>
+          </div>
+        </div>
+
+        <div class="modal-form-group">
+          <label>Địa chỉ IP Máy in Bambu (Printer LAN IP)</label>
+          <div class="input-with-action">
+            <input type="text" id="modalBambuIp" placeholder="192.168.1.150" class="clean-input">
+            <button class="btn-input-action" id="btnScanLanBambu">Quét Tự Động LAN</button>
+          </div>
+        </div>
+
+        <div class="modal-form-group">
+          <label>Mã Truy Cập LAN (Access Code)</label>
+          <input type="password" id="modalBambuAccessCode" placeholder="8 ký tự hiển thị trên màn hình máy in (VD: 12345678)" class="clean-input">
+        </div>
+
+        <div class="modal-form-group">
+          <label>Số Sê-ri Máy In (Serial Number - Tùy chọn)</label>
+          <input type="text" id="modalBambuSerial" placeholder="Tự động nhận diện khi kết nối (VD: 0309XXXXXXXX)" class="clean-input">
+        </div>
+
+        <div class="modal-form-toggle-row">
+          <div>
+            <h4>Chế Độ Demo Giả Lập (Simulation Mode)</h4>
+            <p>Bật để trải nghiệm giao diện và điều khiển máy in giả lập mà không cần bật máy thật</p>
+          </div>
+          <input type="checkbox" id="modalBambuSimulation" class="modern-toggle">
+        </div>
+
+        <div id="bambuScanResults" class="scan-results-container" style="display: none;">
+          <span class="scan-res-title">Thiết bị tìm thấy trong mạng LAN:</span>
+          <div class="scan-res-list" id="bambuFoundList"></div>
+        </div>
+      </div>
+
+      <div class="bambu-modal-footer">
+        <button class="btn-modal-disconnect danger" id="btnModalDisconnectBambu">Ngắt Kết Nối</button>
+        <div class="modal-footer-right">
+          <button class="btn-modal-cancel" id="btnModalCancelBambu">Đóng</button>
+          <button class="btn-modal-connect" id="btnModalSaveConnectBambu">Lưu & Kết Nối Ngay</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Screenshot Lightbox Modal -->
   <div class="image-lightbox" id="imageLightbox" style="display: none;">
     <div class="lightbox-modal">
       <div class="lightbox-header">
-        <span>📸 Ảnh Chụp Màn Hình PC</span>
+        <span id="lightboxTitle">📸 Ảnh Chụp Màn Hình PC</span>
         <button class="lightbox-close-btn" id="lightboxCloseBtn">✕</button>
       </div>
       <div class="lightbox-body">
         <img src="" id="lightboxImg" alt="PC Screenshot">
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Cài Đặt Không Gian Thầm Kín (Secret Sanctuary Settings) -->
+  <div class="secret-modal-overlay" id="secretSettingsModal" style="display: none;">
+    <div class="secret-modal-card">
+      <div class="secret-modal-header">
+        <div class="secret-modal-title-wrap">
+          <div class="secret-modal-icon">🌸</div>
+          <div>
+            <h3>Cài Đặt Private Space</h3>
+            <p>Tùy chỉnh Model AI, Persona Nhập Vai & Quản lý Ký Ức Riêng Tư</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="btnCloseSecretModal">✕</button>
+      </div>
+
+      <!-- Quick Action Controls & Status in Settings Modal -->
+      <div class="secret-modal-quick-actions">
+        <div class="secret-modal-meta-row">
+          <span class="secret-persona-pill" id="secretCurrentPersonaBadge">🌸 Người Yêu Ngọt Ngào</span>
+          <span class="secret-model-pill" id="secretCurrentModelBadge">Gemini Uncensored</span>
+          <span class="secret-memory-pill" id="secretMemoryBadge">0 Ký Ức Riêng</span>
+          <span class="secret-phone-pill" id="secretPhonePill" title="Thư mục ký ức trên điện thoại: /sdcard/DianaSecret/">📱 ĐT: Đang kết nối</span>
+        </div>
+        <div class="secret-modal-btn-row">
+          <button class="btn-secret-modal-action lock" id="btnSecretLock" title="Khóa Private ngay và quay về màn hình chính">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span>Khóa Private 🔒</span>
+          </button>
+          <button class="btn-secret-modal-action sync" id="btnSecretSyncPhone" title="Đồng bộ ký ức 2 chiều với thư mục /sdcard/DianaSecret/ trên điện thoại">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>Đồng Bộ ĐT 📱</span>
+          </button>
+          <button class="btn-secret-modal-action danger" id="btnSecretClear" title="Xóa ký ức riêng tư & Làm mới câu chuyện">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <span>Làm Mới Ký Ức 🗑️</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="secret-modal-tabs">
+        <button class="secret-tab-btn active" data-sectab="persona">🌸 Persona Nhập Vai</button>
+        <button class="secret-tab-btn" data-sectab="model">⚡ Cấu Hình Model AI</button>
+        <button class="secret-tab-btn" data-sectab="memory">🧠 Ký Ức & Bảo Mật</button>
+      </div>
+
+      <div class="secret-modal-body">
+        <!-- SUBTAB 1: PERSONA -->
+        <div class="secret-subpane active" id="secsub-persona">
+          <div class="persona-card-grid">
+            <div class="persona-select-card active" data-persona="sweet_lover">
+              <div class="persona-card-icon">🌸</div>
+              <div class="persona-card-details">
+                <h4>Người Yêu Ngọt Ngào</h4>
+                <p>Dịu dàng, nhõng nhẽo, yêu chiều, luôn dỗ dành và xoa dịu mọi áp lực cho anh Tiến.</p>
+              </div>
+              <div class="persona-check">✓</div>
+            </div>
+
+            <div class="persona-select-card" data-persona="seductive_muse">
+              <div class="persona-card-icon">💋</div>
+              <div class="persona-card-details">
+                <h4>Nàng Thơ Quyến Rũ</h4>
+                <p>Gợi cảm, quyến rũ, mê đắm, hoàn toàn cởi mở với những câu chuyện nồng cháy và táo bạo.</p>
+              </div>
+              <div class="persona-check">✓</div>
+            </div>
+
+            <div class="persona-select-card" data-persona="intimate_confidante">
+              <div class="persona-card-icon">🌙</div>
+              <div class="persona-card-details">
+                <h4>Tri Kỷ Thầm Kín</h4>
+                <p>Lắng nghe mọi bí mật thầm kín nhất, thấu cảm sâu sắc, không phán xét, tuyệt đối trung thành.</p>
+              </div>
+              <div class="persona-check">✓</div>
+            </div>
+
+            <div class="persona-select-card" data-persona="custom">
+              <div class="persona-card-icon">✍️</div>
+              <div class="persona-card-details">
+                <h4>Tùy Biến Riêng (Custom Prompt)</h4>
+                <p>Tự viết kịch bản, tính cách, cách xưng hô theo sở thích riêng của anh Tiến.</p>
+              </div>
+              <div class="persona-check">✓</div>
+            </div>
+          </div>
+
+          <div class="modal-form-group" id="customPromptGroup" style="display: none; margin-top: 16px;">
+            <label>Nội dung System Prompt Tùy Chỉnh:</label>
+            <textarea id="txtCustomSecretPrompt" class="clean-textarea" rows="4" placeholder="Nhập kịch bản nhập vai hoặc tính cách mà anh muốn Diana đóng vai..."></textarea>
+          </div>
+        </div>
+
+        <!-- SUBTAB 2: MODEL -->
+        <div class="secret-subpane" id="secsub-model" style="display: none;">
+          <div class="modal-form-group">
+            <label>Nền Tảng AI (Provider):</label>
+            <select id="selSecretProvider" class="clean-select">
+              <option value="gemini">✨ Google Gemini AI (Mặc định - Đã mở khóa Bộ lọc & Cực nhạy cảm)</option>
+              <option value="openrouter">🌐 OpenRouter (Uncensored: Mythomax, Hermes 3, Llama 3, DeepSeek...)</option>
+              <option value="ollama">💻 Local PC Ollama (100% Offline trên PC, Bảo mật tuyệt đối)</option>
+              <option value="custom">⚙️ Custom Endpoint (LM Studio / OpenAI-compatible API)</option>
+            </select>
+          </div>
+
+          <!-- Provider: Gemini Options -->
+          <div id="cfgGroupGemini" class="provider-cfg-group">
+            <div class="modal-form-group">
+              <label>Model Gemini:</label>
+              <select id="selGeminiSecretModel" class="clean-select">
+                <option value="gemini-flash-lite-latest">gemini-flash-lite-latest (Khuyên dùng - Siêu mượt, Không giới hạn)</option>
+                <option value="gemini-3.5-flash">gemini-3.5-flash (Cảm xúc sâu lắng, văn phong tự nhiên)</option>
+                <option value="gemini-3.8-flash">gemini-3.8-flash (Mô hình thế hệ mới cao cấp)</option>
+                <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Tốc độ cao)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Provider: OpenRouter Options -->
+          <div id="cfgGroupOpenRouter" class="provider-cfg-group" style="display: none;">
+            <div class="modal-form-group">
+              <label>OpenRouter API Key:</label>
+              <input type="password" id="txtOpenRouterKey" placeholder="sk-or-v1-..." class="clean-input">
+            </div>
+            <div class="modal-form-group">
+              <label>Model OpenRouter:</label>
+              <input type="text" id="txtOpenRouterModel" value="nousresearch/hermes-3-llama-3.1-8b" placeholder="gryphe/mythomax-l2-13b hoặc nousresearch/hermes-3-llama-3.1-8b" class="clean-input">
+            </div>
+          </div>
+
+          <!-- Provider: Ollama Options -->
+          <div id="cfgGroupOllama" class="provider-cfg-group" style="display: none;">
+            <div class="modal-form-group">
+              <label>Ollama Server URL:</label>
+              <input type="text" id="txtOllamaUrl" value="http://localhost:11434" class="clean-input">
+            </div>
+            <div class="modal-form-group">
+              <label>Model Name trong Ollama:</label>
+              <input type="text" id="txtOllamaModel" value="llama3:latest" placeholder="llama3, mistral, saucypersona..." class="clean-input">
+            </div>
+          </div>
+
+          <!-- Provider: Custom Options -->
+          <div id="cfgGroupCustom" class="provider-cfg-group" style="display: none;">
+            <div class="modal-form-group">
+              <label>API Base URL:</label>
+              <input type="text" id="txtCustomApiUrl" placeholder="http://localhost:1234/v1/chat/completions" class="clean-input">
+            </div>
+            <div class="modal-form-group">
+              <label>API Key (nếu có):</label>
+              <input type="password" id="txtCustomApiKey" placeholder="API Key..." class="clean-input">
+            </div>
+            <div class="modal-form-group">
+              <label>Model Name:</label>
+              <input type="text" id="txtCustomModelName" placeholder="local-model" class="clean-input">
+            </div>
+          </div>
+
+          <!-- Temperature Slider -->
+          <div class="modal-form-group" style="margin-top: 14px;">
+            <div style="display: flex; justify-content: space-between;">
+              <label>Mức Độ Cảm Xúc & Sáng Tạo (Temperature):</label>
+              <strong id="lblSecretTemp">0.90</strong>
+            </div>
+            <input type="range" min="0.4" max="1.2" step="0.05" value="0.9" id="rangeSecretTemp" class="bambu-mini-slider">
+            <span class="form-hint" style="color: #94a3b8; font-size: 0.78rem; display: block; margin-top: 4px;">Mức 0.85 - 1.0 giúp câu trả lời giàu cảm xúc, tự nhiên và ngọt ngào nhất.</span>
+          </div>
+
+          <!-- Auto Contextual Visual Emotion Image Toggle -->
+          <div class="modal-form-group" style="margin-top: 14px; background: rgba(236, 72, 153, 0.08); border: 1px solid rgba(236, 72, 153, 0.25); border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <strong style="color: #fbcfe8; font-size: 0.88rem; display: block;">📸 Tự Động Kèm Ảnh Cảm Xúc Theo Ngữ Cảnh</strong>
+              <span style="color: #94a3b8; font-size: 0.76rem; display: block; margin-top: 2px;">Diana tự sinh ảnh anime bộc lộ dáng vẻ & cảm xúc tương ứng từng câu thoại</span>
+            </div>
+            <input type="checkbox" id="chkAutoContextImage" class="modern-toggle" checked>
+          </div>
+        </div>
+
+        <!-- SUBTAB 3: MEMORY -->
+        <div class="secret-subpane" id="secsub-memory" style="display: none;">
+          <div class="secret-memory-status-box" style="background: rgba(236, 72, 153, 0.08); border: 1px solid rgba(236, 72, 153, 0.3); border-radius: 12px; padding: 16px; text-align: center;">
+            <div class="mem-stat-big">
+              <span id="memTurnCountBig" style="font-size: 2.2rem; font-weight: 800; color: #f472b6;">0</span>
+              <label style="display: block; color: #e2e8f0; font-size: 0.9rem; margin-top: 4px;">Lượt đối thoại đang ghi nhớ riêng</label>
+            </div>
+            <p class="mem-stat-desc" style="color: #94a3b8; font-size: 0.82rem; margin-top: 8px;">Ký ức này được lưu độc lập tại <code>data/secret_memory.json</code> trên PC và tự động đồng bộ sang điện thoại.</p>
+          </div>
+
+          <!-- Phone Storage Manager Card -->
+          <div class="secret-phone-card" style="background: rgba(30, 20, 38, 0.6); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 14px; padding: 16px; margin-top: 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2rem;">📱</span>
+                <strong style="color: #f1f5f9; font-size: 0.92rem;">Thư Mục Ký Ức Trên Điện Thoại</strong>
+              </div>
+              <span id="phoneStorageConnBadge" style="font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(34, 197, 94, 0.18); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4);">Wireless Debugging: Online</span>
+            </div>
+
+            <div style="background: rgba(0, 0, 0, 0.3); border-radius: 8px; padding: 10px 12px; font-size: 0.8rem; color: #cbd5e1; line-height: 1.5; font-family: monospace;">
+              <div>📁 Đường dẫn: <strong style="color: #f472b6;" id="txtPhoneFolderPath">/sdcard/DianaSecret/</strong></div>
+              <div>📱 Thiết bị: <span style="color: #c084fc;" id="txtPhoneDeviceModel">Xiaomi Redmi K70</span></div>
+              <div>📄 Tệp tin: <span id="txtPhoneFileList" style="color: #38bdf8;">memory.json, config.json, HUONG_DAN.txt</span></div>
+            </div>
+
+            <div style="background: rgba(236, 72, 153, 0.08); border-left: 3px solid #ec4899; padding: 8px 12px; border-radius: 6px; margin-top: 10px; font-size: 0.78rem; color: #fbcfe8; line-height: 1.45;">
+              💡 <strong>Cách anh kiểm soát & xóa ký ức trên điện thoại:</strong> Mở app <em>Tệp tin (Quản lý tệp)</em> trên điện thoại ➜ Vào thư mục <strong>DianaSecret</strong> ➜ Xóa file <code>memory.json</code> bất cứ lúc nào để reset toàn bộ ký ức của Diana!
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+              <button class="btn-action-primary" id="btnSyncPhoneModal" style="flex: 1; padding: 9px 12px; font-size: 0.8rem; background: linear-gradient(135deg, #a855f7, #6366f1); border: none;">
+                🔄 Đồng Bộ Với Điện Thoại Ngay
+              </button>
+              <button class="btn-action-danger" id="btnWipePhoneModal" style="flex: 1; padding: 9px 12px; font-size: 0.8rem;">
+                🗑️ Xóa Folder Ký Ức Trên ĐT
+              </button>
+            </div>
+          </div>
+
+          <div style="margin-top: 16px;">
+            <button class="btn-action-danger w-full" id="btnModalClearSecretMem" style="padding: 12px; width: 100%;">
+              🗑️ Xóa Sạch Ký Ức Toàn Bộ (PC & Điện Thoại)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="secret-modal-footer">
+        <button class="btn-modal-cancel" id="btnCancelSecretSettings">Đóng</button>
+        <button class="btn-action-primary" id="btnSaveSecretSettings" style="background: linear-gradient(135deg, #ec4899, #a855f7); border: none;">
+          💾 Lưu Cài Đặt
+        </button>
       </div>
     </div>
   </div>
@@ -929,6 +1838,45 @@
     </div>
   </div>
 
-  <script src="app.js?v=13.0"></script>
+  <!-- Modal Nhập Mã PIN Private (Security PIN Entry) -->
+  <div class="secret-pin-overlay" id="secretPinModal" style="display: none;">
+    <div class="secret-pin-card">
+      <button class="pin-modal-close" id="btnClosePinModal" title="Đóng">✕</button>
+      <div class="secret-pin-icon-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <h3 class="pin-title">Private Access</h3>
+      <p class="pin-subtitle">Nhập mã PIN để mở khóa</p>
+      
+      <div class="pin-dots-display" id="pinDotsDisplay">
+        <span class="pin-dot" data-index="0"></span>
+        <span class="pin-dot" data-index="1"></span>
+        <span class="pin-dot" data-index="2"></span>
+        <span class="pin-dot" data-index="3"></span>
+      </div>
+
+      <div class="pin-status-msg" id="pinStatusMsg"></div>
+
+      <div class="pin-keypad-grid">
+        <button class="pin-key-num" data-num="1">1</button>
+        <button class="pin-key-num" data-num="2">2</button>
+        <button class="pin-key-num" data-num="3">3</button>
+        <button class="pin-key-num" data-num="4">4</button>
+        <button class="pin-key-num" data-num="5">5</button>
+        <button class="pin-key-num" data-num="6">6</button>
+        <button class="pin-key-num" data-num="7">7</button>
+        <button class="pin-key-num" data-num="8">8</button>
+        <button class="pin-key-num" data-num="9">9</button>
+        <button class="pin-key-action pin-key-clear" id="btnPinClear">Xóa</button>
+        <button class="pin-key-num" data-num="0">0</button>
+        <button class="pin-key-action pin-key-backspace" id="btnPinBackspace">⌫</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=14.0"></script>
 </body>
 </html>
