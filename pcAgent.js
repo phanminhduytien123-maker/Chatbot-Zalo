@@ -971,6 +971,10 @@ function startLocalHttpServer() {
             let actResult = { success: false };
             if (act === 'lock') actResult = await WindowsController.lockScreen();
             else if (act === 'sleep') actResult = await WindowsController.sleep();
+            else if (act === 'open') {
+              const target = data.target || data.params?.target || data.app;
+              actResult = await WindowsController.openAppOrUrl(target);
+            }
             else if (act === 'screenshot') {
               const scr = await WindowsController.takeScreenshot();
               let screenshotBase64 = null;
@@ -1053,6 +1057,19 @@ function startLocalHttpServer() {
               const timeStr = `Bây giờ là ${now.getHours()} giờ ${String(now.getMinutes()).padStart(2, '0')} phút ạ! 🌸`;
               res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
               return res.end(JSON.stringify({ success: true, query, reply: timeStr }));
+            }
+            // Lệnh mở ứng dụng / web bất kỳ (mở zalo, mở chrome, mở bambu studio, mở word, v.v.)
+            if (lower.startsWith('mở ') || lower.startsWith('bật ') || lower.startsWith('chạy ') || lower.startsWith('open ')) {
+              const targetApp = query.replace(/^(?:mở|bật|chạy|open)\s+/i, '').replace(/\s+(?:cho\s+anh|hộ\s+anh|giúp\s+anh|đi|nha|ạ)$/i, '').trim();
+              if (targetApp && !lower.includes('bật đèn') && !lower.includes('máy in') && WindowsController) {
+                const openRes = await WindowsController.openAppOrUrl(targetApp);
+                res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+                return res.end(JSON.stringify({
+                  success: true,
+                  query,
+                  reply: openRes.success ? `Dạ em đã mở ứng dụng ${targetApp} cho anh rồi ạ! 🌸` : (openRes.error || `Dạ em đang khởi chạy ${targetApp} ạ!`)
+                }));
+              }
             }
 
             // Lệnh mở YouTube
